@@ -1,0 +1,115 @@
+// Zed keymap
+//
+// For information on binding keys, see the Zed
+// documentation: https://zed.dev/docs/key-bindings
+//
+// To see the default key bindings run `zed: open default keymap`
+// from the command palette.
+[
+  {
+    "context": "Workspace && !menu",
+    "bindings": {
+      // "shift shift": "file_finder::Toggle",
+      "alt-h": "workspace::ActivatePaneLeft",
+      "alt-j": "workspace::ActivatePaneDown",
+      "alt-k": "workspace::ActivatePaneUp",
+      "alt-l": "workspace::ActivatePaneRight",
+    },
+  },
+  {
+    "context": "VimControl && !menu",
+    "bindings": {
+      // Put key bindings here if you want them to work in normal & visual mode.
+      "shift-k": "editor::Hover",
+      "space l a": "editor::ToggleCodeActions",
+      "space l f": "editor::Format",
+      "space l r": "editor::Rename",
+      "space l l": "diagnostics::Deploy",
+      "space f": "file_finder::Toggle",
+      "space o": "tab_switcher::Toggle",
+      "space s t": "pane::DeploySearch",
+      "space e": "workspace::ToggleLeftDock",
+      "space p": "outline::Toggle",
+      "space |": "editor::GoToDefinitionSplit",
+      "g r": "editor::FindAllReferences",
+      "g o": "editor::GoToTypeDefinition",
+      "space t p": "vim::GoToPreviousTab",
+      "space t n": "vim::GoToTab",
+      "space t t": "terminal_panel::Toggle",
+      "space s |": "pane::SplitVertical",
+      "space s -": "pane::SplitHorizontal",
+      "space s x": "pane::CloseActiveItem",
+      "ctrl+h": "workspace::ActivatePaneLeft",
+      "ctrl+j": "workspace::ActivatePaneDown",
+      "ctrl+k": "workspace::ActivatePaneUp",
+      "ctrl+l": "workspace::ActivatePaneRight",
+      "shift-alt-h": "vim::ResizePaneLeft",
+      "shift-alt-j": "vim::ResizePaneDown",
+      "shift-alt-k": "vim::ResizePaneUp",
+      "shift-alt-l": "vim::ResizePaneRight",
+      "space a l": [
+        "task::Spawn",
+        { "task_name": "Fortran: gfortran syntax only (./code)" },
+      ],
+      // "space s x": "pane::SplitVertical",
+    },
+  },
+  {
+    "context": "Editor && vim_mode == visual && !VimWaiting && !Menu",
+    "bindings": {
+      // Put key bindings here if you want them to work in visual mode.
+      "shift-j": "editor::MoveLineDown",
+      "shift-K": "editor::MoveLineUp",
+    },
+  },
+  {
+    "context": "vim_mode == normal && !menu",
+    "bindings": {
+      // "shift-y": ["workspace::SendKeystrokes", "y $"] // Use neovim's yank behavior: yank to end of line.
+    },
+  },
+  {
+    "context": "vim_mode == insert",
+    "bindings": {
+      "j k": "vim::NormalBefore", // In insert mode, make jk escape to normal mode.
+    },
+  },
+  {
+    "context": "EmptyPane || SharedScreen",
+    "bindings": {
+      // Put key bindings here (in addition to the context above) if you want them to
+      // work when no editor exists.
+      // "space f": "file_finder::Toggle"
+    },
+  },
+  {
+    "context": "Terminal",
+    "bindings": {
+      "space t t": "terminal_panel::Toggle",
+      "space s m": "workspace::ToggleZoom",
+    },
+  },
+  {
+    "context": "FileFinder",
+    "bindings": {
+      "ctrl-v": "file_finder::ToggleSplitMenu",
+      // "space s |": "project_panel::OpenSplitVertical",
+      // "space s -": "project_panel::OpenSplitVertical",
+    },
+  },
+  // {
+  //   "context": "(FileFinder > Picker > menu)",
+  //   "bindings": {
+  //     "h": "pane::SplitLeft",
+  //     "j": "pane::SplitRight",
+  //     "k": "pane::SplitDown",
+  //     "l": "pane::SplitUp",
+  //     // "space s |": "project_panel::OpenSplitVertical",
+  //     // "space s -": "project_panel::OpenSplitVertical",
+  //   },
+  // },
+  {
+    "context": "Editor",
+    "bindings": {},
+  },
+]

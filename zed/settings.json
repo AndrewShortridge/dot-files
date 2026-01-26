@@ -1,0 +1,65 @@
+// Zed settings
+//
+// For information on how to configure Zed, see the Zed
+// documentation: https://zed.dev/docs/configuring-zed
+//
+// To see all of Zed's default settings without changing your
+// custom settings, run `zed: open default settings` from the
+// command palette (cmd-shift-p / ctrl-shift-p)
+{
+  "diagnostics": {
+    "inline": {
+      "enabled": true,
+      "max_severity": null,
+    },
+  },
+  "file_finder": {
+    "modal_max_width": "medium",
+  },
+  "tabs": { "file_icons": true },
+  "relative_line_numbers": "enabled",
+  "agent": {
+    "inline_assistant_model": {
+      "provider": "openai",
+      "model": "gpt-5.2",
+    },
+    "default_model": {
+      "provider": "openai",
+      "model": "gpt-5.2",
+    },
+    "favorite_models": [],
+    "model_parameters": [],
+  },
+  "vim_mode": true,
+  "scrollbar": {
+    "show": "never",
+  },
+  "inlay_hints": {
+    "enabled": true,
+  },
+  "show_wrap_guides": true,
+  "experimental.theme_overrides": {
+    "editor.wrap_guide": "#56B6C280",
+  },
+  "wrap_guides": [120],
+  "icon_theme": "Material Icon Theme",
+  "ui_font_size": 20,
+  "buffer_font_size": 18,
+  "theme": {
+    "mode": "dark",
+    "light": "One Light",
+    "dark": "One Dark",
+  },
+  // Automatic tab indentation is 2 spaces instead of default 4
+  "tab_size": 2,
+  // Setting to run automatic code formatting when saving code
+  "format_on_save": "on",
+  "languages": { "Fortran": { "language_servers": ["fortls"] } },
+  "lsp": {
+    "fortls": {
+      "settings": {
+        "source_dirs": ["./code**"],
+      },
+    },
+  },
+}
