@@ -1,0 +1,27 @@
+{
+  "ALLOCATED": {
+    "args": "ARRAY",
+    "doc": "ALLOCATED(ARRAY) returns .TRUE. if the allocatable array is currently allocated. [F90]",
+    "type": 3
+  },
+  "LBOUND": {
+    "args": "ARRAY,DIM=dim,KIND=kind",
+    "doc": "LBOUND(ARRAY,DIM,KIND) returns lower bound(s) of an array or a specified dimension. [F90]",
+    "type": 3
+  },
+  "UBOUND": {
+    "args": "ARRAY,DIM=dim,KIND=kind",
+    "doc": "UBOUND(ARRAY,DIM,KIND) returns upper bound(s) of an array or a specified dimension. [F90]",
+    "type": 3
+  },
+  "SHAPE": {
+    "args": "SOURCE,KIND=kind",
+    "doc": "SHAPE(SOURCE,KIND) returns the shape of an array as a rank-one integer array. [F90]",
+    "type": 3
+  },
+  "SIZE": {
+    "args": "ARRAY,DIM=dim,KIND=kind",
+    "doc": "SIZE(ARRAY,DIM,KIND) returns total elements or extent along a specified dimension. [F90]",
+    "type": 3
+  }
+}

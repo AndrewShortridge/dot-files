@@ -1,0 +1,57 @@
+{
+  "BIT_SIZE": {
+    "args": "I",
+    "doc": "BIT_SIZE(I) returns the number of bits in the integer model for I. [F90]",
+    "type": 3
+  },
+  "BTEST": {
+    "args": "I,POS",
+    "doc": "BTEST(I,POS) returns .TRUE. if bit POS of integer I is set to 1. [F90]",
+    "type": 3
+  },
+  "IAND": {
+    "args": "I,J",
+    "doc": "IAND(I,J) returns the bitwise logical AND of integers I and J. [F90]",
+    "type": 3
+  },
+  "IOR": {
+    "args": "I,J",
+    "doc": "IOR(I,J) returns the bitwise logical inclusive OR of integers I and J. [F90]",
+    "type": 3
+  },
+  "IEOR": {
+    "args": "I,J",
+    "doc": "IEOR(I,J) returns the bitwise logical exclusive OR of integers I and J. [F90]",
+    "type": 3
+  },
+  "IBCLR": {
+    "args": "I,POS",
+    "doc": "IBCLR(I,POS) returns I with the bit at position POS set to zero. [F90]",
+    "type": 3
+  },
+  "IBSET": {
+    "args": "I,POS",
+    "doc": "IBSET(I,POS) returns I with the bit at position POS set to one. [F90]",
+    "type": 3
+  },
+  "IBITS": {
+    "args": "I,POS,LEN",
+    "doc": "IBITS(I,POS,LEN) extracts LEN bits from I starting at bit position POS. [F90]",
+    "type": 3
+  },
+  "ISHFT": {
+    "args": "I,SHIFT",
+    "doc": "ISHFT(I,SHIFT) returns I with bits shifted SHIFT places (left if positive). [F90]",
+    "type": 3
+  },
+  "ISHFTC": {
+    "args": "I,SHIFT,SIZE=size",
+    "doc": "ISHFTC(I,SHIFT,SIZE) performs circular shift of rightmost SIZE bits of I. [F90]",
+    "type": 3
+  },
+  "NOT": {
+    "args": "I",
+    "doc": "NOT(I) returns the bitwise logical complement of integer I. [F90]",
+    "type": 3
+  }
+}

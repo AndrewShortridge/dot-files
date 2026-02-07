@@ -1,0 +1,47 @@
+{
+  "ACHAR": {
+    "args": "I,KIND=kind",
+    "doc": "ACHAR(I) returns the character at position I in the ASCII collating sequence. [F90]",
+    "type": 3
+  },
+  "ADJUSTL": {
+    "args": "STRING",
+    "doc": "ADJUSTL(STRING) left-justifies a string by removing leading blanks. [F90]",
+    "type": 3
+  },
+  "ADJUSTR": {
+    "args": "STRING",
+    "doc": "ADJUSTR(STRING) right-justifies a string by removing trailing blanks. [F90]",
+    "type": 3
+  },
+  "IACHAR": {
+    "args": "C,KIND=kind",
+    "doc": "IACHAR(C) returns the position of character C in the ASCII collating sequence. [F90]",
+    "type": 3
+  },
+  "LEN_TRIM": {
+    "args": "STRING,KIND=kind",
+    "doc": "LEN_TRIM(STRING) returns the length of a string without trailing blanks. [F90]",
+    "type": 3
+  },
+  "REPEAT": {
+    "args": "STRING,NCOPIES",
+    "doc": "REPEAT(STRING,NCOPIES) concatenates NCOPIES copies of STRING. [F90]",
+    "type": 3
+  },
+  "SCAN": {
+    "args": "STRING,SET,BACK=back,KIND=kind",
+    "doc": "SCAN(STRING,SET) returns position of first character in STRING that is in SET. [F90]",
+    "type": 3
+  },
+  "TRIM": {
+    "args": "STRING",
+    "doc": "TRIM(STRING) removes trailing blank characters from a string. [F90]",
+    "type": 3
+  },
+  "VERIFY": {
+    "args": "STRING,SET,BACK=back,KIND=kind",
+    "doc": "VERIFY(STRING,SET) returns position of first character in STRING not in SET. [F90]",
+    "type": 3
+  }
+}

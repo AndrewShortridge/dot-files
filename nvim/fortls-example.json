@@ -1,0 +1,20 @@
+{
+  "source_dirs": ["code", "src"],
+  "include_dirs": ["code", "include"],
+  "pp_suffixes": [".h", ".inc"],
+  "pp_defs": {},
+  "incl_suffixes": [".f90", ".F90", ".f95", ".f03", ".f08"],
+  "excl_suffixes": [".o", ".mod"],
+  "excl_paths": ["build", "test"],
+  "hover_signature": true,
+  "autocomplete_no_prefix": true,
+  "autocomplete_no_snippets": false,
+  "use_signature_help": true,
+  "lowercase_intrinsics": false,
+  "disable_diagnostics": false,
+  "enable_code_actions": true,
+  "max_line_length": 132,
+  "max_comment_line_length": 132,
+  "incremental_sync": true,
+  "notify_init": true
+}

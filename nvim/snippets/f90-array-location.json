@@ -1,0 +1,12 @@
+{
+  "MAXLOC": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "MAXLOC(ARRAY) returns indices of maximum value in array. [F90]",
+    "type": 3
+  },
+  "MINLOC": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "MINLOC(ARRAY) returns indices of minimum value in array. [F90]",
+    "type": 3
+  }
+}

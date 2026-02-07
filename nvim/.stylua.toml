@@ -1,0 +1,7 @@
+indent_type = "Spaces"  # or "Tabs"
+indent_width = 2        # or 4, etc.
+
+# optional extras:
+column_width = 100
+quote_style = "AutoPreferDouble"
+line_endings = "Unix"

@@ -1,0 +1,47 @@
+{
+  "DIGITS": {
+    "args": "X",
+    "doc": "DIGITS(X) returns number of significant binary digits in the model of X. [F90]",
+    "type": 3
+  },
+  "EPSILON": {
+    "args": "X",
+    "doc": "EPSILON(X) returns smallest positive number that added to 1 gives result > 1. [F90]",
+    "type": 3
+  },
+  "HUGE": {
+    "args": "X",
+    "doc": "HUGE(X) returns largest number representable in the model of X. [F90]",
+    "type": 3
+  },
+  "MAXEXPONENT": {
+    "args": "X",
+    "doc": "MAXEXPONENT(X) returns maximum exponent in the floating-point model of X. [F90]",
+    "type": 3
+  },
+  "MINEXPONENT": {
+    "args": "X",
+    "doc": "MINEXPONENT(X) returns minimum exponent in the floating-point model of X. [F90]",
+    "type": 3
+  },
+  "PRECISION": {
+    "args": "X",
+    "doc": "PRECISION(X) returns decimal precision of real or complex kind of X. [F90]",
+    "type": 3
+  },
+  "RADIX": {
+    "args": "X",
+    "doc": "RADIX(X) returns base of the numeric model for X (typically 2 for binary). [F90]",
+    "type": 3
+  },
+  "RANGE": {
+    "args": "X",
+    "doc": "RANGE(X) returns decimal exponent range in the model of X. [F90]",
+    "type": 3
+  },
+  "TINY": {
+    "args": "X",
+    "doc": "TINY(X) returns smallest positive number in the floating-point model of X. [F90]",
+    "type": 3
+  }
+}

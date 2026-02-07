@@ -1,0 +1,60 @@
+-- ~/.config/nvim/lua/andrew/plugins/ui/yazi.lua
+return {
+  "mikavilpas/yazi.nvim",
+  dependencies = {
+    "nvim-lua/plenary.nvim",
+    "nvim-tree/nvim-web-devicons",
+  },
+
+  -- Lazy-load when you press the key (this guarantees it loads)
+  keys = {
+    {
+      "<leader>e",
+      function()
+        require("yazi").yazi()
+      end,
+      desc = "Toggle file manager (Yazi)",
+    },
+    {
+      "<leader>E",
+      function()
+        require("yazi").yazi({ path = vim.fn.expand("%:p") })
+      end,
+      desc = "Open Yazi at current file",
+    },
+  },
+
+  config = function()
+    vim.opt.termguicolors = true
+
+    -- Hard fail early if the external binary isn't available
+    if vim.fn.exepath("yazi") == "" then
+      vim.notify(
+        "yazi.nvim: 'yazi' binary not found on PATH. Run :Mason and install 'yazi' or install via conda/cargo, then restart.",
+        vim.log.levels.ERROR
+      )
+      return
+    end
+
+    require("yazi").setup({
+      open_for_directories = false,
+
+      open_file_function = function(path)
+        vim.cmd("edit " .. vim.fn.fnameescape(path))
+      end,
+
+      ui = {
+        floating = {
+          border = "rounded",
+          width = 0.90,
+          height = 0.90,
+        },
+      },
+
+      cwd = function()
+        return vim.fn.getcwd()
+      end,
+    })
+  end,
+}
+

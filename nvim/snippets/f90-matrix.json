@@ -1,0 +1,12 @@
+{
+  "DOT_PRODUCT": {
+    "args": "VECTOR_A,VECTOR_B",
+    "doc": "DOT_PRODUCT(VECTOR_A,VECTOR_B) computes the dot product of two rank-1 arrays. [F90]",
+    "type": 3
+  },
+  "MATMUL": {
+    "args": "MATRIX_A,MATRIX_B",
+    "doc": "MATMUL(MATRIX_A,MATRIX_B) performs matrix multiplication of numeric or logical arrays. [F90]",
+    "type": 3
+  }
+}

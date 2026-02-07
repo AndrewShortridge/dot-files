@@ -1,0 +1,22 @@
+{
+  "ASSOCIATED": {
+    "args": "POINTER,TARGET=target",
+    "doc": "ASSOCIATED(POINTER) returns .TRUE. if pointer is associated with a target. [F90]",
+    "type": 3
+  },
+  "LOGICAL": {
+    "args": "L,KIND=kind",
+    "doc": "LOGICAL(L) converts logical value L to specified kind type parameter. [F90]",
+    "type": 3
+  },
+  "PRESENT": {
+    "args": "A",
+    "doc": "PRESENT(A) returns .TRUE. if optional dummy argument A was provided. [F90]",
+    "type": 3
+  },
+  "TRANSFER": {
+    "args": "SOURCE,MOLD,SIZE=size",
+    "doc": "TRANSFER(SOURCE,MOLD) interprets bit pattern of SOURCE as type of MOLD. [F90]",
+    "type": 3
+  }
+}

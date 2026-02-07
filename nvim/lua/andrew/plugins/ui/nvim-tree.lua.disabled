@@ -1,0 +1,40 @@
+-- ~/.config/nvim/lua/andrew/plugins/ui/nvim-tree.lua
+return {
+  "nvim-tree/nvim-tree.lua",
+  dependencies = {
+    "nvim-tree/nvim-web-devicons",
+  },
+  cmd = { "NvimTreeToggle", "NvimTreeFocus" },
+  keys = {
+    { "<leader>e", "<cmd>NvimTreeToggle<CR>", desc = "Toggle file tree" },
+  },
+  config = function()
+    -- Make sure truecolor is on
+    vim.opt.termguicolors = true
+
+    require("nvim-tree").setup({
+      hijack_netrw = true,
+      sync_root_with_cwd = true,
+      renderer = {
+        highlight_git = true,
+        highlight_opened_files = "all",
+        icons = {
+          show = {
+            file = true,
+            folder = true,
+            folder_arrow = true,
+            git = true,
+          },
+          -- You can tweak glyphs if you want, but defaults are fine
+        },
+      },
+      view = {
+        width = 30,
+      },
+      filters = {
+        dotfiles = false,
+      },
+    })
+  end,
+}
+

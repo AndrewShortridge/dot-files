@@ -1,0 +1,42 @@
+{
+  "CSHIFT": {
+    "args": "ARRAY,SHIFT,DIM=dim",
+    "doc": "CSHIFT(ARRAY,SHIFT) performs circular shift of array elements along a dimension. [F90]",
+    "type": 3
+  },
+  "EOSHIFT": {
+    "args": "ARRAY,SHIFT,BOUNDARY=boundary,DIM=dim",
+    "doc": "EOSHIFT(ARRAY,SHIFT) performs end-off shift filling vacated positions with boundary value. [F90]",
+    "type": 3
+  },
+  "MERGE": {
+    "args": "TSOURCE,FSOURCE,MASK",
+    "doc": "MERGE(TSOURCE,FSOURCE,MASK) selects between two values based on a logical mask. [F90]",
+    "type": 3
+  },
+  "PACK": {
+    "args": "ARRAY,MASK,VECTOR=vector",
+    "doc": "PACK(ARRAY,MASK) packs array elements into rank-one array under mask control. [F90]",
+    "type": 3
+  },
+  "RESHAPE": {
+    "args": "SOURCE,SHAPE,PAD=pad,ORDER=order",
+    "doc": "RESHAPE(SOURCE,SHAPE) constructs array with specified shape from source elements. [F90]",
+    "type": 3
+  },
+  "SPREAD": {
+    "args": "SOURCE,DIM,NCOPIES",
+    "doc": "SPREAD(SOURCE,DIM,NCOPIES) replicates array by adding dimension with ncopies elements. [F90]",
+    "type": 3
+  },
+  "TRANSPOSE": {
+    "args": "MATRIX",
+    "doc": "TRANSPOSE(MATRIX) transposes a rank-two array interchanging rows and columns. [F90]",
+    "type": 3
+  },
+  "UNPACK": {
+    "args": "VECTOR,MASK,FIELD",
+    "doc": "UNPACK(VECTOR,MASK,FIELD) scatters vector elements into array under mask control. [F90]",
+    "type": 3
+  }
+}

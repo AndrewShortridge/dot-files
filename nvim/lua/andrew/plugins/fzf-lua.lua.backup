@@ -1,0 +1,135 @@
+-- ~/.config/nvim/lua/andrew/plugins/fzf-lua.lua
+return {
+  "ibhagwan/fzf-lua",
+  dependencies = {
+    --- "echasnovski/mini.icons",
+    "nvim-tree/nvim-web-devicons",
+    "nvim-lua/plenary.nvim",
+    "folke/todo-comments.nvim",
+  },
+
+  -- Load plugin when these keys or the :FzfLua command are used
+  cmd = "FzfLua",
+  keys = {
+    {
+      "<leader>ff",
+      function()
+        require("fzf-lua").files()
+      end,
+      desc = "Fuzzy find files in cwd",
+    },
+    {
+      "<leader>fr",
+      function()
+        require("fzf-lua").oldfiles()
+      end,
+      desc = "Fuzzy find recent files",
+    },
+    {
+      "<leader>fs",
+      function()
+        require("fzf-lua").live_grep()
+      end,
+      desc = "Find string in cwd",
+    },
+    {
+      "<leader>fc",
+      function()
+        require("fzf-lua").grep_cword()
+      end,
+      desc = "Find string under cursor in cwd",
+    },
+    {
+      "<leader>fk",
+      function()
+        require("fzf-lua").keymaps()
+      end,
+      desc = "Find keymaps",
+    },
+    -- todo-comments provides TodoFzfLua
+    { "<leader>ft", "<cmd>TodoFzfLua<cr>", desc = "Find todos" },
+  },
+
+  config = function()
+    -- Trouble integration for fzf-lua:
+    -- Press ctrl-t inside fzf-lua to open the current results in Trouble.
+    -- See: https://github.com/folke/trouble.nvim#fzf-lua
+    local fzf_config = require("fzf-lua.config")
+    local trouble_actions = require("trouble.sources.fzf").actions
+    fzf_config.defaults.actions.files["ctrl-t"] = trouble_actions.open
+
+    local fzf = require("fzf-lua")
+    local actions = require("fzf-lua.actions")
+
+    fzf.setup({
+      -----------------------------------------------------------------------
+      -- Core find/grep commands (using conda tools)
+      -----------------------------------------------------------------------
+      files = {
+        -- from conda: fd-find (binary is usually `fd`)
+        cmd = "fd --type f --hidden --exclude .git",
+      },
+      grep = {
+        -- from conda: ripgrep (`rg`)
+        rg_opts = table.concat({
+          "--color=never",
+          "--no-heading",
+          "--with-filename",
+          "--line-number",
+          "--column",
+          "--smart-case",
+        }, " "),
+      },
+
+      -----------------------------------------------------------------------
+      -- UI tweaks (roughly similar spirit to your Telescope setup)
+      -----------------------------------------------------------------------
+      winopts = {
+        height = 0.85,
+        width = 0.80,
+        preview = {
+          layout = "flex",
+        },
+      },
+
+      -----------------------------------------------------------------------
+      -- Keymaps *inside* the fzf window
+      -- - builtin: maps in the Neovim side
+      -- - fzf: maps inside the fzf prompt itself
+      -----------------------------------------------------------------------
+      keymap = {
+        builtin = {
+          ["<C-j>"] = "down", -- move to next result
+          ["<C-k>"] = "up", -- move to prev result
+        },
+        fzf = {
+          -- ctrl-q: select all and accept (we then send to quickfix via actions)
+          ["ctrl-q"] = "select-all+accept",
+        },
+      },
+
+      -----------------------------------------------------------------------
+      -- Actions when you confirm a selection (files, buffers, etc.)
+      -----------------------------------------------------------------------
+      actions = {
+        -- For file pickers (files, oldfiles, git_files, etc.)
+        files = {
+          -- default: open in current window
+          ["default"] = actions.file_edit,
+          ["ctrl-s"] = actions.file_split,
+          ["ctrl-v"] = actions.file_vsplit,
+          ["ctrl-t"] = actions.file_tabedit,
+          -- ctrl-q: send all selected to quickfix list
+          ["ctrl-q"] = actions.file_sel_to_qf,
+        },
+        -- For buffer pickers
+        buffers = {
+          ["default"] = actions.buf_edit,
+          ["ctrl-s"] = actions.buf_split,
+          ["ctrl-v"] = actions.buf_vsplit,
+          ["ctrl-t"] = actions.buf_tabedit,
+        },
+      },
+    })
+  end,
+}

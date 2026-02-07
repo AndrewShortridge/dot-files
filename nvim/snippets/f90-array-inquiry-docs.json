@@ -1,0 +1,162 @@
+{
+  "allocated": {
+    "name": "**allocated** - [ARRAY:INQUIRY] Determine if an allocatable array is allocated",
+    "synopsis": {
+      "usage": "```fortran\nresult = allocated(array)\nresult = allocated(scalar)\n```",
+      "interface": "```fortran\nlogical function allocated(array)\n\n  type(*), allocatable, intent(in) :: array(..)\n  ! or\n  type(*), allocatable, intent(in) :: scalar\n```"
+    },
+    "characteristics": [
+      "**array** must be an allocatable array of any type.",
+      "**scalar** must be an allocatable scalar of any type (Fortran 2003).",
+      "The result is a default logical scalar.",
+      "The argument must have the ALLOCATABLE attribute.",
+      "This is an inquiry function; the argument need not be defined."
+    ],
+    "description": "**allocated** checks whether an allocatable entity (array or scalar) has been allocated memory via the ALLOCATE statement. It returns `.TRUE.` if the entity is currently allocated, and `.FALSE.` otherwise. This function is essential for defensive programming when working with allocatable variables, allowing you to check allocation status before attempting to use or deallocate the variable. The function does not require the argument to be defined - only that it have the ALLOCATABLE attribute.",
+    "options": {
+      "array": "An allocatable array of any type and rank. The array must have the ALLOCATABLE attribute in its declaration. The function checks whether this array currently has storage associated with it.",
+      "scalar": "An allocatable scalar of any type (Fortran 2003 and later). The scalar must have the ALLOCATABLE attribute. This extension allows checking allocation status of scalar allocatable variables."
+    },
+    "result": "Returns a default logical value: `.TRUE.` if the argument is currently allocated (has storage associated with it), `.FALSE.` if the argument is not allocated. The result is always a scalar of default logical kind.",
+    "examples": {
+      "code": "program demo_allocated\n  implicit none\n  real, allocatable :: x(:)\n  real, allocatable :: matrix(:,:)\n  integer :: i, n\n\n  ! Check before first allocation\n  print '(A,L1)', 'x allocated initially: ', allocated(x)\n\n  ! Safe allocation pattern\n  if (.not. allocated(x)) then\n    allocate(x(10))\n    print '(A)', 'Allocated x(10)'\n  end if\n\n  print '(A,L1)', 'x allocated after allocate: ', allocated(x)\n\n  ! Initialize the array\n  x = [(real(i), i = 1, 10)]\n  print '(A,10F5.1)', 'x = ', x\n\n  ! Safe deallocation pattern\n  if (allocated(x)) then\n    deallocate(x)\n    print '(A)', 'Deallocated x'\n  end if\n\n  print '(A,L1)', 'x allocated after deallocate: ', allocated(x)\n\n  ! Demonstrate with 2D array\n  n = 3\n  if (.not. allocated(matrix)) then\n    allocate(matrix(n, n))\n  end if\n  print '(A,L1)', 'matrix allocated: ', allocated(matrix)\n  print '(A,I0,A,I0)', 'matrix shape: ', size(matrix,1), ' x ', size(matrix,2)\n\n  if (allocated(matrix)) deallocate(matrix)\n\nend program demo_allocated",
+      "results": "```text\nx allocated initially: F\nAllocated x(10)\nx allocated after allocate: T\nx = 1.0  2.0  3.0  4.0  5.0  6.0  7.0  8.0  9.0 10.0\nDeallocated x\nx allocated after deallocate: F\nmatrix allocated: T\nmatrix shape: 3 x 3\n```"
+    },
+    "standard": "Fortran 90 (arrays); Fortran 2003 (scalars)",
+    "see_also": [
+      "[**allocate**](#allocate) - Allocate storage for allocatable variables",
+      "[**deallocate**](#deallocate) - Free storage for allocatable variables",
+      "[**associated**](#associated) - Check pointer association status",
+      "[**move_alloc**](#move_alloc) - Move allocation between variables"
+    ]
+  },
+  "lbound": {
+    "name": "**lbound** - [ARRAY:INQUIRY] Return lower dimension bounds of an array",
+    "synopsis": {
+      "usage": "```fortran\nresult = lbound(array)\nresult = lbound(array, dim)\nresult = lbound(array, dim, kind)\n```",
+      "interface": "```fortran\ninteger(kind=KIND) function lbound(array, dim, kind)\n\n  type(*), intent(in) :: array(..)\n  integer, intent(in), optional :: dim\n  integer, intent(in), optional :: kind\n```"
+    },
+    "characteristics": [
+      "**array** shall be an array of any type. It cannot be an unallocated allocatable or disassociated pointer.",
+      "**dim** is an optional scalar integer with value in range 1 to n, where n is the rank of **array**.",
+      "**kind** is an optional scalar integer constant expression (Fortran 2003).",
+      "If **dim** is absent, the result is a rank-one array of size equal to the rank of **array**.",
+      "If **dim** is present, the result is a scalar.",
+      "The result kind is **kind** if present, otherwise default integer kind."
+    ],
+    "description": "**lbound** returns the lower bounds of an array, or a single lower bound along a specified dimension. For a whole array or array structure component, the lower bound is as declared. However, for an array expression (such as an array section or function result), the lower bound is always 1. This is important when working with array sections where the bounds may differ from the parent array. For an array with zero extent along the relevant dimension, the lower bound is taken to be 1.",
+    "options": {
+      "array": "The array whose lower bounds are to be determined. Must be an array of any type. If it is an allocatable array, it must be allocated. If it is a pointer array, it must be associated. Cannot be an assumed-size array unless **dim** is present with a value less than the rank of the array.",
+      "dim": "A scalar integer specifying which dimension's lower bound to return. Must be in the range 1 to n where n is the rank of **array**. If absent, an array of all lower bounds is returned.",
+      "kind": "A scalar integer constant expression specifying the kind of the result. If absent, the result is of default integer kind. Available in Fortran 2003 and later."
+    },
+    "result": "If **dim** is absent, the result is a rank-one integer array with size equal to the rank of **array**. Element i of the result contains the lower bound of dimension i. If **dim** is present, the result is a scalar integer representing the lower bound along that dimension. For array expressions (not whole arrays), the lower bound is always 1.",
+    "examples": {
+      "code": "program demo_lbound\n  implicit none\n  integer :: a(5:10)\n  integer :: b(-3:3, 0:5)\n  integer :: c(2:4, -1:1, 0:2)\n  integer, allocatable :: d(:,:)\n\n  ! 1D array with explicit lower bound\n  print '(A)', '1D array a(5:10):'\n  print '(A,I0)', '  lbound(a) = ', lbound(a, 1)\n  print '(A,I0)', '  size(a)   = ', size(a)\n\n  ! 2D array with explicit bounds\n  print '(A)', '2D array b(-3:3, 0:5):'\n  print '(A,2I4)', '  lbound(b)    = ', lbound(b)\n  print '(A,I0)',  '  lbound(b, 1) = ', lbound(b, 1)\n  print '(A,I0)',  '  lbound(b, 2) = ', lbound(b, 2)\n\n  ! 3D array\n  print '(A)', '3D array c(2:4, -1:1, 0:2):'\n  print '(A,3I4)', '  lbound(c) = ', lbound(c)\n\n  ! Allocatable array - bounds set at allocation\n  allocate(d(0:4, -2:2))\n  print '(A)', 'Allocatable d(0:4, -2:2):'\n  print '(A,2I4)', '  lbound(d) = ', lbound(d)\n\n  ! IMPORTANT: Array sections always have lbound = 1\n  print '(A)', 'Array section a(6:8):'\n  print '(A,I0)', '  lbound(a(6:8), 1) = ', lbound(a(6:8), 1)\n\n  ! Array expression - always lbound = 1\n  print '(A)', 'Array expression b(:,1:3):'\n  print '(A,2I4)', '  lbound(b(:,1:3)) = ', lbound(b(:,1:3))\n\n  deallocate(d)\n\nend program demo_lbound",
+      "results": "```text\n1D array a(5:10):\n  lbound(a) = 5\n  size(a)   = 6\n2D array b(-3:3, 0:5):\n  lbound(b)    =   -3   0\n  lbound(b, 1) = -3\n  lbound(b, 2) = 0\n3D array c(2:4, -1:1, 0:2):\n  lbound(c) =    2  -1   0\nAllocatable d(0:4, -2:2):\n  lbound(d) =    0  -2\nArray section a(6:8):\n  lbound(a(6:8), 1) = 1\nArray expression b(:,1:3):\n  lbound(b(:,1:3)) =    1   1\n```"
+    },
+    "standard": "Fortran 90; KIND argument Fortran 2003",
+    "see_also": [
+      "[**ubound**](#ubound) - Return upper dimension bounds of an array",
+      "[**shape**](#shape) - Return the shape of an array",
+      "[**size**](#size) - Return the total number of elements or extent"
+    ]
+  },
+  "ubound": {
+    "name": "**ubound** - [ARRAY:INQUIRY] Return upper dimension bounds of an array",
+    "synopsis": {
+      "usage": "```fortran\nresult = ubound(array)\nresult = ubound(array, dim)\nresult = ubound(array, dim, kind)\n```",
+      "interface": "```fortran\ninteger(kind=KIND) function ubound(array, dim, kind)\n\n  type(*), intent(in) :: array(..)\n  integer, intent(in), optional :: dim\n  integer, intent(in), optional :: kind\n```"
+    },
+    "characteristics": [
+      "**array** shall be an array of any type. It cannot be an unallocated allocatable or disassociated pointer.",
+      "**dim** is an optional scalar integer with value in range 1 to n, where n is the rank of **array**.",
+      "**kind** is an optional scalar integer constant expression (Fortran 2003).",
+      "If **dim** is absent, the result is a rank-one array of size equal to the rank of **array**.",
+      "If **dim** is present, the result is a scalar.",
+      "The result kind is **kind** if present, otherwise default integer kind."
+    ],
+    "description": "**ubound** returns the upper bounds of an array, or a single upper bound along a specified dimension. For a whole array or array structure component, the upper bound is as declared. For an array expression (such as an array section or function result), the upper bound equals the number of elements along that dimension (since lower bound is 1 for expressions). For an array with zero extent along the relevant dimension, the upper bound is taken to be zero (one less than the lower bound of 1).",
+    "options": {
+      "array": "The array whose upper bounds are to be determined. Must be an array of any type. If it is an allocatable array, it must be allocated. If it is a pointer array, it must be associated. Cannot be an assumed-size array unless **dim** is present with a value less than the rank of the array.",
+      "dim": "A scalar integer specifying which dimension's upper bound to return. Must be in the range 1 to n where n is the rank of **array**. If absent, an array of all upper bounds is returned.",
+      "kind": "A scalar integer constant expression specifying the kind of the result. If absent, the result is of default integer kind. Available in Fortran 2003 and later."
+    },
+    "result": "If **dim** is absent, the result is a rank-one integer array with size equal to the rank of **array**. Element i of the result contains the upper bound of dimension i. If **dim** is present, the result is a scalar integer representing the upper bound along that dimension. For array expressions, the upper bound equals the extent (number of elements) along that dimension.",
+    "examples": {
+      "code": "program demo_ubound\n  implicit none\n  integer :: a(5:10)\n  integer :: b(-3:3, 0:5)\n  integer :: c(2:4, -1:1, 0:2)\n  integer, allocatable :: d(:,:)\n\n  ! 1D array with explicit bounds\n  print '(A)', '1D array a(5:10):'\n  print '(A,I0)', '  ubound(a) = ', ubound(a, 1)\n  print '(A,I0)', '  size(a)   = ', size(a)\n\n  ! 2D array with explicit bounds\n  print '(A)', '2D array b(-3:3, 0:5):'\n  print '(A,2I4)', '  ubound(b)    = ', ubound(b)\n  print '(A,I0)',  '  ubound(b, 1) = ', ubound(b, 1)\n  print '(A,I0)',  '  ubound(b, 2) = ', ubound(b, 2)\n\n  ! 3D array\n  print '(A)', '3D array c(2:4, -1:1, 0:2):'\n  print '(A,3I4)', '  ubound(c) = ', ubound(c)\n\n  ! Allocatable array\n  allocate(d(0:4, -2:2))\n  print '(A)', 'Allocatable d(0:4, -2:2):'\n  print '(A,2I4)', '  ubound(d) = ', ubound(d)\n\n  ! Array section - ubound = size of section (since lbound = 1)\n  print '(A)', 'Array section a(6:8):'\n  print '(A,I0)', '  ubound(a(6:8), 1) = ', ubound(a(6:8), 1)\n  print '(A,I0)', '  size(a(6:8))      = ', size(a(6:8))\n\n  ! Demonstrate lbound/ubound relationship\n  print '(A)', 'Relationship for b:'\n  print '(A,I0)', '  ubound(b,1) - lbound(b,1) + 1 = ', &\n                   ubound(b,1) - lbound(b,1) + 1\n  print '(A,I0)', '  size(b,1) = ', size(b, 1)\n\n  deallocate(d)\n\nend program demo_ubound",
+      "results": "```text\n1D array a(5:10):\n  ubound(a) = 10\n  size(a)   = 6\n2D array b(-3:3, 0:5):\n  ubound(b)    =    3   5\n  ubound(b, 1) = 3\n  ubound(b, 2) = 5\n3D array c(2:4, -1:1, 0:2):\n  ubound(c) =    4   1   2\nAllocatable d(0:4, -2:2):\n  ubound(d) =    4   2\nArray section a(6:8):\n  ubound(a(6:8), 1) = 3\n  size(a(6:8))      = 3\nRelationship for b:\n  ubound(b,1) - lbound(b,1) + 1 = 7\n  size(b,1) = 7\n```"
+    },
+    "standard": "Fortran 90; KIND argument Fortran 2003",
+    "see_also": [
+      "[**lbound**](#lbound) - Return lower dimension bounds of an array",
+      "[**shape**](#shape) - Return the shape of an array",
+      "[**size**](#size) - Return the total number of elements or extent"
+    ]
+  },
+  "shape": {
+    "name": "**shape** - [ARRAY:INQUIRY] Return the shape of an array or scalar",
+    "synopsis": {
+      "usage": "```fortran\nresult = shape(source)\nresult = shape(source, kind)\n```",
+      "interface": "```fortran\ninteger(kind=KIND) function shape(source, kind)\n\n  type(*), intent(in) :: source(..)\n  integer, intent(in), optional :: kind\n```"
+    },
+    "characteristics": [
+      "**source** shall be an array or scalar of any type.",
+      "If **source** is a pointer, it must be associated.",
+      "If **source** is allocatable, it must be allocated.",
+      "**kind** is an optional scalar integer constant expression (Fortran 2003).",
+      "The result is a rank-one integer array of size equal to the rank of **source**.",
+      "For a scalar **source**, the result is a zero-size array."
+    ],
+    "description": "**shape** returns the shape of an array (or scalar) as a rank-one integer array. The shape is the vector of extents (number of elements) along each dimension. For an array of rank n, the result is an integer array of size n where each element gives the extent along the corresponding dimension. For a scalar, the result is a zero-size array (since scalars have rank 0). The shape is independent of the actual bounds - only the extents matter.",
+    "options": {
+      "source": "The array or scalar whose shape is to be determined. Can be of any type. If it is an allocatable array, it must be allocated. If it is a pointer, it must be associated. Cannot be an assumed-size array.",
+      "kind": "A scalar integer constant expression specifying the kind of the result. If absent, the result is of default integer kind. Available in Fortran 2003 and later."
+    },
+    "result": "A rank-one integer array with size equal to the rank of **source**. Each element contains the extent (number of elements) along the corresponding dimension of **source**. For a scalar, returns a zero-size array. The result is independent of the declared bounds - an array dimensioned as `(-1:1, 0:3)` has the same shape as one dimensioned as `(1:3, 1:4)`, namely `(/ 3, 4 /)`.",
+    "examples": {
+      "code": "program demo_shape\n  implicit none\n  integer :: a(2, 3)\n  integer :: b(-1:1, -1:2)\n  real :: c(2, 3, 4)\n  integer :: scalar\n  integer, allocatable :: d(:,:,:)\n\n  ! Basic 2D array\n  print '(A)', '2D array a(2,3):'\n  print '(A,2I4)', '  shape(a) = ', shape(a)\n\n  ! Array with non-default bounds - same shape!\n  print '(A)', '2D array b(-1:1, -1:2):'\n  print '(A,2I4)', '  shape(b) = ', shape(b)\n  print '(A)', '  Note: b has 3x4 = 12 elements, same as a has 2x3 = 6?'\n  print '(A)', '  Actually b has 3x4 = 12 elements'\n\n  ! 3D array\n  print '(A)', '3D array c(2,3,4):'\n  print '(A,3I4)', '  shape(c) = ', shape(c)\n  print '(A,I0)', '  rank = size(shape(c)) = ', size(shape(c))\n\n  ! Scalar - returns zero-size array\n  print '(A)', 'Scalar:'\n  print '(A,I0)', '  size(shape(scalar)) = ', size(shape(scalar))\n\n  ! Allocatable array\n  allocate(d(2, 3, 4))\n  print '(A)', 'Allocatable d(2,3,4):'\n  print '(A,3I4)', '  shape(d) = ', shape(d)\n\n  ! Using shape for array construction\n  print '(A)', 'Using shape with reshape:'\n  a = reshape([1,2,3,4,5,6], shape(a))\n  print '(A)', '  a = reshape([1,2,3,4,5,6], shape(a))'\n  print '(A,6I4)', '  a = ', a\n\n  ! Relationship: product(shape) = size\n  print '(A)', 'Relationship: product(shape(c)) = size(c)'\n  print '(A,I0,A,I0)', '  ', product(shape(c)), ' = ', size(c)\n\n  deallocate(d)\n\nend program demo_shape",
+      "results": "```text\n2D array a(2,3):\n  shape(a) =    2   3\n2D array b(-1:1, -1:2):\n  shape(b) =    3   4\n  Note: b has 3x4 = 12 elements, same as a has 2x3 = 6?\n  Actually b has 3x4 = 12 elements\n3D array c(2,3,4):\n  shape(c) =    2   3   4\n  rank = size(shape(c)) = 3\nScalar:\n  size(shape(scalar)) = 0\nAllocatable d(2,3,4):\n  shape(d) =    2   3   4\nUsing shape with reshape:\n  a = reshape([1,2,3,4,5,6], shape(a))\n  a =    1   2   3   4   5   6\nRelationship: product(shape(c)) = size(c)\n  24 = 24\n```"
+    },
+    "standard": "Fortran 90; KIND argument Fortran 2003",
+    "see_also": [
+      "[**size**](#size) - Return the total number of elements or extent",
+      "[**lbound**](#lbound) - Return lower dimension bounds",
+      "[**ubound**](#ubound) - Return upper dimension bounds",
+      "[**reshape**](#reshape) - Reshape an array"
+    ]
+  },
+  "size": {
+    "name": "**size** - [ARRAY:INQUIRY] Return the total number of elements or extent of an array",
+    "synopsis": {
+      "usage": "```fortran\nresult = size(array)\nresult = size(array, dim)\nresult = size(array, dim, kind)\n```",
+      "interface": "```fortran\ninteger(kind=KIND) function size(array, dim, kind)\n\n  type(*), intent(in) :: array(..)\n  integer, intent(in), optional :: dim\n  integer, intent(in), optional :: kind\n```"
+    },
+    "characteristics": [
+      "**array** shall be an array of any type. It cannot be an unallocated allocatable or disassociated pointer.",
+      "**dim** is an optional scalar integer with value in range 1 to n, where n is the rank of **array**.",
+      "**kind** is an optional scalar integer constant expression (Fortran 2003).",
+      "If **dim** is absent, the result is a scalar equal to the total number of elements.",
+      "If **dim** is present, the result is a scalar equal to the extent along that dimension.",
+      "The result kind is **kind** if present, otherwise default integer kind."
+    ],
+    "description": "**size** returns the total number of elements in an array, or the extent (number of elements) along a specified dimension. When called without the **dim** argument, it returns the product of all extents. When **dim** is specified, it returns only the extent along that dimension. This function is fundamental for array processing, particularly when writing procedures that need to know the size of array arguments. Note that for assumed-size arrays (declared with `*` as the last dimension), **size** cannot determine the extent of the last dimension unless **dim** is specified with a value less than the array rank.",
+    "options": {
+      "array": "The array whose size or extent is to be determined. Must be an array of any type. If it is an allocatable array, it must be allocated. If it is a pointer, it must be associated. For assumed-size arrays, **dim** must be present with a value less than the rank.",
+      "dim": "A scalar integer specifying which dimension's extent to return. Must be in the range 1 to n where n is the rank of **array**. If absent, the total number of elements is returned.",
+      "kind": "A scalar integer constant expression specifying the kind of the result. If absent, the result is of default integer kind. Available in Fortran 2003 and later. Useful when array sizes may exceed the range of default integers."
+    },
+    "result": "If **dim** is absent, returns a scalar integer equal to the total number of elements in **array** (equivalent to `product(shape(array))`). If **dim** is present, returns a scalar integer equal to the extent (number of elements) along dimension **dim** (equivalent to `shape(array)(dim)`).",
+    "examples": {
+      "code": "program demo_size\n  implicit none\n  integer :: a(5)\n  integer :: b(3, 4)\n  integer :: c(2, 3, 4)\n  integer, allocatable :: d(:,:)\n  real :: matrix(10, 20, 30)\n\n  ! 1D array\n  print '(A)', '1D array a(5):'\n  print '(A,I0)', '  size(a) = ', size(a)\n\n  ! 2D array\n  print '(A)', '2D array b(3,4):'\n  print '(A,I0)', '  size(b)    = ', size(b)\n  print '(A,I0)', '  size(b, 1) = ', size(b, 1)\n  print '(A,I0)', '  size(b, 2) = ', size(b, 2)\n\n  ! 3D array\n  print '(A)', '3D array c(2,3,4):'\n  print '(A,I0)', '  size(c)    = ', size(c)\n  print '(A,I0)', '  size(c, 1) = ', size(c, 1)\n  print '(A,I0)', '  size(c, 2) = ', size(c, 2)\n  print '(A,I0)', '  size(c, 3) = ', size(c, 3)\n\n  ! Allocatable array\n  allocate(d(4, 5))\n  print '(A)', 'Allocatable d(4,5):'\n  print '(A,I0)', '  size(d) = ', size(d)\n\n  ! Large array - total elements\n  print '(A)', 'Large array matrix(10,20,30):'\n  print '(A,I0)', '  size(matrix) = ', size(matrix)\n  print '(A,I0,A,I0,A,I0)', '  10 * 20 * 30 = ', 10, ' * ', 20*30, ' = ', 10*20*30\n\n  ! Common use: loop bounds\n  print '(A)', 'Using size for loop bounds:'\n  call fill_array(b)\n\n  ! Relationship with shape\n  print '(A)', 'Relationships:'\n  print '(A,L1)', '  size(c) == product(shape(c)): ', size(c) == product(shape(c))\n  print '(A,L1)', '  size(c,1) == shape(c)(1): ', size(c,1) == shape(c)(1)\n\n  deallocate(d)\n\ncontains\n\n  subroutine fill_array(arr)\n    integer, intent(inout) :: arr(:,:)\n    integer :: i, j\n    do j = 1, size(arr, 2)\n      do i = 1, size(arr, 1)\n        arr(i, j) = i + (j - 1) * size(arr, 1)\n      end do\n    end do\n    print '(A,I0,A,I0,A)', '  Filled array of size ', &\n          size(arr,1), ' x ', size(arr,2), ' using size()'\n  end subroutine\n\nend program demo_size",
+      "results": "```text\n1D array a(5):\n  size(a) = 5\n2D array b(3,4):\n  size(b)    = 12\n  size(b, 1) = 3\n  size(b, 2) = 4\n3D array c(2,3,4):\n  size(c)    = 24\n  size(c, 1) = 2\n  size(c, 2) = 3\n  size(c, 3) = 4\nAllocatable d(4,5):\n  size(d) = 20\nLarge array matrix(10,20,30):\n  size(matrix) = 6000\n  10 * 20 * 30 = 10 * 600 = 6000\nUsing size for loop bounds:\n  Filled array of size 3 x 4 using size()\nRelationships:\n  size(c) == product(shape(c)): T\n  size(c,1) == shape(c)(1): T\n```"
+    },
+    "standard": "Fortran 90; KIND argument Fortran 2003",
+    "see_also": [
+      "[**shape**](#shape) - Return the shape of an array",
+      "[**lbound**](#lbound) - Return lower dimension bounds",
+      "[**ubound**](#ubound) - Return upper dimension bounds",
+      "[**allocated**](#allocated) - Check if allocatable is allocated"
+    ]
+  }
+}

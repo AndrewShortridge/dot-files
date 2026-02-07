@@ -1,0 +1,37 @@
+{
+  "ALL": {
+    "args": "MASK,DIM=dim",
+    "doc": "ALL(MASK) returns .TRUE. if all elements of MASK are true; also true for zero-size arrays. [F90]",
+    "type": 3
+  },
+  "ANY": {
+    "args": "MASK,DIM=dim",
+    "doc": "ANY(MASK) returns .TRUE. if any element of MASK is true; returns .FALSE. for zero-size arrays. [F90]",
+    "type": 3
+  },
+  "COUNT": {
+    "args": "MASK,DIM=dim,KIND=kind",
+    "doc": "COUNT(MASK) returns the number of .TRUE. elements in logical array MASK. [F90]",
+    "type": 3
+  },
+  "MAXVAL": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "MAXVAL(ARRAY) returns maximum value of array elements; returns -HUGE(ARRAY) for empty sets. [F90]",
+    "type": 3
+  },
+  "MINVAL": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "MINVAL(ARRAY) returns minimum value of array elements; returns HUGE(ARRAY) for empty sets. [F90]",
+    "type": 3
+  },
+  "PRODUCT": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "PRODUCT(ARRAY) returns product of all array elements; returns 1 for zero-size arrays. [F90]",
+    "type": 3
+  },
+  "SUM": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "SUM(ARRAY) returns sum of all array elements; returns 0 for zero-size arrays. [F90]",
+    "type": 3
+  }
+}

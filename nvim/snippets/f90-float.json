@@ -1,0 +1,37 @@
+{
+  "EXPONENT": {
+    "args": "X",
+    "doc": "EXPONENT(X) returns the exponent part of a floating-point number X. [F90]",
+    "type": 3
+  },
+  "FRACTION": {
+    "args": "X",
+    "doc": "FRACTION(X) returns the fractional part of the model representation of X. [F90]",
+    "type": 3
+  },
+  "NEAREST": {
+    "args": "X,S",
+    "doc": "NEAREST(X,S) returns the nearest representable number to X in the direction of sign S. [F90]",
+    "type": 3
+  },
+  "RRSPACING": {
+    "args": "X",
+    "doc": "RRSPACING(X) returns the reciprocal of the relative spacing of model numbers near X. [F90]",
+    "type": 3
+  },
+  "SCALE": {
+    "args": "X,I",
+    "doc": "SCALE(X,I) returns X * RADIX(X)**I, scaling by a power of the radix. [F90]",
+    "type": 3
+  },
+  "SET_EXPONENT": {
+    "args": "X,I",
+    "doc": "SET_EXPONENT(X,I) returns a number with FRACTION(X) and exponent I. [F90]",
+    "type": 3
+  },
+  "SPACING": {
+    "args": "X",
+    "doc": "SPACING(X) returns the absolute spacing of model numbers near X. [F90]",
+    "type": 3
+  }
+}

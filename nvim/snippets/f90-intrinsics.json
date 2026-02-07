@@ -1,0 +1,362 @@
+{
+  "ALLOCATED": {
+    "args": "ARRAY",
+    "doc": "ALLOCATED(ARRAY) returns .TRUE. if the allocatable array is currently allocated. [F90]",
+    "type": 3
+  },
+  "LBOUND": {
+    "args": "ARRAY,DIM=dim,KIND=kind",
+    "doc": "LBOUND(ARRAY,DIM,KIND) returns lower bound(s) of an array or a specified dimension. [F90]",
+    "type": 3
+  },
+  "UBOUND": {
+    "args": "ARRAY,DIM=dim,KIND=kind",
+    "doc": "UBOUND(ARRAY,DIM,KIND) returns upper bound(s) of an array or a specified dimension. [F90]",
+    "type": 3
+  },
+  "SHAPE": {
+    "args": "SOURCE,KIND=kind",
+    "doc": "SHAPE(SOURCE,KIND) returns the shape of an array as a rank-one integer array. [F90]",
+    "type": 3
+  },
+  "SIZE": {
+    "args": "ARRAY,DIM=dim,KIND=kind",
+    "doc": "SIZE(ARRAY,DIM,KIND) returns total elements or extent along a specified dimension. [F90]",
+    "type": 3
+  },
+  "MAXLOC": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "MAXLOC(ARRAY) returns indices of maximum value in array. [F90]",
+    "type": 3
+  },
+  "MINLOC": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "MINLOC(ARRAY) returns indices of minimum value in array. [F90]",
+    "type": 3
+  },
+  "CSHIFT": {
+    "args": "ARRAY,SHIFT,DIM=dim",
+    "doc": "CSHIFT(ARRAY,SHIFT) performs circular shift of array elements along a dimension. [F90]",
+    "type": 3
+  },
+  "EOSHIFT": {
+    "args": "ARRAY,SHIFT,BOUNDARY=boundary,DIM=dim",
+    "doc": "EOSHIFT(ARRAY,SHIFT) performs end-off shift filling vacated positions with boundary value. [F90]",
+    "type": 3
+  },
+  "MERGE": {
+    "args": "TSOURCE,FSOURCE,MASK",
+    "doc": "MERGE(TSOURCE,FSOURCE,MASK) selects between two values based on a logical mask. [F90]",
+    "type": 3
+  },
+  "PACK": {
+    "args": "ARRAY,MASK,VECTOR=vector",
+    "doc": "PACK(ARRAY,MASK) packs array elements into rank-one array under mask control. [F90]",
+    "type": 3
+  },
+  "RESHAPE": {
+    "args": "SOURCE,SHAPE,PAD=pad,ORDER=order",
+    "doc": "RESHAPE(SOURCE,SHAPE) constructs array with specified shape from source elements. [F90]",
+    "type": 3
+  },
+  "SPREAD": {
+    "args": "SOURCE,DIM,NCOPIES",
+    "doc": "SPREAD(SOURCE,DIM,NCOPIES) replicates array by adding dimension with ncopies elements. [F90]",
+    "type": 3
+  },
+  "TRANSPOSE": {
+    "args": "MATRIX",
+    "doc": "TRANSPOSE(MATRIX) transposes a rank-two array interchanging rows and columns. [F90]",
+    "type": 3
+  },
+  "UNPACK": {
+    "args": "VECTOR,MASK,FIELD",
+    "doc": "UNPACK(VECTOR,MASK,FIELD) scatters vector elements into array under mask control. [F90]",
+    "type": 3
+  },
+  "ALL": {
+    "args": "MASK,DIM=dim",
+    "doc": "ALL(MASK) returns .TRUE. if all elements of MASK are true; also true for zero-size arrays. [F90]",
+    "type": 3
+  },
+  "ANY": {
+    "args": "MASK,DIM=dim",
+    "doc": "ANY(MASK) returns .TRUE. if any element of MASK is true; returns .FALSE. for zero-size arrays. [F90]",
+    "type": 3
+  },
+  "COUNT": {
+    "args": "MASK,DIM=dim,KIND=kind",
+    "doc": "COUNT(MASK) returns the number of .TRUE. elements in logical array MASK. [F90]",
+    "type": 3
+  },
+  "MAXVAL": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "MAXVAL(ARRAY) returns maximum value of array elements; returns -HUGE(ARRAY) for empty sets. [F90]",
+    "type": 3
+  },
+  "MINVAL": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "MINVAL(ARRAY) returns minimum value of array elements; returns HUGE(ARRAY) for empty sets. [F90]",
+    "type": 3
+  },
+  "PRODUCT": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "PRODUCT(ARRAY) returns product of all array elements; returns 1 for zero-size arrays. [F90]",
+    "type": 3
+  },
+  "SUM": {
+    "args": "ARRAY,DIM=dim,MASK=mask",
+    "doc": "SUM(ARRAY) returns sum of all array elements; returns 0 for zero-size arrays. [F90]",
+    "type": 3
+  },
+  "BIT_SIZE": {
+    "args": "I",
+    "doc": "BIT_SIZE(I) returns the number of bits in the integer model for I. [F90]",
+    "type": 3
+  },
+  "BTEST": {
+    "args": "I,POS",
+    "doc": "BTEST(I,POS) returns .TRUE. if bit POS of integer I is set to 1. [F90]",
+    "type": 3
+  },
+  "IAND": {
+    "args": "I,J",
+    "doc": "IAND(I,J) returns the bitwise logical AND of integers I and J. [F90]",
+    "type": 3
+  },
+  "IOR": {
+    "args": "I,J",
+    "doc": "IOR(I,J) returns the bitwise logical inclusive OR of integers I and J. [F90]",
+    "type": 3
+  },
+  "IEOR": {
+    "args": "I,J",
+    "doc": "IEOR(I,J) returns the bitwise logical exclusive OR of integers I and J. [F90]",
+    "type": 3
+  },
+  "IBCLR": {
+    "args": "I,POS",
+    "doc": "IBCLR(I,POS) returns I with the bit at position POS set to zero. [F90]",
+    "type": 3
+  },
+  "IBSET": {
+    "args": "I,POS",
+    "doc": "IBSET(I,POS) returns I with the bit at position POS set to one. [F90]",
+    "type": 3
+  },
+  "IBITS": {
+    "args": "I,POS,LEN",
+    "doc": "IBITS(I,POS,LEN) extracts LEN bits from I starting at bit position POS. [F90]",
+    "type": 3
+  },
+  "ISHFT": {
+    "args": "I,SHIFT",
+    "doc": "ISHFT(I,SHIFT) returns I with bits shifted SHIFT places (left if positive). [F90]",
+    "type": 3
+  },
+  "ISHFTC": {
+    "args": "I,SHIFT,SIZE=size",
+    "doc": "ISHFTC(I,SHIFT,SIZE) performs circular shift of rightmost SIZE bits of I. [F90]",
+    "type": 3
+  },
+  "NOT": {
+    "args": "I",
+    "doc": "NOT(I) returns the bitwise logical complement of integer I. [F90]",
+    "type": 3
+  },
+  "ACHAR": {
+    "args": "I,KIND=kind",
+    "doc": "ACHAR(I) returns the character at position I in the ASCII collating sequence. [F90]",
+    "type": 3
+  },
+  "ADJUSTL": {
+    "args": "STRING",
+    "doc": "ADJUSTL(STRING) left-justifies a string by removing leading blanks. [F90]",
+    "type": 3
+  },
+  "ADJUSTR": {
+    "args": "STRING",
+    "doc": "ADJUSTR(STRING) right-justifies a string by removing trailing blanks. [F90]",
+    "type": 3
+  },
+  "IACHAR": {
+    "args": "C,KIND=kind",
+    "doc": "IACHAR(C) returns the position of character C in the ASCII collating sequence. [F90]",
+    "type": 3
+  },
+  "LEN_TRIM": {
+    "args": "STRING,KIND=kind",
+    "doc": "LEN_TRIM(STRING) returns the length of a string without trailing blanks. [F90]",
+    "type": 3
+  },
+  "REPEAT": {
+    "args": "STRING,NCOPIES",
+    "doc": "REPEAT(STRING,NCOPIES) concatenates NCOPIES copies of STRING. [F90]",
+    "type": 3
+  },
+  "SCAN": {
+    "args": "STRING,SET,BACK=back,KIND=kind",
+    "doc": "SCAN(STRING,SET) returns position of first character in STRING that is in SET. [F90]",
+    "type": 3
+  },
+  "TRIM": {
+    "args": "STRING",
+    "doc": "TRIM(STRING) removes trailing blank characters from a string. [F90]",
+    "type": 3
+  },
+  "VERIFY": {
+    "args": "STRING,SET,BACK=back,KIND=kind",
+    "doc": "VERIFY(STRING,SET) returns position of first character in STRING not in SET. [F90]",
+    "type": 3
+  },
+  "EXPONENT": {
+    "args": "X",
+    "doc": "EXPONENT(X) returns the exponent part of a floating-point number X. [F90]",
+    "type": 3
+  },
+  "FRACTION": {
+    "args": "X",
+    "doc": "FRACTION(X) returns the fractional part of the model representation of X. [F90]",
+    "type": 3
+  },
+  "NEAREST": {
+    "args": "X,S",
+    "doc": "NEAREST(X,S) returns the nearest representable number to X in the direction of sign S. [F90]",
+    "type": 3
+  },
+  "RRSPACING": {
+    "args": "X",
+    "doc": "RRSPACING(X) returns the reciprocal of the relative spacing of model numbers near X. [F90]",
+    "type": 3
+  },
+  "SCALE": {
+    "args": "X,I",
+    "doc": "SCALE(X,I) returns X * RADIX(X)**I, scaling by a power of the radix. [F90]",
+    "type": 3
+  },
+  "SET_EXPONENT": {
+    "args": "X,I",
+    "doc": "SET_EXPONENT(X,I) returns a number with FRACTION(X) and exponent I. [F90]",
+    "type": 3
+  },
+  "SPACING": {
+    "args": "X",
+    "doc": "SPACING(X) returns the absolute spacing of model numbers near X. [F90]",
+    "type": 3
+  },
+  "KIND": {
+    "args": "X",
+    "doc": "KIND(X) returns the kind type parameter value of X. [F90]",
+    "type": 3
+  },
+  "SELECTED_INT_KIND": {
+    "args": "R",
+    "doc": "SELECTED_INT_KIND(R) returns kind for integers in range (-10^R,10^R). [F90]",
+    "type": 3
+  },
+  "SELECTED_REAL_KIND": {
+    "args": "P=p,R=r",
+    "doc": "SELECTED_REAL_KIND(P,R) returns kind for reals with precision P and range R. [F90]",
+    "type": 3
+  },
+  "DOT_PRODUCT": {
+    "args": "VECTOR_A,VECTOR_B",
+    "doc": "DOT_PRODUCT(VECTOR_A,VECTOR_B) computes the dot product of two rank-1 arrays. [F90]",
+    "type": 3
+  },
+  "MATMUL": {
+    "args": "MATRIX_A,MATRIX_B",
+    "doc": "MATMUL(MATRIX_A,MATRIX_B) performs matrix multiplication of numeric or logical arrays. [F90]",
+    "type": 3
+  },
+  "DIGITS": {
+    "args": "X",
+    "doc": "DIGITS(X) returns number of significant binary digits in the model of X. [F90]",
+    "type": 3
+  },
+  "EPSILON": {
+    "args": "X",
+    "doc": "EPSILON(X) returns smallest positive number that added to 1 gives result > 1. [F90]",
+    "type": 3
+  },
+  "HUGE": {
+    "args": "X",
+    "doc": "HUGE(X) returns largest number representable in the model of X. [F90]",
+    "type": 3
+  },
+  "MAXEXPONENT": {
+    "args": "X",
+    "doc": "MAXEXPONENT(X) returns maximum exponent in the floating-point model of X. [F90]",
+    "type": 3
+  },
+  "MINEXPONENT": {
+    "args": "X",
+    "doc": "MINEXPONENT(X) returns minimum exponent in the floating-point model of X. [F90]",
+    "type": 3
+  },
+  "PRECISION": {
+    "args": "X",
+    "doc": "PRECISION(X) returns decimal precision of real or complex kind of X. [F90]",
+    "type": 3
+  },
+  "RADIX": {
+    "args": "X",
+    "doc": "RADIX(X) returns base of the numeric model for X (typically 2 for binary). [F90]",
+    "type": 3
+  },
+  "RANGE": {
+    "args": "X",
+    "doc": "RANGE(X) returns decimal exponent range in the model of X. [F90]",
+    "type": 3
+  },
+  "TINY": {
+    "args": "X",
+    "doc": "TINY(X) returns smallest positive number in the floating-point model of X. [F90]",
+    "type": 3
+  },
+  "ASSOCIATED": {
+    "args": "POINTER,TARGET=target",
+    "doc": "ASSOCIATED(POINTER) returns .TRUE. if pointer is associated with a target. [F90]",
+    "type": 3
+  },
+  "LOGICAL": {
+    "args": "L,KIND=kind",
+    "doc": "LOGICAL(L) converts logical value L to specified kind type parameter. [F90]",
+    "type": 3
+  },
+  "PRESENT": {
+    "args": "A",
+    "doc": "PRESENT(A) returns .TRUE. if optional dummy argument A was provided. [F90]",
+    "type": 3
+  },
+  "TRANSFER": {
+    "args": "SOURCE,MOLD,SIZE=size",
+    "doc": "TRANSFER(SOURCE,MOLD) interprets bit pattern of SOURCE as type of MOLD. [F90]",
+    "type": 3
+  },
+  "DATE_AND_TIME": {
+    "args": "DATE=date,TIME=time,ZONE=zone,VALUES=values",
+    "doc": "DATE_AND_TIME(DATE,TIME,ZONE,VALUES) returns date/time from real-time clock. [F90]",
+    "type": 2
+  },
+  "MVBITS": {
+    "args": "FROM,FROMPOS,LEN,TO,TOPOS",
+    "doc": "MVBITS(FROM,FROMPOS,LEN,TO,TOPOS) copies LEN bits from FROM to TO. [F90]",
+    "type": 2
+  },
+  "RANDOM_NUMBER": {
+    "args": "HARVEST",
+    "doc": "RANDOM_NUMBER(HARVEST) returns pseudorandom numbers from uniform distribution [0,1). [F90]",
+    "type": 2
+  },
+  "RANDOM_SEED": {
+    "args": "SIZE=size,PUT=put,GET=get",
+    "doc": "RANDOM_SEED(SIZE,PUT,GET) initializes or queries the random number generator. [F90]",
+    "type": 2
+  },
+  "SYSTEM_CLOCK": {
+    "args": "COUNT=count,COUNT_RATE=count_rate,COUNT_MAX=count_max",
+    "doc": "SYSTEM_CLOCK(COUNT,COUNT_RATE,COUNT_MAX) returns processor clock information. [F90]",
+    "type": 2
+  }
+}

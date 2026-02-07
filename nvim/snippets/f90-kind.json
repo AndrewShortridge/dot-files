@@ -1,0 +1,17 @@
+{
+  "KIND": {
+    "args": "X",
+    "doc": "KIND(X) returns the kind type parameter value of X. [F90]",
+    "type": 3
+  },
+  "SELECTED_INT_KIND": {
+    "args": "R",
+    "doc": "SELECTED_INT_KIND(R) returns kind for integers in range (-10^R,10^R). [F90]",
+    "type": 3
+  },
+  "SELECTED_REAL_KIND": {
+    "args": "P=p,R=r",
+    "doc": "SELECTED_REAL_KIND(P,R) returns kind for reals with precision P and range R. [F90]",
+    "type": 3
+  }
+}

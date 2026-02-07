@@ -1,0 +1,27 @@
+{
+  "DATE_AND_TIME": {
+    "args": "DATE=date,TIME=time,ZONE=zone,VALUES=values",
+    "doc": "DATE_AND_TIME(DATE,TIME,ZONE,VALUES) returns date/time from real-time clock. [F90]",
+    "type": 2
+  },
+  "MVBITS": {
+    "args": "FROM,FROMPOS,LEN,TO,TOPOS",
+    "doc": "MVBITS(FROM,FROMPOS,LEN,TO,TOPOS) copies LEN bits from FROM to TO. [F90]",
+    "type": 2
+  },
+  "RANDOM_NUMBER": {
+    "args": "HARVEST",
+    "doc": "RANDOM_NUMBER(HARVEST) returns pseudorandom numbers from uniform distribution [0,1). [F90]",
+    "type": 2
+  },
+  "RANDOM_SEED": {
+    "args": "SIZE=size,PUT=put,GET=get",
+    "doc": "RANDOM_SEED(SIZE,PUT,GET) initializes or queries the random number generator. [F90]",
+    "type": 2
+  },
+  "SYSTEM_CLOCK": {
+    "args": "COUNT=count,COUNT_RATE=count_rate,COUNT_MAX=count_max",
+    "doc": "SYSTEM_CLOCK(COUNT,COUNT_RATE,COUNT_MAX) returns processor clock information. [F90]",
+    "type": 2
+  }
+}
