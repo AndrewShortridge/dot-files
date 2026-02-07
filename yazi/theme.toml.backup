@@ -1,0 +1,78 @@
+# ~/.config/yazi/theme.toml
+# One Dark (darkened) theme for Yazi
+
+# Used for code previews
+# syntect_theme = "~/.config/yazi/syntect/OneDark.tmTheme"
+syntect_theme = "~/.config/yazi/syntect/OneDark.tmTheme"
+
+# --------------------------------------------------
+# File list colors
+# --------------------------------------------------
+[filetype]
+rules = [
+  { mime = "inode/directory", fg = "#61AFEF", bold = true },  # Blue folders
+  { mime = "text/*", fg = "#ABB2BF" },
+  { mime = "application/json", fg = "#E5C07B" },
+  { mime = "image/*", fg = "#98C379" },
+  { mime = "video/*", fg = "#C678DD" },
+  { mime = "audio/*", fg = "#C678DD" },
+  { mime = "*", fg = "#ABB2BF" },
+]
+
+# --------------------------------------------------
+# Manager (file list panes)
+# --------------------------------------------------
+[mgr]
+fg = "#ABB2BF"        # default foreground
+#bg = "#1E222A"        # darker One Dark background
+bg = "#17191d"        # One dark - darker background
+border_fg = "#3E4451"
+
+# --------------------------------------------------
+# Selection + cursor
+# --------------------------------------------------
+[selection]
+# fg = "#282C34"
+fg = "#1a1e23"
+bg = "#61AFEF"
+
+[cursor]
+fg = "#282C34"
+#fg = "#1a1e23"
+bg = "#98C379"
+
+# --------------------------------------------------
+# Status line (bottom bar)
+# --------------------------------------------------
+[status]
+fg = "#ABB2BF"
+bg = "#1E222A"
+
+[status.separator]
+fg = "#3E4451"
+
+# --------------------------------------------------
+# Tabs / indicators
+# --------------------------------------------------
+[indicator]
+parent  = { fg = "#5C6370" }
+current = { fg = "#61AFEF", bold = true }
+
+# --------------------------------------------------
+# Git status colors
+# --------------------------------------------------
+[git]
+added     = { fg = "#98C379" }
+modified  = { fg = "#E5C07B" }
+deleted   = { fg = "#E06C75" }
+ignored   = { fg = "#5C6370" }
+
+# --------------------------------------------------
+# Error / warning colors
+# --------------------------------------------------
+[error]
+fg = "#E06C75"
+
+[warning]
+fg = "#E5C07B"
+

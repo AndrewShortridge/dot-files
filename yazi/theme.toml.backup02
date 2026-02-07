@@ -1,0 +1,28 @@
+[flavor]
+dark = "onedark"
+
+# ---- "One Dark - Darkened"-style overrides (user theme wins) ----
+# These are safe, small overrides that mainly darken the UI surfaces and bump contrast.
+# Swap hex values to match the exact Zed palette once you extract it (see Option B).
+
+[app]
+overall = { bg = "#14181f" }
+
+[mgr]
+border_style   = { fg = "#3a3f4b" }
+cwd            = { fg = "#61afef", bold = true }
+hovered        = { fg = "#e6e6e6", bg = "#232832" }
+preview_hovered= { fg = "#e6e6e6", bg = "#232832" }
+marker_selected= { fg = "#98c379", bold = true }
+marker_marked  = { fg = "#e5c07b", bold = true }
+
+[indicator]
+parent  = { fg = "#3a3f4b", bg = "#14181f" }
+current = { fg = "#61afef", bg = "#14181f" }
+
+[status]
+separator_style = { fg = "#3a3f4b" }
+mode_normal     = { fg = "#14181f", bg = "#61afef", bold = true }
+mode_select     = { fg = "#14181f", bg = "#e5c07b", bold = true }
+mode_unset      = { fg = "#14181f", bg = "#56b6c2", bold = true }
+

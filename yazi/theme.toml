@@ -1,0 +1,57 @@
+# ~/.config/yazi/theme.toml
+
+# Preview syntax theme (optional)
+syntect_theme = "~/.config/yazi/syntect/OneDarkPro.tmTheme"
+
+[app]
+overall = { bg = "#17191D" }
+
+[filetype]
+rules = [
+  # Directories: custom text and forground color when cursor highlights file
+  # Color: This is a ligher blue than found in the One Dark Prop theme
+  # { url = "*/", fg = "#61AFEF", bold = true },
+  { url = "*/", fg = "#6ea5dd", bold = true },
+
+  # Python files: custom text and forground color when cursor highlights file
+  # Color: This is the blue from the One Dark Prop theme
+  { url = "*.py", fg = "#6ea5dd", bold = true }, 
+  # Bash files: custom text and forground color when cursor highlights file
+  # Color: This is the green from the One Dark Prop theme
+  { url = "*.sh", fg = "#89a36f", bold = true }, 
+  # Rust files: custom text and forground color when cursor highlights file
+  # Color: This is the red from the One Dark Prop theme
+  { url = "*.rs", fg = "#b67569", bold = true }, 
+  # Toml files: custom text and forground color when cursor highlights file
+  # Color: This is the orange from the One Dark Prop theme
+  { url = "*.toml", fg = "#b08d65", bold = true },
+
+  # Archives / binaries
+  { mime = "application/zip", fg = "#A76FC0" },
+  { mime = "application/x-tar", fg = "#A76FC0" },
+  { mime = "application/gzip", fg = "#A76FC0" },
+  { mime = "application/x-7z-compressed", fg = "#A76FC0" },
+
+  # Fallback
+  # { mime = "*", fg = "#ABB2BF" },
+  { url = "*", fg = "#ABB2BF" },
+]
+
+# Manager (main file list UI)
+[mgr]
+bg = "#17191D"
+border_fg = "#3E4451"
+
+# Cursor/hover highlight row (this is what you want “inverted”)
+# Dark background + light foreground
+hovered = { fg = "#E6E6E6", bg = "#1F232A", bold = true }
+preview_hovered = { fg = "#E6E6E6", bg = "#1F232A", bold = true }
+
+# Optional: markers (nice contrast)
+marker_selected = { fg = "#98C379", bold = true }
+marker_marked   = { fg = "#E5C07B", bold = true }
+marker_copied   = { fg = "#61AFEF", bold = true }
+marker_cut      = { fg = "#E06C75", bold = true }
+
+[status]
+bg = "#17191D"

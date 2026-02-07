@@ -1,0 +1,52 @@
+# ~/.config/yazi/yazi.toml
+# Yazi v26.1.4
+#
+# Goal:
+# - Keep your existing manager layout/settings
+# - Enable code/text previews with line numbers by using Yazi's built-in `code` previewer
+# - Configure the `code` previewer to render with `bat` (with `--style=numbers`)
+#
+# Notes:
+# - This uses the Yazi v26.1.4 configuration model:
+#   - `[preview]` controls preview UI behavior (wrap, tab size, etc.)
+#   - `[plugin].prepend_previewers` controls which previewer plugin is used for which file types
+#   - `[plugin].prepend_preloaders` can optionally improve preview responsiveness
+# - This configuration assumes `bat` is available on PATH.
+#   If your system uses `batcat`, replace `bat` with `batcat` below.
+#
+# Important:
+# - Yazi reads config from `~/.config/yazi/yazi.toml`.
+#   If you're editing a copy elsewhere (e.g. in a repo), make sure it's symlinked into that path.
+
+[mgr]
+show_hidden = true
+ratio = [2, 5, 5]
+linemode = "size"
+
+[preview]
+# Wrap long lines in the code preview pane.
+wrap = "yes"
+# Display tab characters as this many spaces in the preview.
+tab_size = 4
+
+# [plugin]
+# Force Yazi to use the built-in "code" previewer for textual formats.
+# This ensures the preview pane renders code/text via the code preview plugin,
+# which we configure below to use bat with line numbers.
+# These keys follow the documented config approach for Yazi 26.1.4 plugin previewers.
+# [plugin.code]
+# Prefer bat as the renderer for code/text previews.
+# - `--style=numbers` enables line numbers
+# - `--color=always` keeps syntax coloring
+# - `--paging=never` prevents bat from spawning a pager
+# - `--line-range=:500` limits preview size (adjust as desired)
+# - `--terminal-width=$COLUMNS` helps bat wrap/layout to the pane width
+#
+# If your system uses `batcat` instead of `bat`, replace the command name.
+# command = "bat"
+# args = [
+#   "--style=numbers",
+#   "--color=always",
+#   "--paging=always",
+#   "--terminal-width=$COLUMNS",
+# ]

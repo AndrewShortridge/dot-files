@@ -1,0 +1,6 @@
+# Disable Space toggling selection in the file list (manager).
+# This removes the "highlighting" you see when you press Space.
+[[mgr.prepend_keymap]]
+on  = ["<Space>"]
+run = "noop"
+desc = "Disable selection toggle (Space)"
