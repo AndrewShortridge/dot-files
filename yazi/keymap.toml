@@ -1,6 +1,15 @@
 # Disable Space toggling selection in the file list (manager).
 # This removes the "highlighting" you see when you press Space.
-[[mgr.prepend_keymap]]
-on  = ["<Space>"]
-run = "noop"
-desc = "Disable selection toggle (Space)"
+# [[mgr.prepend_keymap]]
+# on  = ["<Space>"]
+# run = "noop"
+# desc = "Disable selection toggle (Space)"
+[mgr]
+prepend_keymap = [
+  # Disable the original Space binding
+  { on = "<Space>", run = "noop", desc = "Disable Space selection" },
+  # Move the default Space behavior (toggle select + move down) to Alt+Space
+  { on = "<A-Space>", run = [ "toggle", "arrow 1" ], desc = "Toggle selection (Alt+Space)" },
+
+]
+
