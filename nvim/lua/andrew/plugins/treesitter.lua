@@ -28,7 +28,6 @@ return {
     -- Safely require treesitter module (handles install order)
     local status_ok, treesitter = pcall(require, "nvim-treesitter.configs")
     if not status_ok then
-      vim.notify("nvim-treesitter not installed yet, skipping setup", vim.log.levels.WARN)
       return
     end
 
