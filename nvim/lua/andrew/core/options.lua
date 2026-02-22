@@ -63,6 +63,26 @@ opt.backspace = "indent,eol,start"
 opt.clipboard:append("unnamedplus")
 
 -- =============================================================================
+-- Undo and Swap
+-- =============================================================================
+opt.undofile = true     -- Persistent undo across sessions
+opt.swapfile = false    -- Avoid swap prompts (git provides safety)
+
+-- =============================================================================
+-- Scrolling
+-- =============================================================================
+opt.scrolloff = 8       -- Keep 8 lines visible above/below cursor
+opt.sidescrolloff = 8   -- Horizontal equivalent for nowrap mode
+
+-- =============================================================================
+-- Performance and UI
+-- =============================================================================
+opt.updatetime = 250    -- Faster CursorHold (default 4000ms is too slow for gitsigns/diagnostics)
+opt.showmode = false    -- Lualine already displays the mode
+opt.pumheight = 15      -- Limit completion popup height
+opt.completeopt = "menu,menuone,noselect"  -- Better native completion behavior
+
+-- =============================================================================
 -- Window Splitting
 -- =============================================================================
 -- Configure new window placement for splits

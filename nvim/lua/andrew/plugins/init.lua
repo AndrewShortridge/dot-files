@@ -137,6 +137,22 @@ return {
   require("andrew.plugins.formatting.conform"),
 
   -- =============================================================================
+  -- Markdown
+  -- =============================================================================
+
+  -- Snacks.nvim: input prompts, inline image rendering in markdown
+  require("andrew.plugins.snacks"),
+
+  -- Render markdown in-buffer: styled headings, box-drawing tables,
+  -- checkboxes, code blocks, callouts, and wiki-link icons
+  require("andrew.plugins.render-markdown"),
+
+  -- Auto-format markdown tables as you type with column alignment
+  -- Toggle: <leader>Tm, Tab to move between cells
+  require("andrew.plugins.vim-table-mode"),
+
+
+  -- =============================================================================
   -- Language-specific Plugins
   -- =============================================================================
 

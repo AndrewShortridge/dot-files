@@ -1,0 +1,157 @@
+\documentclass{article}
+\usepackage{amsmath, amssymb}
+
+\begin{document}
+
+% =============================================================================
+% Test 1: Math mode entry
+% =============================================================================
+% Type `mk` in text to get $...$
+% Type `dm` in text to get \[...\]
+
+This is text. Type mk here to enter inline math: $ $
+
+Display math via dm:
+\[
+
+\]
+
+% =============================================================================
+% Test 2: Fractions (cursor must be inside $...$ or \[...\])
+% =============================================================================
+% ff → \frac{}{}
+% // → \frac{}{}
+
+$\frac{a}{b}$
+
+\[
+  \frac{x+1}{x-1}
+\]
+
+% =============================================================================
+% Test 3: Sub/superscripts
+% =============================================================================
+% td → ^{}   sb → _{}   sr → ^2   cb → ^3   inv → ^{-1}
+
+$x^{n}$, $a_{ij}$, $r^2$, $x^3$, $A^{-1}$
+
+% =============================================================================
+% Test 4: Greek letters (;key inside math)
+% =============================================================================
+
+$\alpha + \beta = \gamma$
+
+$\Delta x \cdot \nabla f$
+
+$\Omega = \int \omega$
+
+$\varepsilon \to 0$, $\varphi(x)$
+
+% =============================================================================
+% Test 5: Operators
+% =============================================================================
+
+$a \leq b$, $x \geq 0$, $a \neq b$
+
+$f \approx g$, $x \cong y$
+
+$n \gg 1$, $\epsilon \ll 1$
+
+$a \times b$, $a \cdot b$
+
+$x \to \infty$, $A \implies B$, $P \iff Q$
+
+$x \in S$, $y \notin T$
+
+$A \subset B$, $A \subseteq B$
+
+$A \cup B$, $A \cap B$
+
+$\exists x$, $\forall x$
+
+% =============================================================================
+% Test 6: Big operators
+% =============================================================================
+
+$\sum_{i=1}^{n} a_i$
+
+$\prod_{i=1}^{n} x_i$
+
+$\lim_{n \to \infty} a_n$
+
+$\int_{a}^{b} f(x) \,dx$
+
+% =============================================================================
+% Test 7: Decorators
+% =============================================================================
+
+$\hat{x}$, $\bar{x}$, $\vec{v}$, $\dot{x}$, $\ddot{x}$, $\tilde{x}$
+
+% =============================================================================
+% Test 8: Delimiters
+% =============================================================================
+
+$\left( \frac{a}{b} \right)$
+
+$\left[ x + y \right]$
+
+$\left\{ a, b, c \right\}$
+
+$\left| x \right|$
+
+$\left\langle \psi | \phi \right\rangle$
+
+% =============================================================================
+% Test 9: Environments (inline math)
+% =============================================================================
+
+$\begin{pmatrix} a & b \\ c & d \end{pmatrix}$
+
+$\begin{bmatrix} 1 \\ 2 \\ 3 \end{bmatrix}$
+
+$\begin{cases} x & x > 0 \\ -x & x \leq 0 \end{cases}$
+
+% =============================================================================
+% Test 10: Sets and fonts
+% =============================================================================
+
+$\mathbb{R}$, $\mathbb{Z}$, $\mathbb{N}$, $\mathbb{Q}$, $\mathbb{C}$
+
+$\text{where } x \in \mathbb{R}$
+
+% =============================================================================
+% Test 11: Structural snippets (tab-triggered, not autosnippet)
+% =============================================================================
+% beg → \begin{}\end{}
+% sec / ssec / sssec → section commands
+% eq → equation env
+% ali → align* env
+% enum / item → list envs
+% fig → figure env
+
+\section{Example Section}
+
+\begin{equation}
+  E = mc^2
+\end{equation}
+
+\begin{align*}
+  a &= b + c \\
+  d &= e + f
+\end{align*}
+
+\begin{enumerate}
+  \item First
+  \item Second
+\end{enumerate}
+
+% =============================================================================
+% Test 12: Negative tests (should NOT expand in text mode)
+% =============================================================================
+
+The word "diff" should not trigger ff expansion.
+A suffix like "proof" should not trigger.
+Writing about mk or dm in text outside math delimiters should not trigger
+when preceded by word characters (e.g., bookmark, random).
+
+\end{document}
