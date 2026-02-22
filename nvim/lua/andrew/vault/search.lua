@@ -14,33 +14,18 @@ end
 
 function M.search()
   track("", "all", "grep")
-  require("fzf-lua").live_grep({
-    cwd = engine.vault_path,
-    prompt = "Vault search> ",
-    file_icons = true,
-    git_icons = false,
-  })
+  require("fzf-lua").live_grep(engine.vault_fzf_opts("Vault search"))
 end
 
 function M.search_notes()
   track("", "all", "grep")
-  require("fzf-lua").live_grep({
-    cwd = engine.vault_path,
-    prompt = "Vault notes> ",
-    file_icons = true,
-    git_icons = false,
-    rg_opts = '--column --line-number --no-heading --color=always --smart-case --glob "*.md"',
-  })
+  require("fzf-lua").live_grep(engine.vault_fzf_opts("Vault notes", {
+    rg_opts = engine.rg_base_opts(),
+  }))
 end
 
 function M.search_filtered()
-  local scopes = {
-    { label = "All notes", glob = "**/*.md", key = "all" },
-    { label = "Projects", glob = config.dirs.projects .. "/**/*.md", key = "projects" },
-    { label = "Areas", glob = config.dirs.areas .. "/**/*.md", key = "areas" },
-    { label = "Log", glob = config.dirs.log .. "/**/*.md", key = "log" },
-    { label = "Domains", glob = config.dirs.domains .. "/**/*.md", key = "domains" },
-  }
+  local scopes = config.scopes
 
   local labels = {}
   for _, scope in ipairs(scopes) do
@@ -66,13 +51,9 @@ function M.search_filtered()
 
     track("", selected.key, "grep")
 
-    require("fzf-lua").live_grep({
-      cwd = engine.vault_path,
-      prompt = "Vault [" .. selected.label .. "]> ",
-      file_icons = true,
-      git_icons = false,
-      rg_opts = '--column --line-number --no-heading --color=always --smart-case --glob "' .. selected.glob .. '"',
-    })
+    require("fzf-lua").live_grep(engine.vault_fzf_opts("Vault [" .. selected.label .. "]", {
+      rg_opts = engine.rg_base_opts(selected.glob),
+    }))
   end)
 end
 
@@ -86,15 +67,11 @@ function M.search_by_type()
 
     track(choice, "all", "type")
 
-    require("fzf-lua").grep({
-      cwd = engine.vault_path,
-      prompt = "Vault type [" .. choice .. "]> ",
-      file_icons = true,
-      git_icons = false,
+    require("fzf-lua").grep(engine.vault_fzf_opts("Vault type [" .. choice .. "]", {
       search = "^type:\\s+" .. choice,
       no_esc = true,
-      rg_opts = '--column --line-number --no-heading --color=always --smart-case --glob "*.md"',
-    })
+      rg_opts = engine.rg_base_opts(),
+    }))
   end)
 end
 

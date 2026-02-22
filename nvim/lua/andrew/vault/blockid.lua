@@ -150,13 +150,11 @@ function M.generate_and_link()
     end
 
     -- Read target file, append the block reference on a new line at the end
-    local f = io.open(target_path, "r")
-    if not f then
+    local content = engine.read_file(target_path)
+    if not content then
       vim.notify("Vault: could not read " .. target_path, vim.log.levels.ERROR)
       return
     end
-    local content = f:read("*a")
-    f:close()
 
     -- Ensure the file ends with a newline before appending
     if content:sub(-1) ~= "\n" then
@@ -164,13 +162,9 @@ function M.generate_and_link()
     end
     content = content .. ref .. "\n"
 
-    local fw = io.open(target_path, "w")
-    if not fw then
-      vim.notify("Vault: could not write to " .. target_path, vim.log.levels.ERROR)
+    if not engine.write_file(target_path, content) then
       return
     end
-    fw:write(content)
-    fw:close()
 
     vim.notify("Vault: inserted " .. ref .. " in " .. choice, vim.log.levels.INFO)
 

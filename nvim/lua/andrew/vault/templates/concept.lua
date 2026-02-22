@@ -1,3 +1,5 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Concept Note"
 
@@ -68,7 +70,7 @@ function M.run(e, p)
   if not domain then return end
 
   local maturity = e.select(
-    { "Seed", "Developing", "Mature", "Evergreen" },
+    config.maturity_values,
     { prompt = "Maturity" }
   )
   if not maturity then return end

@@ -47,38 +47,35 @@ local function parse_frontmatter(path)
   return fm
 end
 
-local function get_blocks(path)
+local function read_lines(path)
   local f = io.open(path, "r")
-  if not f then return {} end
-  local blocks = {}
-  local line_num = 0
+  if not f then return nil end
+  local lines = {}
   for line in f:lines() do
-    line_num = line_num + 1
+    lines[#lines + 1] = line
+  end
+  f:close()
+  return lines
+end
+
+local function get_blocks(lines)
+  local blocks = {}
+  for i, line in ipairs(lines) do
     local block_id = line:match("%^([%w%-]+)%s*$")
     if block_id then
       local text = line:gsub("%s*%^[%w%-]+%s*$", "")
-      blocks[#blocks + 1] = { id = block_id, text = text, line = line_num }
+      blocks[#blocks + 1] = { id = block_id, text = text, line = i }
     end
   end
-  f:close()
   return blocks
 end
 
-local function get_headings(path)
-  local f = io.open(path, "r")
-  if not f then return {} end
-
-  local all_lines = {}
-  for line in f:lines() do
-    all_lines[#all_lines + 1] = line
-  end
-  f:close()
-
+local function get_headings(lines)
   local headings = {}
   local in_fm = false
   local order = 0
 
-  for i, line in ipairs(all_lines) do
+  for i, line in ipairs(lines) do
     if i == 1 and line == "---" then
       in_fm = true
     elseif in_fm and line == "---" then
@@ -89,10 +86,10 @@ local function get_headings(path)
         order = order + 1
         -- Capture content preview: up to 8 non-empty lines until next heading
         local preview = {}
-        for j = i + 1, math.min(i + 20, #all_lines) do
-          if all_lines[j]:match("^#+%s+") then break end
-          if all_lines[j] ~= "" then
-            preview[#preview + 1] = all_lines[j]
+        for j = i + 1, math.min(i + 20, #lines) do
+          if lines[j]:match("^#+%s+") then break end
+          if lines[j] ~= "" then
+            preview[#preview + 1] = lines[j]
             if #preview >= 8 then break end
           end
         end
@@ -279,8 +276,36 @@ end
 function source:get_completions(ctx, callback)
   local before = ctx.line:sub(1, ctx.cursor[2])
 
-  -- Trigger on both [[ (wikilink) and ![[ (embed)
+  -- Standalone block ID reference: ^partial (not inside [[ ]])
+  -- Triggers when typing ^id anywhere that isn't already a wikilink
   if not before:match("!?%[%[") then
+    local block_prefix = before:match("%^([%w%-]*)$")
+    if block_prefix then
+      local buf_path = vim.api.nvim_buf_get_name(0)
+      if buf_path ~= "" then
+        local buf_lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+        local blocks = get_blocks(buf_lines)
+        local items = {}
+        for _, b in ipairs(blocks) do
+          local preview = b.text
+          if #preview > 60 then
+            preview = preview:sub(1, 57) .. "..."
+          end
+          items[#items + 1] = {
+            label = "^" .. b.id,
+            insertText = b.id,
+            kind = 22,
+            labelDetails = { description = preview },
+            documentation = {
+              kind = "plaintext",
+              value = "Line " .. b.line .. ": " .. b.text,
+            },
+          }
+        end
+        callback({ is_incomplete_forward = false, is_incomplete_backward = false, items = items })
+        return
+      end
+    end
     callback(empty)
     return
   end
@@ -308,17 +333,23 @@ function source:get_completions(ctx, callback)
     end
   end
 
-  -- Block completion: [[Note Name^partial or ![[Note Name^partial
+  -- Block completion: [[Note Name^partial, [[^partial (same file), or ![[...^partial
   local block_note_name = before:match("!?%[%[(.-)%^[^%]]*$")
-  if block_note_name and block_note_name ~= "" then
-    -- Strip heading part if present: [[Note#heading^partial -> Note
-    local base_name = block_note_name:match("^([^#]+)") or block_note_name
-    base_name = vim.trim(base_name)
+  if block_note_name then
+    local lines
+    if block_note_name == "" then
+      -- Same-file block reference: [[^
+      lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    else
+      -- Cross-file block reference: [[Note^
+      local base_name = block_note_name:match("^([^#]+)") or block_note_name
+      base_name = vim.trim(base_name)
+      local target_path = resolve_note_path(base_name)
+      if target_path then lines = read_lines(target_path) end
+    end
 
-    local target_path = resolve_note_path(base_name)
-
-    if target_path then
-      local blocks = get_blocks(target_path)
+    if lines then
+      local blocks = get_blocks(lines)
       local items = {}
       for _, b in ipairs(blocks) do
         local preview = b.text
@@ -343,16 +374,22 @@ function source:get_completions(ctx, callback)
     return
   end
 
-  -- Heading completion: [[Note Name#partial or ![[Note Name#partial
+  -- Heading completion: [[Note Name#partial, [[#partial (same file), or ![[...#partial
   local note_name = before:match("!?%[%[(.-)#[^%]]*$")
-  if note_name and note_name ~= "" then
-    local target_path = resolve_note_path(note_name)
+  if note_name then
+    local lines
+    if note_name == "" then
+      -- Same-file heading reference: [[# — read from buffer for unsaved changes
+      lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    else
+      local target_path = resolve_note_path(note_name)
+      if target_path then lines = read_lines(target_path) end
+    end
 
-    if target_path then
-      local headings = get_headings(target_path)
+    if lines then
+      local headings = get_headings(lines)
       local items = {}
       for _, h in ipairs(headings) do
-        local indent = string.rep("  ", h.level - 1)
         items[#items + 1] = {
           label = h.text,
           insertText = h.text .. "]]",
@@ -365,6 +402,7 @@ function source:get_completions(ctx, callback)
             kind = "markdown",
             value = string.rep("#", h.level) .. " " .. h.text .. "\n\n" .. h.preview,
           } or nil,
+          data = { completion_kind = "heading" },
         }
       end
       callback({ is_incomplete_forward = false, is_incomplete_backward = false, items = items })

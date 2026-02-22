@@ -20,10 +20,7 @@ local FLOOR_WEIGHT = 5
 local _db = nil
 local _db_vault = nil
 
----@return string
-local function db_path()
-  return engine.vault_path .. "/.vault-frecency.json"
-end
+local store = engine.json_store(".vault-frecency.json")
 
 ---@return table<string, {timestamps: number[]}>
 local function load_db()
@@ -31,23 +28,7 @@ local function load_db()
     return _db
   end
   _db_vault = engine.vault_path
-  local file = io.open(db_path(), "r")
-  if not file then
-    _db = {}
-    return _db
-  end
-  local raw = file:read("*a")
-  file:close()
-  if raw == "" then
-    _db = {}
-    return _db
-  end
-  local ok, decoded = pcall(vim.json.decode, raw)
-  if not ok or type(decoded) ~= "table" then
-    _db = {}
-    return _db
-  end
-  _db = decoded
+  _db = store.load()
   return _db
 end
 
@@ -55,10 +36,7 @@ end
 local function save_db(db)
   _db = db
   _db_vault = engine.vault_path
-  local file = io.open(db_path(), "w")
-  if not file then return end
-  file:write(vim.json.encode(db))
-  file:close()
+  store.save(db)
 end
 
 --- Compute recency weight for a single timestamp.
@@ -94,9 +72,8 @@ end
 --- Record an access for a vault file.
 ---@param abs_path string absolute file path
 function M.record(abs_path)
-  local vault = engine.vault_path
-  if abs_path:sub(1, #vault) ~= vault then return end
-  local rel = abs_path:sub(#vault + 2)
+  if not engine.is_vault_path(abs_path) then return end
+  local rel = engine.vault_relative(abs_path)
   if not rel:match("%.md$") then return end
 
   local db = load_db()
@@ -144,7 +121,7 @@ function M.ranked_files()
   local all_files = vim.fn.globpath(vault, "**/*.md", false, true)
   table.sort(all_files)
   for _, f in ipairs(all_files) do
-    local rel = f:sub(#vault + 2)
+    local rel = engine.vault_relative(f)
     if not rel:match("^%.") and not rel:match("/%.") and not seen[rel] then
       result[#result + 1] = rel
     end
@@ -184,19 +161,10 @@ function M.files()
     return
   end
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(ranked, {
-    prompt = "Vault files> ",
-    cwd = engine.vault_path,
-    file_icons = true,
-    git_icons = false,
+  fzf.fzf_exec(ranked, engine.vault_fzf_opts("Vault files", {
     previewer = "builtin",
-    actions = {
-      ["default"] = fzf.actions.file_edit,
-      ["ctrl-s"] = fzf.actions.file_split,
-      ["ctrl-v"] = fzf.actions.file_vsplit,
-      ["ctrl-t"] = fzf.actions.file_tabedit,
-    },
-  })
+    actions = engine.vault_fzf_actions(),
+  }))
 end
 
 --- Open fzf-lua with only tracked files, sorted by frecency.
@@ -207,19 +175,10 @@ function M.frequent()
     return
   end
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(files, {
-    prompt = "Recent vault notes> ",
-    cwd = engine.vault_path,
-    file_icons = true,
-    git_icons = false,
+  fzf.fzf_exec(files, engine.vault_fzf_opts("Recent vault notes", {
     previewer = "builtin",
-    actions = {
-      ["default"] = fzf.actions.file_edit,
-      ["ctrl-s"] = fzf.actions.file_split,
-      ["ctrl-v"] = fzf.actions.file_vsplit,
-      ["ctrl-t"] = fzf.actions.file_tabedit,
-    },
-  })
+    actions = engine.vault_fzf_actions(),
+  }))
 end
 
 function M.setup()

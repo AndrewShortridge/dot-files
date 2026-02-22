@@ -98,18 +98,29 @@ return {
           module = "andrew.vault.completion",
           min_keyword_length = 0,
           score_offset = 15,
+          fallbacks = {},
+          transform_items = function(_, items)
+            for _, item in ipairs(items) do
+              if item.data and item.data.completion_kind == "heading" then
+                item.source_name = "Heading"
+              end
+            end
+            return items
+          end,
         },
         vault_tags = {
           name = "VaultTags",
           module = "andrew.vault.completion_tags",
           min_keyword_length = 0,
           score_offset = 12,
+          fallbacks = {},
         },
         vault_frontmatter = {
           name = "Frontmatter",
           module = "andrew.vault.completion_frontmatter",
           min_keyword_length = 0,
           score_offset = 14,
+          fallbacks = {},
         },
       },
     },

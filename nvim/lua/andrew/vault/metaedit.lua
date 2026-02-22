@@ -283,9 +283,9 @@ end
 
 function M.setup()
   -- Cycle value lists
-  local status_values = { "Not Started", "In Progress", "Blocked", "Complete", "Cancelled" }
-  local priority_values = { 1, 2, 3, 4, 5 }
-  local maturity_values = { "Seed", "Developing", "Mature", "Evergreen" }
+  local status_values = config.status_values
+  local priority_values = config.priority_values
+  local maturity_values = config.maturity_values
 
   -- -------------------------------------------------------------------
   -- Commands

@@ -1,4 +1,5 @@
 local engine = require("andrew.vault.engine")
+local link_utils = require("andrew.vault.link_utils")
 
 local M = {}
 M.enabled = true
@@ -183,32 +184,6 @@ function M.find_closest_headings(anchor_slug, filepath, n)
 end
 
 -- ---------------------------------------------------------------------------
--- Link parsing helpers
--- ---------------------------------------------------------------------------
-
---- Parse the inner content of a wikilink into target, heading, and raw inner text.
----@param inner string content between [[ and ]]
----@return string target note name (trimmed)
----@return string|nil heading anchor (raw, not slugified)
----@return string full_inner the full inner text (for replacement)
-local function parse_wikilink(inner)
-  -- Normalise \| escape used inside markdown tables
-  inner = inner:gsub("\\|", "|")
-  -- Strip display alias: [[target|alias]] -> target portion
-  local target_part = inner:match("^([^|]+)") or inner
-  -- Split into note name and heading anchor
-  local name, heading = target_part:match("^([^#^]+)#([^#^|]+)")
-  if not name then
-    name = vim.trim((target_part:match("^([^#^|]+)") or target_part))
-    heading = nil
-  else
-    name = vim.trim(name)
-    heading = vim.trim(heading)
-  end
-  return name, heading, inner
-end
-
--- ---------------------------------------------------------------------------
 -- Core validation
 -- ---------------------------------------------------------------------------
 
@@ -238,7 +213,8 @@ function M.validate(bufnr)
       if is_embed then goto continue end
 
       local inner = line:sub(open + 2, close - 1)
-      local target, heading = parse_wikilink(inner)
+      local parsed = link_utils.parse_target(inner)
+      local target, heading = parsed.name, parsed.heading
       if target == "" or target:match("^https?://") then goto continue end
 
       local target_lower = target:lower()
@@ -368,7 +344,6 @@ local function apply_action(action)
     -- Replace the note name, preserving any existing heading/alias
     local inner = link_text:match("^%[%[(.-)%]%]$")
     if not inner then return end
-    inner = inner:gsub("\\|", "|")
     -- Rebuild: replace the note name portion, keep heading/alias if present
     local rest = inner:match("^[^|#^]+(.*)")
     if rest then
@@ -380,7 +355,6 @@ local function apply_action(action)
     -- Replace just the heading anchor
     local inner = link_text:match("^%[%[(.-)%]%]$")
     if not inner then return end
-    inner = inner:gsub("\\|", "|")
     -- Find the #heading portion and replace it
     local before_hash = inner:match("^([^#]+)")
     local after_heading = inner:match("#[^|^]+(.*)$") or ""

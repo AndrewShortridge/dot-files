@@ -6,15 +6,11 @@ local M = {}
 --- Collect all open tasks (- [ ]) across the vault and show in fzf-lua.
 function M.tasks()
   local fzf = require("fzf-lua")
-  fzf.grep({
-    cwd = engine.vault_path,
+  fzf.grep(engine.vault_fzf_opts("Vault tasks", {
     search = "- \\[ \\]",
-    prompt = "Vault tasks> ",
-    file_icons = true,
-    git_icons = false,
     no_esc = true,
-    rg_opts = '--column --line-number --no-heading --color=always --glob "*.md" -e',
-  })
+    rg_opts = engine.rg_base_opts() .. " -e",
+  }))
 end
 
 --- Collect tasks matching a specific checkbox state.
@@ -22,29 +18,21 @@ end
 function M.tasks_by_state(mark)
   local fzf = require("fzf-lua")
   local escaped = mark:gsub("[%-]", "\\%0")
-  fzf.grep({
-    cwd = engine.vault_path,
+  fzf.grep(engine.vault_fzf_opts("Vault tasks [" .. mark .. "]", {
     search = "- \\[" .. escaped .. "\\]",
-    prompt = "Vault tasks [" .. mark .. "]> ",
-    file_icons = true,
-    git_icons = false,
     no_esc = true,
-    rg_opts = '--column --line-number --no-heading --color=always --glob "*.md" -e',
-  })
+    rg_opts = engine.rg_base_opts() .. " -e",
+  }))
 end
 
 --- Show all tasks regardless of state.
 function M.tasks_all()
   local fzf = require("fzf-lua")
-  fzf.grep({
-    cwd = engine.vault_path,
+  fzf.grep(engine.vault_fzf_opts("Vault tasks (all)", {
     search = "- \\[.\\]",
-    prompt = "Vault tasks (all)> ",
-    file_icons = true,
-    git_icons = false,
     no_esc = true,
-    rg_opts = '--column --line-number --no-heading --color=always --glob "*.md" -e',
-  })
+    rg_opts = engine.rg_base_opts() .. " -e",
+  }))
 end
 
 function M.setup()

@@ -1,3 +1,4 @@
+local config = require("andrew.vault.config")
 local engine = require("andrew.vault.engine")
 local pickers = require("andrew.vault.pickers")
 
@@ -26,8 +27,8 @@ local function build_note(title, project)
     "---",
     "type: task",
     'title: "' .. title .. '"',
-    "status: Not Started",
-    "priority: 3",
+    "status: " .. config.status_default,
+    "priority: " .. config.priority_default,
     "created: " .. date,
   }
 

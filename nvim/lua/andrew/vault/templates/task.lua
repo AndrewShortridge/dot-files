@@ -1,3 +1,5 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Task Note"
 
@@ -6,12 +8,12 @@ function M.run(e, p)
   if not title then return end
 
   local status = e.select(
-    { "Not Started", "In Progress", "Blocked", "Complete", "Cancelled" },
+    config.status_values,
     { prompt = "Task status" }
   )
   if not status then return end
 
-  local priority = e.input({ prompt = "Priority (1=today, 2=2-4d, 3=7d, 4=30d, 5=no deadline)", default = "3" })
+  local priority = e.input({ prompt = "Priority (1=today, 2=2-4d, 3=7d, 4=30d, 5=no deadline)", default = tostring(config.priority_default) })
   if not priority then return end
 
   local due = e.input({ prompt = "Due date (YYYY-MM-DD or leave blank)", default = "" })

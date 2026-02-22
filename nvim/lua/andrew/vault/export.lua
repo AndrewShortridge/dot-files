@@ -1,6 +1,7 @@
 local engine = require("andrew.vault.engine")
 local wikilinks = require("andrew.vault.wikilinks")
 local config = require("andrew.vault.config")
+local link_utils = require("andrew.vault.link_utils")
 
 local M = {}
 
@@ -72,22 +73,6 @@ local function resolve_attachment(name, buf_dir)
 
   -- Fallback: use the attachments convention even if file is missing
   return engine.vault_path .. "/attachments/" .. name
-end
-
---- Read all lines from a file path.
----@param path string
----@return string[]|nil
-local function read_file(path)
-  local f = io.open(path, "r")
-  if not f then
-    return nil
-  end
-  local lines = {}
-  for line in f:lines() do
-    lines[#lines + 1] = line
-  end
-  f:close()
-  return lines
 end
 
 --- Extract content under a heading until the next heading of same or higher level.
@@ -173,58 +158,18 @@ local function read_block_content(path, block_id)
   return { "*[Block not found: ^" .. block_id .. "]*" }
 end
 
---- Parse an embed/wikilink target string into components.
----@param target string
----@return {name: string, heading: string|nil, block_id: string|nil}
-local function parse_target(target)
-  local name, heading, block_id
-
-  local n, h, b = target:match("^([^#%^]+)#([^%^]+)%^(.+)$")
-  if n then
-    name, heading, block_id = n, h, b
-  else
-    n, b = target:match("^([^#%^]+)%^(.+)$")
-    if n then
-      name, block_id = n, b
-    else
-      n, h = target:match("^([^#%^]+)#(.+)$")
-      if n then
-        name, heading = n, h
-      else
-        name = target
-      end
-    end
-  end
-
-  return {
-    name = vim.trim(name),
-    heading = heading and vim.trim(heading) or nil,
-    block_id = block_id and vim.trim(block_id) or nil,
-  }
-end
-
 --- Convert a single wikilink match to a standard markdown link.
 --- Handles: [[Name]], [[Name|Alias]], [[Name#Heading]], [[Name#Heading|Alias]],
 ---          [[Name^block]], [[Name#Heading^block|Alias]]
 ---@param inner string the content between [[ and ]]
 ---@return string markdown link
 local function convert_wikilink(inner)
-  -- Normalise \| escape used inside markdown tables
-  inner = inner:gsub("\\|", "|")
-
-  -- Separate alias from target: [[target|alias]]
-  local target, alias = inner:match("^([^|]+)|(.+)$")
-  if not target then
-    target = inner
-    alias = nil
-  end
-
-  local details = parse_target(target)
+  local details = link_utils.parse_target(inner)
 
   -- Build display text
   local display
-  if alias then
-    display = alias
+  if details.alias then
+    display = details.alias
   elseif details.heading and details.name ~= "" then
     display = details.name .. " > " .. details.heading
   elseif details.heading then
@@ -261,21 +206,16 @@ end
 ---@param buf_dir string directory of the source buffer
 ---@return string replacement text (may be multi-line)
 local function convert_embed(inner, buf_dir)
-  -- Normalise \| escape
-  inner = inner:gsub("\\|", "|")
-
-  -- Separate alias
-  local target = inner:match("^([^|]+)") or inner
+  local details = link_utils.parse_target(inner)
 
   -- Image embed: ![[image.png]] or ![[path/image.png]]
-  if is_image(target) then
-    local alt = inner:match("|(.+)$") or target:match("([^/]+)$"):gsub("%.%w+$", "")
-    local resolved = resolve_attachment(target, buf_dir)
+  if is_image(details.name) then
+    local alt = details.alias or details.name:match("([^/]+)$"):gsub("%.%w+$", "")
+    local resolved = resolve_attachment(details.name, buf_dir)
     return "![" .. alt .. "](" .. resolved .. ")"
   end
 
   -- Note embed: resolve and inline content
-  local details = parse_target(target)
   local path = wikilinks.resolve_link(details.name)
 
   if not path then
@@ -288,8 +228,8 @@ local function convert_embed(inner, buf_dir)
   elseif details.heading then
     content_lines = read_heading_section(path, details.heading)
   else
-    content_lines = read_file(path)
-    if not content_lines then
+    content_lines = engine.read_file_lines(path)
+    if #content_lines == 0 then
       return "> *[Could not read: " .. details.name .. "]*"
     end
     -- Strip frontmatter from embedded notes

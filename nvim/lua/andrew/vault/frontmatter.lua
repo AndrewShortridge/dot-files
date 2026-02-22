@@ -11,7 +11,7 @@ function M.setup()
     pattern = "*.md",
     callback = function(ev)
       local bufpath = vim.api.nvim_buf_get_name(ev.buf)
-      if not vim.startswith(bufpath, engine.vault_path) then
+      if not engine.is_vault_path(bufpath) then
         return
       end
 

@@ -32,10 +32,9 @@ end
 local function build_segments(bufnr)
   local bufpath = vim.api.nvim_buf_get_name(bufnr)
   if bufpath == "" then return nil end
-  local vp = engine.vault_path
-  if bufpath:sub(1, #vp) ~= vp then return nil end
+  if not engine.is_vault_path(bufpath) then return nil end
 
-  local rel = bufpath:sub(#vp + 2):gsub("%.md$", "")
+  local rel = engine.vault_relative(bufpath):gsub("%.md$", "")
   local parts = {}
   for seg in rel:gmatch("[^/]+") do parts[#parts + 1] = seg end
   if #parts == 0 then return nil end
@@ -126,7 +125,7 @@ function M.setup()
       if vim.bo[ev.buf].buftype ~= "" then return end
       local name = vim.api.nvim_buf_get_name(ev.buf)
       if name == "" or not vim.endswith(name, ".md")
-        or name:sub(1, #engine.vault_path) ~= engine.vault_path then
+        or not engine.is_vault_path(name) then
         vim.wo.winbar = ""
       end
     end,

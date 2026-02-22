@@ -12,8 +12,9 @@ local build_generation = 0
 -- Well-known properties with predefined value suggestions
 local known_values = {
   type = config.note_types,
-  status = { "Active", "Complete", "On Hold", "Archived", "Draft", "In Progress" },
-  priority = { "High", "Medium", "Low", "Critical", "None" },
+  status = config.status_values,
+  priority = vim.tbl_map(tostring, config.priority_values),
+  maturity = config.maturity_values,
 }
 
 --- Check whether the cursor is inside the YAML frontmatter block.

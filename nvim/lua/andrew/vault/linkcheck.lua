@@ -1,4 +1,5 @@
 local engine = require("andrew.vault.engine")
+local link_utils = require("andrew.vault.link_utils")
 
 local M = {}
 
@@ -93,19 +94,9 @@ end
 local function extract_links(line)
   local links = {}
   for inner in line:gmatch("%[%[([^%]]+)%]%]") do
-    -- Normalise \| escape used inside markdown tables
-    inner = inner:gsub("\\|", "|")
-    -- Strip pipe alias: [[Name|Display]] -> target portion
-    local target_part = inner:match("^([^|]+)") or inner
-    -- Split into note name and optional heading anchor
-    local name, heading = target_part:match("^([^#^]+)#([^#^|]+)")
-    if not name then
-      name = vim.trim((target_part:match("^([^#^|]+)") or target_part))
-      heading = nil
-    else
-      name = vim.trim(name)
-      heading = vim.trim(heading)
-    end
+    local parsed = link_utils.parse_target(inner)
+    local name = parsed.name
+    local heading = parsed.heading
     if name ~= "" then
       local display = heading and (name .. "#" .. heading) or name
       links[#links + 1] = { name = name, heading = heading, display = display }
@@ -227,17 +218,9 @@ function M.check_vault()
     -- rg output: /path/to/file.md:42:[[Link Target]]
     local file, lnum, match = line:match("^(.+):(%d+):%[%[(.+)%]%]$")
     if file and lnum and match then
-      -- Normalise \| escape used inside markdown tables
-      match = match:gsub("\\|", "|")
-      local target_part = match:match("^([^|]+)") or match
-      local name, heading = target_part:match("^([^#^]+)#([^#^|]+)")
-      if not name then
-        name = vim.trim((target_part:match("^([^#^|]+)") or target_part))
-        heading = nil
-      else
-        name = vim.trim(name)
-        heading = vim.trim(heading)
-      end
+      local parsed = link_utils.parse_target(match)
+      local name = parsed.name
+      local heading = parsed.heading
 
       if name ~= "" then
         total = total + 1
@@ -349,11 +332,9 @@ function M.check_orphans()
   local linked = {}
   if rg_result.code == 0 and rg_result.stdout then
     for match in rg_result.stdout:gmatch("%[%[([^%]]+)%]%]") do
-      -- Normalise \| escape used inside markdown tables
-      local target = match:gsub("\\|", "|"):match("^([^|#]+)") or match
-      target = vim.trim(target):lower()
+      local target = link_utils.parse_target(match).name
       if target ~= "" then
-        linked[target] = true
+        linked[target:lower()] = true
       end
     end
   end

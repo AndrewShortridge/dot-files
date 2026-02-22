@@ -6,44 +6,16 @@ local M = {}
 -- Shared utilities
 -- ---------------------------------------------------------------------------
 
-local function current_note_name()
-  local bufname = vim.api.nvim_buf_get_name(0)
-  if bufname == "" then
-    return nil
-  end
-  return vim.fn.fnamemodify(bufname, ":t:r")
-end
-
 local function current_note_path()
   local bufname = vim.api.nvim_buf_get_name(0)
   if bufname == "" then
     return nil
   end
   local abs = vim.fn.fnamemodify(bufname, ":p")
-  if not vim.startswith(abs, engine.vault_path) then
+  if not engine.is_vault_path(abs) then
     return nil
   end
   return abs
-end
-
-local function read_file(path)
-  local file = io.open(path, "r")
-  if not file then
-    return nil
-  end
-  local content = file:read("*a")
-  file:close()
-  return content
-end
-
-local function write_file(path, content)
-  local file = io.open(path, "w")
-  if not file then
-    return false
-  end
-  file:write(content)
-  file:close()
-  return true
 end
 
 local function rg_escape(str)
@@ -87,7 +59,7 @@ local function collect_rename_changes(old_name, new_name)
 
   if result.stdout and result.stdout ~= "" then
     for file_path in result.stdout:gmatch("[^\n]+") do
-      local content = read_file(file_path)
+      local content = engine.read_file(file_path)
       if content then
         local lnum = 0
         for line in content:gmatch("([^\n]*)\n?") do
@@ -147,7 +119,7 @@ local function apply_rename_changes(old_name, new_name)
 
   if result.stdout and result.stdout ~= "" then
     for file_path in result.stdout:gmatch("[^\n]+") do
-      local content = read_file(file_path)
+      local content = engine.read_file(file_path)
       if content then
         local new_content = content:gsub("%[%[(.-)%]%]", function(inner)
           local target = inner:match("^([^|#]+)") or inner
@@ -160,7 +132,7 @@ local function apply_rename_changes(old_name, new_name)
           return "[[" .. inner .. "]]"
         end)
         if new_content ~= content then
-          write_file(file_path, new_content)
+          engine.write_file(file_path, new_content)
           modified_files[#modified_files + 1] = file_path
         end
       end
@@ -175,7 +147,7 @@ end
 -- ---------------------------------------------------------------------------
 
 function M.rename_preview(new_name)
-  local old_name = current_note_name()
+  local old_name = engine.current_note_name()
   local old_path = current_note_path()
   if not old_name or not old_path then
     vim.notify("Vault: current buffer is not a vault note", vim.log.levels.WARN)
@@ -240,7 +212,7 @@ end
 -- ---------------------------------------------------------------------------
 
 function M.rename(new_name)
-  local old_name = current_note_name()
+  local old_name = engine.current_note_name()
   local old_path = current_note_path()
   if not old_name or not old_path then
     vim.notify("Vault: current buffer is not a vault note", vim.log.levels.WARN)
@@ -348,7 +320,7 @@ function M.tag_rename(old_tag, new_tag)
 
     if result.stdout and result.stdout ~= "" then
       for file_path in result.stdout:gmatch("[^\n]+") do
-        local content = read_file(file_path)
+        local content = engine.read_file(file_path)
         if not content then
           goto continue
         end
@@ -408,7 +380,7 @@ function M.tag_rename(old_tag, new_tag)
         end)
 
         if file_changed then
-          write_file(file_path, new_content)
+          engine.write_file(file_path, new_content)
           modified_files[#modified_files + 1] = file_path
         end
 

@@ -119,6 +119,100 @@ function M.ensure_dir(abs_path)
   vim.fn.mkdir(abs_path, "p")
 end
 
+--- Create a JSON-backed persistent store scoped to the current vault.
+--- @param filename string  The filename (e.g. ".vault-frecency.json")
+--- @param defaults? table  Default value when file missing/corrupt
+--- @return { load: fun(): table, save: fun(data: table), path: fun(): string }
+function M.json_store(filename, defaults)
+  defaults = defaults or {}
+
+  local function path()
+    return M.vault_path .. "/" .. filename
+  end
+
+  local function load()
+    local file = io.open(path(), "r")
+    if not file then return vim.deepcopy(defaults) end
+    local raw = file:read("*a")
+    file:close()
+    if raw == "" then return vim.deepcopy(defaults) end
+    local ok, decoded = pcall(vim.json.decode, raw)
+    if not ok or type(decoded) ~= "table" then return vim.deepcopy(defaults) end
+    return decoded
+  end
+
+  local function save(data)
+    local file = io.open(path(), "w")
+    if not file then
+      vim.notify("Vault: failed to write " .. path(), vim.log.levels.WARN)
+      return
+    end
+    file:write(vim.json.encode(data))
+    file:close()
+  end
+
+  return { load = load, save = save, path = path }
+end
+
+--- Read entire file as a string. Returns nil on failure.
+--- @param path string
+--- @return string|nil
+function M.read_file(path)
+  local file = io.open(path, "r")
+  if not file then return nil end
+  local content = file:read("*a")
+  file:close()
+  return content
+end
+
+--- Read file as an array of lines. Returns empty table on failure.
+--- @param path string
+--- @param max_lines? number  Optional limit on lines read
+--- @return string[]
+function M.read_file_lines(path, max_lines)
+  local f = io.open(path, "r")
+  if not f then return {} end
+  local lines = {}
+  for line in f:lines() do
+    lines[#lines + 1] = line
+    if max_lines and #lines >= max_lines then break end
+  end
+  f:close()
+  return lines
+end
+
+--- Write content to file, creating parent dirs. Returns success boolean.
+--- @param path string
+--- @param content string
+--- @return boolean
+function M.write_file(path, content)
+  local dir = vim.fn.fnamemodify(path, ":h")
+  M.ensure_dir(dir)
+  local file, err = io.open(path, "w")
+  if not file then
+    vim.notify("Vault: failed to write " .. path .. ": " .. (err or "unknown"), vim.log.levels.WARN)
+    return false
+  end
+  file:write(content)
+  file:close()
+  return true
+end
+
+--- Append content to file. Returns success boolean.
+--- @param path string
+--- @param content string
+--- @return boolean
+function M.append_file(path, content)
+  local file, err = io.open(path, "a")
+  if not file then
+    vim.notify("Vault: failed to append to " .. path .. ": " .. (err or "unknown"), vim.log.levels.WARN)
+    return false
+  end
+  file:write(content)
+  file:close()
+  return true
+end
+
 --- Write a note to the vault and open it in the current buffer.
 --- Creates parent directories as needed.
 --- If the file already exists, prompts for confirmation before overwriting.
@@ -169,6 +263,70 @@ function M.render(template, vars)
   return (template:gsub("%${([%w_]+)}", function(key)
     return vars[key] or ("${" .. key .. "}")
   end))
+end
+
+--- Check if an absolute path is inside the current vault.
+--- @param path string
+--- @return boolean
+function M.is_vault_path(path)
+  return path ~= "" and vim.startswith(path, M.vault_path)
+end
+
+--- Convert an absolute path to a vault-relative path.
+--- Returns nil if path is not inside the vault.
+--- @param path string
+--- @return string|nil
+function M.vault_relative(path)
+  if not M.is_vault_path(path) then return nil end
+  return path:sub(#M.vault_path + 2)
+end
+
+--- Get the basename (without extension) of the current buffer.
+--- Returns nil if buffer has no name.
+--- @return string|nil
+function M.current_note_name()
+  local bufname = vim.api.nvim_buf_get_name(0)
+  if bufname == "" then return nil end
+  return vim.fn.fnamemodify(bufname, ":t:r")
+end
+
+--- Base ripgrep options for vault-wide searches.
+--- @param glob? string  File glob pattern (default: "*.md")
+--- @return string
+function M.rg_base_opts(glob)
+  glob = glob or "*.md"
+  return '--column --line-number --no-heading --color=always --smart-case --glob "' .. glob .. '"'
+end
+
+--- Common fzf-lua options for vault pickers.
+--- @param prompt string  The prompt text (without trailing "> ")
+--- @param extra? table   Additional options to merge
+--- @return table
+function M.vault_fzf_opts(prompt, extra)
+  local opts = {
+    cwd = M.vault_path,
+    prompt = prompt .. "> ",
+    file_icons = true,
+    git_icons = false,
+  }
+  if extra then
+    for k, v in pairs(extra) do
+      opts[k] = v
+    end
+  end
+  return opts
+end
+
+--- Standard fzf-lua actions for file open/split/vsplit/tab.
+--- @return table
+function M.vault_fzf_actions()
+  local fzf = require("fzf-lua")
+  return {
+    ["default"] = fzf.actions.file_edit,
+    ["ctrl-s"] = fzf.actions.file_split,
+    ["ctrl-v"] = fzf.actions.file_vsplit,
+    ["ctrl-t"] = fzf.actions.file_tabedit,
+  }
 end
 
 return M

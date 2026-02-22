@@ -1,4 +1,5 @@
 local engine = require("andrew.vault.engine")
+local link_utils = require("andrew.vault.link_utils")
 local wikilinks = require("andrew.vault.wikilinks")
 
 local M = {}
@@ -25,16 +26,6 @@ end
 -- Link helpers
 -- ---------------------------------------------------------------------------
 
---- Get the stem (filename without extension) of the current buffer.
----@return string|nil
-local function current_note_name()
-  local bufname = vim.api.nvim_buf_get_name(0)
-  if bufname == "" then
-    return nil
-  end
-  return vim.fn.fnamemodify(bufname, ":t:r")
-end
-
 --- Resolve a link name to an absolute file path, or nil.
 --- Delegates to wikilinks module for case-insensitive, cached resolution.
 ---@param name string
@@ -58,11 +49,7 @@ local function disambiguate_names(entries)
     if #group > 1 then
       for _, entry in ipairs(group) do
         if entry.path then
-          local rel = entry.path
-          local prefix = engine.vault_path .. "/"
-          if vim.startswith(rel, prefix) then
-            rel = rel:sub(#prefix + 1)
-          end
+          local rel = engine.vault_relative(entry.path) or entry.path
           entry.name = vim.fn.fnamemodify(rel, ":r")
         end
       end
@@ -120,12 +107,8 @@ local function collect_forward_links()
         -- Skip embed syntax ![[...]]
         if s > 1 and line:sub(s - 1, s - 1) == "!" then goto next_link end
 
-        -- Normalise \| escape used inside markdown tables
-        inner = inner:gsub("\\|", "|")
-
         -- Extract just the note name: strip |alias, #heading, ^block
-        local name = inner:match("^([^|#%^]+)") or inner
-        name = vim.trim(name)
+        local name = link_utils.link_name(inner)
         if name == "" then goto next_link end
 
         -- Skip heading-only or block-only references (no file target)
@@ -382,7 +365,7 @@ end
 -- ---------------------------------------------------------------------------
 
 function M.local_graph()
-  local note_name = current_note_name()
+  local note_name = engine.current_note_name()
   if not note_name then
     vim.notify("Vault: buffer has no filename", vim.log.levels.WARN)
     return
@@ -390,7 +373,7 @@ function M.local_graph()
 
   -- Check that we are inside the vault
   local buf_path = vim.api.nvim_buf_get_name(0)
-  if not vim.startswith(buf_path, engine.vault_path) then
+  if not engine.is_vault_path(buf_path) then
     vim.notify("Vault: current file is not in the vault", vim.log.levels.WARN)
     return
   end

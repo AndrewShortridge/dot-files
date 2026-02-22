@@ -1,5 +1,6 @@
 local engine = require("andrew.vault.engine")
 local config = require("andrew.vault.config")
+local link_utils = require("andrew.vault.link_utils")
 
 local M = {}
 
@@ -55,9 +56,9 @@ local function scroll_preview(delta)
   vim.fn.win_execute(state.win, "normal! " .. count .. key)
 end
 
---- Parse the wikilink under the cursor, returning the link name or nil.
----@return string|nil
-local function get_wikilink_under_cursor()
+--- Parse the wikilink under the cursor into its components.
+---@return {name: string, heading: string|nil, block_id: string|nil, alias: string|nil}|nil, string|nil
+local function get_wikilink_details_under_cursor()
   local line = vim.api.nvim_get_current_line()
   local col = vim.api.nvim_win_get_cursor(0)[2] + 1
 
@@ -65,16 +66,15 @@ local function get_wikilink_under_cursor()
   while true do
     local open_start, open_end = line:find("%[%[", start)
     if not open_start then
-      return nil
+      return nil, nil
     end
     local close_start, close_end = line:find("%]%]", open_end + 1)
     if not close_start then
-      return nil
+      return nil, nil
     end
     if col >= open_start and col <= close_end then
       local inner = line:sub(open_end + 1, close_start - 1)
-      local link = inner:match("^([^|#]+)") or inner
-      return vim.trim(link)
+      return link_utils.parse_target(inner), inner
     end
     start = close_end + 1
   end
@@ -99,7 +99,108 @@ local function resolve_link(name)
   return results[1]
 end
 
+--- Convert heading text to a slug for comparison (Obsidian-style).
+---@param text string
+---@return string
+local function heading_slug(text)
+  return text:lower()
+    :gsub("[^%w%s%-]", "")
+    :gsub("%s+", "-")
+    :gsub("%-+", "-")
+    :gsub("^%-+", "")
+    :gsub("%-+$", "")
+end
+
+--- Extract section lines under a heading from a list of lines.
+--- Captures from the heading through the next heading of same or higher level.
+---@param lines string[]
+---@param heading string heading text to match
+---@return string[]
+local function extract_heading_section(lines, heading)
+  local target_slug = heading_slug(heading)
+  local result = {}
+  local capturing = false
+  local target_level = nil
+
+  for _, line in ipairs(lines) do
+    if capturing then
+      local level_str = line:match("^(#+)%s+")
+      if level_str and #level_str <= target_level then
+        break
+      end
+      result[#result + 1] = line
+    else
+      local level_str, text = line:match("^(#+)%s+(.*)")
+      if text then
+        local slug = heading_slug(text)
+        if slug == target_slug then
+          target_level = #level_str
+          capturing = true
+          result[#result + 1] = line
+        end
+      end
+    end
+  end
+
+  return result
+end
+
+--- Extract the paragraph containing a block reference from a list of lines.
+---@param lines string[]
+---@param block_id string
+---@return string[]
+local function extract_block_content(lines, block_id)
+  local escaped = vim.pesc(block_id)
+  local paragraphs = {}
+  local current = {}
+
+  for _, line in ipairs(lines) do
+    if line:match("^%s*$") then
+      if #current > 0 then
+        paragraphs[#paragraphs + 1] = current
+        current = {}
+      end
+    else
+      current[#current + 1] = line
+    end
+  end
+  if #current > 0 then
+    paragraphs[#paragraphs + 1] = current
+  end
+
+  for _, para in ipairs(paragraphs) do
+    for _, line in ipairs(para) do
+      if line:match("%^" .. escaped .. "%s*$") then
+        local result = {}
+        for _, l in ipairs(para) do
+          result[#result + 1] = l:gsub("%s*%^" .. escaped .. "%s*$", "")
+        end
+        return result
+      end
+    end
+  end
+
+  return {}
+end
+
+--- Read all lines from a file path.
+---@param path string
+---@return string[]|nil
+local function read_file_lines(path)
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  local lines = {}
+  for l in f:lines() do
+    lines[#lines + 1] = l
+  end
+  f:close()
+  return lines
+end
+
 --- Show a floating preview of the note linked under the cursor.
+--- Supports same-file heading/block references: [[#Heading]], [[^block-id]]
 --- Press K again or move the cursor to close. C-j/C-k scroll the preview.
 function M.preview()
   -- Toggle off if already showing
@@ -108,27 +209,62 @@ function M.preview()
     return
   end
 
-  local link = get_wikilink_under_cursor()
-  if not link or link == "" then
+  local details, raw_inner = get_wikilink_details_under_cursor()
+  if not details then
     vim.notify("No wikilink under cursor", vim.log.levels.INFO)
     return
   end
 
-  local path = resolve_link(link)
   local all_lines
-  if path then
-    all_lines = {}
-    local f = io.open(path, "r")
-    if f then
-      for l in f:lines() do
-        all_lines[#all_lines + 1] = l
+  local title
+
+  if details.name == "" then
+    -- Same-file reference: [[#heading]] or [[^block-id]]
+    local buf_lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    if details.heading then
+      all_lines = extract_heading_section(buf_lines, details.heading)
+      title = "#" .. details.heading
+      if #all_lines == 0 then
+        all_lines = { "[Heading not found: #" .. details.heading .. "]" }
       end
-      f:close()
+    elseif details.block_id then
+      all_lines = extract_block_content(buf_lines, details.block_id)
+      title = "^" .. details.block_id
+      if #all_lines == 0 then
+        all_lines = { "[Block not found: ^" .. details.block_id .. "]" }
+      end
     else
-      all_lines = { "[Could not read file]" }
+      vim.notify("No wikilink under cursor", vim.log.levels.INFO)
+      return
     end
   else
-    all_lines = { "[Note does not exist yet]" }
+    -- Cross-file reference
+    title = details.name
+    local path = resolve_link(details.name)
+    if path then
+      local file_lines = read_file_lines(path)
+      if file_lines then
+        if details.heading then
+          all_lines = extract_heading_section(file_lines, details.heading)
+          title = details.name .. "#" .. details.heading
+          if #all_lines == 0 then
+            all_lines = { "[Heading not found: #" .. details.heading .. "]" }
+          end
+        elseif details.block_id then
+          all_lines = extract_block_content(file_lines, details.block_id)
+          title = details.name .. "^" .. details.block_id
+          if #all_lines == 0 then
+            all_lines = { "[Block not found: ^" .. details.block_id .. "]" }
+          end
+        else
+          all_lines = file_lines
+        end
+      else
+        all_lines = { "[Could not read file]" }
+      end
+    else
+      all_lines = { "[Note does not exist yet]" }
+    end
   end
 
   -- Compute float dimensions
@@ -141,11 +277,9 @@ function M.preview()
   width = math.min(math.max(width, 20), max_width)
   local height = math.min(#all_lines, max_height)
 
-  -- Create buffer with full file content (enables scrolling)
+  -- Create buffer with content (enables scrolling)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, all_lines)
-  vim.bo[buf].modifiable = false
-  vim.bo[buf].filetype = "markdown"
   vim.bo[buf].bufhidden = "wipe"
 
   -- Open floating window near cursor (not focused — stays in parent)
@@ -157,7 +291,7 @@ function M.preview()
     height = height,
     style = "minimal",
     border = "rounded",
-    title = { { " " .. link .. " ", "Function" } },
+    title = { { " " .. title .. " ", "Function" } },
     title_pos = "center",
   })
 
@@ -166,6 +300,22 @@ function M.preview()
   vim.wo[win].wrap = true
   vim.wo[win].linebreak = true
   vim.wo[win].foldenable = false
+
+  -- Set filetype AFTER window exists so render-markdown can find the buffer
+  -- in a valid window context during its FileType autocmd handler
+  vim.bo[buf].filetype = "markdown"
+
+  -- Explicitly start treesitter for the scratch buffer
+  pcall(vim.treesitter.start, buf, "markdown")
+
+  -- Manually trigger render-markdown since the float is not focused and
+  -- normal render events (BufWinEnter, CursorMoved, etc.) won't fire
+  pcall(function()
+    require("render-markdown").render({ buf = buf, win = win })
+  end)
+
+  -- Lock buffer after all rendering setup is complete
+  vim.bo[buf].modifiable = false
 
   -- Store state
   state.win = win
@@ -200,12 +350,13 @@ end
 
 --- Open the linked note under the cursor in an editable floating window.
 function M.edit_link()
-  local link = get_wikilink_under_cursor()
-  if not link or link == "" then
-    vim.notify("No wikilink under cursor", vim.log.levels.INFO)
+  local details = get_wikilink_details_under_cursor()
+  if not details or details.name == "" then
+    vim.notify("No cross-file wikilink under cursor", vim.log.levels.INFO)
     return
   end
 
+  local link = details.name
   local path = resolve_link(link)
   if not path then
     vim.notify("Note not found: " .. link, vim.log.levels.WARN)

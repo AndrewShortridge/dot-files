@@ -2,11 +2,7 @@ local engine = require("andrew.vault.engine")
 
 local M = {}
 
---- Return the absolute path to the pins JSON file.
----@return string
-local function pins_path()
-  return engine.vault_path .. "/.vault-pins.json"
-end
+local store = engine.json_store(".vault-pins.json")
 
 --- Return the current buffer's path relative to vault_path, or nil if outside the vault.
 ---@return string|nil
@@ -17,43 +13,13 @@ local function buf_rel_path()
   end
   abs = vim.fn.resolve(abs)
   local vault = vim.fn.resolve(engine.vault_path)
-  if abs:find(vault, 1, true) ~= 1 then
+  if not vim.startswith(abs, vault) then
     return nil
   end
   -- Strip vault prefix and leading slash
   return abs:sub(#vault + 2)
 end
 
---- Load pinned paths from the JSON file.
----@return string[]
-local function load_pins()
-  local file = io.open(pins_path(), "r")
-  if not file then
-    return {}
-  end
-  local raw = file:read("*a")
-  file:close()
-  if raw == "" then
-    return {}
-  end
-  local ok, decoded = pcall(vim.json.decode, raw)
-  if not ok or type(decoded) ~= "table" then
-    return {}
-  end
-  return decoded
-end
-
---- Write the pins list to the JSON file.
----@param pins string[]
-local function save_pins(pins)
-  local file = io.open(pins_path(), "w")
-  if not file then
-    vim.notify("Vault: failed to write pins file", vim.log.levels.ERROR)
-    return
-  end
-  file:write(vim.json.encode(pins))
-  file:close()
-end
 
 --- Pin the current buffer's note.
 function M.pin()
@@ -62,7 +28,7 @@ function M.pin()
     vim.notify("Vault: buffer is not inside the vault", vim.log.levels.WARN)
     return
   end
-  local pins = load_pins()
+  local pins = store.load()
   for _, p in ipairs(pins) do
     if p == rel then
       vim.notify("Vault: already pinned " .. rel, vim.log.levels.INFO)
@@ -70,7 +36,7 @@ function M.pin()
     end
   end
   pins[#pins + 1] = rel
-  save_pins(pins)
+  store.save(pins)
   vim.notify("Vault: pinned " .. rel, vim.log.levels.INFO)
 end
 
@@ -81,7 +47,7 @@ function M.unpin()
     vim.notify("Vault: buffer is not inside the vault", vim.log.levels.WARN)
     return
   end
-  local pins = load_pins()
+  local pins = store.load()
   local new = {}
   local found = false
   for _, p in ipairs(pins) do
@@ -95,7 +61,7 @@ function M.unpin()
     vim.notify("Vault: not pinned " .. rel, vim.log.levels.INFO)
     return
   end
-  save_pins(new)
+  store.save(new)
   vim.notify("Vault: unpinned " .. rel, vim.log.levels.INFO)
 end
 
@@ -106,7 +72,7 @@ function M.toggle_pin()
     vim.notify("Vault: buffer is not inside the vault", vim.log.levels.WARN)
     return
   end
-  local pins = load_pins()
+  local pins = store.load()
   for _, p in ipairs(pins) do
     if p == rel then
       M.unpin()
@@ -118,7 +84,7 @@ end
 
 --- List pinned notes in fzf-lua.
 function M.list()
-  local pins = load_pins()
+  local pins = store.load()
   if #pins == 0 then
     vim.notify("Vault: no pinned notes", vim.log.levels.INFO)
     return
@@ -131,17 +97,10 @@ function M.list()
   end
 
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(abs_paths, {
-    prompt = "Pinned notes> ",
-    file_icons = true,
-    git_icons = false,
+  fzf.fzf_exec(abs_paths, engine.vault_fzf_opts("Pinned notes", {
     previewer = "builtin",
-    actions = {
-      ["default"] = fzf.actions.file_edit,
-      ["ctrl-s"] = fzf.actions.file_split,
-      ["ctrl-v"] = fzf.actions.file_vsplit,
-    },
-  })
+    actions = engine.vault_fzf_actions(),
+  }))
 end
 
 function M.setup()

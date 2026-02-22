@@ -1,6 +1,7 @@
 local engine = require("andrew.vault.engine")
 local wikilinks = require("andrew.vault.wikilinks")
 local config = require("andrew.vault.config")
+local link_utils = require("andrew.vault.link_utils")
 
 local M = {}
 
@@ -11,6 +12,10 @@ local embeds_visible = {}
 ---@param name string note name (without .md)
 ---@return string|nil
 local function resolve_embed(name)
+  -- Same-file embed: ![[#Section]] has an empty name
+  if name == "" then
+    return vim.api.nvim_buf_get_name(0)
+  end
   -- Try wikilinks resolver first (uses its cache)
   local path = wikilinks.resolve_link(name)
   if path then
@@ -23,29 +28,6 @@ local function resolve_embed(name)
     limit = 1,
   })
   return results[1]
-end
-
---- Read the full content of a file, returning lines and total count.
----@param path string
----@param max_lines number|nil cap on lines to return (nil = unlimited)
----@return string[]
-local function read_file_lines(path, max_lines)
-  local f = io.open(path, "r")
-  if not f then
-    return { "[Could not read file]" }
-  end
-  local lines = {}
-  local count = 0
-  for line in f:lines() do
-    count = count + 1
-    if max_lines and count > max_lines then
-      lines[#lines + 1] = "..."
-      break
-    end
-    lines[#lines + 1] = line
-  end
-  f:close()
-  return lines
 end
 
 --- Extract content under a heading until the next heading of same or higher level.
@@ -137,40 +119,6 @@ local function read_block_content(path, block_id)
   return { "[Block not found: ^" .. block_id .. "]" }
 end
 
---- Parse an embed target string into components.
---- "note" -> {name="note"}
---- "note#heading" -> {name="note", heading="heading"}
---- "note^block-id" -> {name="note", block_id="block-id"}
---- "note#heading^block-id" -> {name="note", heading="heading", block_id="block-id"}
----@param target string
----@return {name: string, heading: string|nil, block_id: string|nil}
-local function parse_embed_target(target)
-  local name, heading, block_id
-
-  local n, h, b = target:match("^([^#%^]+)#([^%^]+)%^(.+)$")
-  if n then
-    name, heading, block_id = n, h, b
-  else
-    n, b = target:match("^([^#%^]+)%^(.+)$")
-    if n then
-      name, block_id = n, b
-    else
-      n, h = target:match("^([^#%^]+)#(.+)$")
-      if n then
-        name, heading = n, h
-      else
-        name = target
-      end
-    end
-  end
-
-  return {
-    name = vim.trim(name),
-    heading = heading and vim.trim(heading) or nil,
-    block_id = block_id and vim.trim(block_id) or nil,
-  }
-end
-
 --- Get the content lines for an embed.
 ---@param details {name: string, heading: string|nil, block_id: string|nil}
 ---@param path string resolved file path
@@ -182,7 +130,9 @@ local function get_embed_content(details, path)
     return read_heading_section(path, details.heading)
   else
     -- Full note embed: first 20 lines
-    return read_file_lines(path, config.embed.max_lines)
+    local lines = engine.read_file_lines(path, config.embed.max_lines)
+    if #lines == 0 then return { "[Could not read file]" } end
+    return lines
   end
 end
 
@@ -192,7 +142,7 @@ function M.render_embeds()
   local bufpath = vim.api.nvim_buf_get_name(bufnr)
 
   -- Only operate on vault files
-  if not vim.startswith(bufpath, engine.vault_path) then
+  if not engine.is_vault_path(bufpath) then
     return
   end
 
@@ -215,7 +165,7 @@ function M.render_embeds()
       local inner = line:sub(s + 3, e - 2)
       -- Strip display alias: ![[target|alias]] -> target
       local target = inner:match("^([^|]+)") or inner
-      local details = parse_embed_target(target)
+      local details = link_utils.parse_target(target)
 
       local path = resolve_embed(details.name)
       local virt_lines = {}

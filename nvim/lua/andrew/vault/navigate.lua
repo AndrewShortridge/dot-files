@@ -209,19 +209,11 @@ function M.daily_list()
     return a > b
   end)
 
-  local fzf = require("fzf-lua")
-  fzf.fzf_exec(logs, {
-    prompt = "Daily logs> ",
+  require("fzf-lua").fzf_exec(logs, engine.vault_fzf_opts("Daily logs", {
     cwd = log_dir,
-    file_icons = true,
-    git_icons = false,
     previewer = "builtin",
-    actions = {
-      ["default"] = fzf.actions.file_edit,
-      ["ctrl-s"] = fzf.actions.file_split,
-      ["ctrl-v"] = fzf.actions.file_vsplit,
-    },
-  })
+    actions = engine.vault_fzf_actions(),
+  }))
 end
 
 -- =============================================================================

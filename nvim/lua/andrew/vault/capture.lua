@@ -83,15 +83,9 @@ end
 ---@return string abs_path
 local function ensure_file(rel_path, frontmatter)
   local abs_path = engine.vault_path .. "/" .. rel_path
-  local dir = vim.fn.fnamemodify(abs_path, ":h")
-  engine.ensure_dir(dir)
 
   if vim.fn.filereadable(abs_path) ~= 1 then
-    local file = io.open(abs_path, "w")
-    if file then
-      file:write(table.concat(frontmatter, "\n") .. "\n")
-      file:close()
-    end
+    engine.write_file(abs_path, table.concat(frontmatter, "\n") .. "\n")
   end
 
   return abs_path
@@ -106,16 +100,11 @@ local function append_bullet(abs_path, text)
   local first = "- " .. timestamp .. " " .. (text_lines[1] or "") .. "\n"
   local indent = string.rep(" ", #("- " .. timestamp .. " "))
 
-  local file = io.open(abs_path, "a")
-  if not file then
-    vim.notify("Vault: failed to write " .. abs_path, vim.log.levels.ERROR)
-    return
-  end
-  file:write(first)
+  local content = first
   for i = 2, #text_lines do
-    file:write(indent .. text_lines[i] .. "\n")
+    content = content .. indent .. text_lines[i] .. "\n"
   end
-  file:close()
+  engine.append_file(abs_path, content)
 end
 
 --- Capture a thought to today's daily log.

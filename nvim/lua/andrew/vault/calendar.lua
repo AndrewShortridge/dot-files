@@ -133,10 +133,7 @@ local function scan_deadlines()
           deadlines[date_str] = {}
         end
         -- Build a clean display text: strip the file path to be vault-relative
-        local rel_file = file
-        if file:sub(1, #vault + 1) == vault .. "/" then
-          rel_file = file:sub(#vault + 2)
-        end
+        local rel_file = engine.vault_relative(file)
         -- Clean up the task text for display
         local task_text = content
         -- If this is a task line, extract just the text part

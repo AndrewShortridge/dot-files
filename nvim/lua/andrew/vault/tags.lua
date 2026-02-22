@@ -105,15 +105,11 @@ function M.search_tag(tag)
   local fzf = require("fzf-lua")
   -- Search for both inline #tag and frontmatter "- tag" occurrences
   local pattern = "#" .. fzf.utils.rg_escape(tag) .. "\\b|^\\s+- " .. fzf.utils.rg_escape(tag) .. "\\s*$"
-  fzf.grep({
+  fzf.grep(engine.vault_fzf_opts("Tag #" .. tag, {
     search = pattern,
-    cwd = engine.vault_path,
     no_esc = true,
-    prompt = "Tag #" .. tag .. "> ",
-    file_icons = true,
-    git_icons = false,
-    rg_opts = '--column --line-number --no-heading --color=always --smart-case --glob "*.md"',
-  })
+    rg_opts = engine.rg_base_opts(),
+  }))
 end
 
 --- Two-step tag picker:
@@ -160,9 +156,7 @@ function M.add_tag()
     end
     local cmd = fd_bin .. " --type f --extension md --base-directory " .. vim.fn.shellescape(engine.vault_path)
 
-    fzf.fzf_exec(cmd, {
-      prompt = "Add #" .. tag .. " to> ",
-      cwd = engine.vault_path,
+    fzf.fzf_exec(cmd, engine.vault_fzf_opts("Add #" .. tag .. " to", {
       fzf_opts = { ["--multi"] = "" },
       actions = {
         ["default"] = function(selected)
@@ -304,7 +298,7 @@ function M.add_tag()
           end)
         end,
       },
-    })
+    }))
   end)
 end
 

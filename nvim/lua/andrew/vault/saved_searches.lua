@@ -37,80 +37,17 @@ local defaults = {
 ---@param scope string
 ---@return string glob
 local function scope_to_glob(scope)
-  local map = {
-    all = "**/*.md",
-    projects = config.dirs.projects .. "/**/*.md",
-    areas = config.dirs.areas .. "/**/*.md",
-    log = config.dirs.log .. "/**/*.md",
-    domains = config.dirs.domains .. "/**/*.md",
-    library = config.dirs.library .. "/**/*.md",
-  }
-  return map[scope] or "**/*.md"
+  return config.scope_glob(scope) or "**/*.md"
 end
 
 --- Human-readable label for a scope.
 ---@param scope string
 ---@return string
 local function scope_label(scope)
-  local map = {
-    all = "All notes",
-    projects = "Projects",
-    areas = "Areas",
-    log = "Log",
-    domains = "Domains",
-    library = "Library",
-  }
-  return map[scope] or scope
+  return config.scope_label(scope) or scope
 end
 
--- ---------------------------------------------------------------------------
--- JSON persistence (mirrors pins.lua)
--- ---------------------------------------------------------------------------
-
---- Return the absolute path to the saved-searches JSON file.
----@return string
-local function storage_path()
-  return engine.vault_path .. "/.vault-searches.json"
-end
-
---- Load saved searches from the JSON file.
---- Returns the built-in defaults (and writes them) when the file does not exist.
----@return table[]
-local function load_searches()
-  local file = io.open(storage_path(), "r")
-  if not file then
-    -- Seed with defaults on first use
-    local f = io.open(storage_path(), "w")
-    if f then
-      f:write(vim.json.encode(defaults))
-      f:close()
-    end
-    -- Return a deep copy so callers can mutate freely
-    return vim.deepcopy(defaults)
-  end
-  local raw = file:read("*a")
-  file:close()
-  if raw == "" then
-    return {}
-  end
-  local ok, decoded = pcall(vim.json.decode, raw)
-  if not ok or type(decoded) ~= "table" then
-    return {}
-  end
-  return decoded
-end
-
---- Write the searches list to the JSON file.
----@param searches table[]
-local function save_searches(searches)
-  local file = io.open(storage_path(), "w")
-  if not file then
-    vim.notify("Vault: failed to write saved-searches file", vim.log.levels.ERROR)
-    return
-  end
-  file:write(vim.json.encode(searches))
-  file:close()
-end
+local store = engine.json_store(".vault-searches.json", defaults)
 
 -- ---------------------------------------------------------------------------
 -- Execute a saved search
@@ -128,35 +65,23 @@ local function execute_search(entry)
 
   if entry.type == "type" then
     -- Search by frontmatter note type (same pattern as search.search_by_type)
-    fzf.grep({
-      cwd = engine.vault_path,
-      prompt = "Saved [" .. entry.name .. "]> ",
-      file_icons = true,
-      git_icons = false,
+    fzf.grep(engine.vault_fzf_opts("Saved [" .. entry.name .. "]", {
       search = "^type:\\s+" .. entry.query,
       no_esc = true,
-      rg_opts = '--column --line-number --no-heading --color=always --smart-case --glob "' .. glob .. '"',
-    })
+      rg_opts = engine.rg_base_opts(glob),
+    }))
   elseif entry.query == "" then
     -- Empty query -> live grep so the user can type interactively
-    fzf.live_grep({
-      cwd = engine.vault_path,
-      prompt = "Saved [" .. entry.name .. " | " .. label .. "]> ",
-      file_icons = true,
-      git_icons = false,
-      rg_opts = '--column --line-number --no-heading --color=always --smart-case --glob "' .. glob .. '"',
-    })
+    fzf.live_grep(engine.vault_fzf_opts("Saved [" .. entry.name .. " | " .. label .. "]", {
+      rg_opts = engine.rg_base_opts(glob),
+    }))
   else
     -- Fixed query grep
-    fzf.grep({
-      cwd = engine.vault_path,
-      prompt = "Saved [" .. entry.name .. "]> ",
-      file_icons = true,
-      git_icons = false,
+    fzf.grep(engine.vault_fzf_opts("Saved [" .. entry.name .. "]", {
       search = entry.query,
       no_esc = true,
-      rg_opts = '--column --line-number --no-heading --color=always --smart-case --glob "' .. glob .. '"',
-    })
+      rg_opts = engine.rg_base_opts(glob),
+    }))
   end
 end
 
@@ -180,7 +105,7 @@ function M.save(name, query, scope, search_type)
     scope = scope or "all",
     type = search_type or "grep",
   }
-  local searches = load_searches()
+  local searches = store.load()
   -- Replace if a search with the same name exists
   local replaced = false
   for i, s in ipairs(searches) do
@@ -193,13 +118,13 @@ function M.save(name, query, scope, search_type)
   if not replaced then
     searches[#searches + 1] = entry
   end
-  save_searches(searches)
+  store.save(searches)
   vim.notify("Vault: saved search '" .. name .. "'", vim.log.levels.INFO)
 end
 
 --- List saved searches in an fzf-lua picker; selecting one executes it.
 function M.list()
-  local searches = load_searches()
+  local searches = store.load()
   if #searches == 0 then
     vim.notify("Vault: no saved searches", vim.log.levels.INFO)
     return
@@ -238,7 +163,7 @@ end
 --- Delete a saved search by name.
 ---@param name string
 function M.delete(name)
-  local searches = load_searches()
+  local searches = store.load()
   local new = {}
   local found = false
   for _, s in ipairs(searches) do
@@ -252,13 +177,13 @@ function M.delete(name)
     vim.notify("Vault: no saved search named '" .. name .. "'", vim.log.levels.WARN)
     return
   end
-  save_searches(new)
+  store.save(new)
   vim.notify("Vault: deleted saved search '" .. name .. "'", vim.log.levels.INFO)
 end
 
 --- Interactive delete via fzf-lua picker.
 function M.pick_delete()
-  local searches = load_searches()
+  local searches = store.load()
   if #searches == 0 then
     vim.notify("Vault: no saved searches to delete", vim.log.levels.INFO)
     return
@@ -319,7 +244,7 @@ function M.save_interactive()
       return
     end
 
-    local scopes = { "all", "projects", "areas", "log", "domains", "library" }
+    local scopes = vim.tbl_map(function(s) return s.key end, config.scopes)
     local scope = engine.select(scopes, { prompt = "Search scope" })
     if not scope then
       return

@@ -1,4 +1,5 @@
 local engine = require("andrew.vault.engine")
+local link_utils = require("andrew.vault.link_utils")
 
 local M = {}
 
@@ -138,36 +139,7 @@ local function get_wikilink_details_under_cursor()
     end
     if col >= open_start and col <= close_end then
       local inner = line:sub(open_end + 1, close_start - 1)
-      -- Normalise \| escape used inside markdown tables
-      inner = inner:gsub("\\|", "|")
-      -- Strip display alias: [[target|alias]] -> target
-      local target = inner:match("^([^|]+)") or inner
-
-      local name, heading, block_id
-
-      -- Parse: note#heading^block-id, note^block-id, note#heading, note
-      local n, h, b = target:match("^([^#%^]+)#([^%^]+)%^(.+)$")
-      if n then
-        name, heading, block_id = n, h, b
-      else
-        n, b = target:match("^([^#%^]+)%^(.+)$")
-        if n then
-          name, block_id = n, b
-        else
-          n, h = target:match("^([^#%^]+)#(.+)$")
-          if n then
-            name, heading = n, h
-          else
-            name = target:match("^([^#%^]+)") or target
-          end
-        end
-      end
-
-      return {
-        name = vim.trim(name),
-        heading = heading and vim.trim(heading) or nil,
-        block_id = block_id and vim.trim(block_id) or nil,
-      }
+      return link_utils.parse_target(inner)
     end
     start = close_end + 1
   end
@@ -286,13 +258,9 @@ end
 local function follow_link()
   -- 1) Wikilink: [[target]] or [[target|alias]] or [[target#heading]] or [[target^block-id]]
   local details = get_wikilink_details_under_cursor()
-  if details and details.name ~= "" then
-    local link = details.name
-    local path = resolve_link(link)
-    if path then
-      vim.cmd("edit " .. vim.fn.fnameescape(path))
-
-      -- Jump to heading if specified
+  if details then
+    -- Same-file reference: [[#heading]] or [[^block-id]]
+    if details.name == "" and (details.heading or details.block_id) then
       if details.heading then
         local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
         local heading_slug = details.heading:lower()
@@ -311,14 +279,13 @@ local function follow_link()
             if slug == heading_slug then
               vim.api.nvim_win_set_cursor(0, { i, 0 })
               vim.cmd("normal! zz")
-              break
+              return
             end
           end
         end
-      end
-
-      -- Jump to block reference if specified
-      if details.block_id then
+        vim.notify("Heading not found: #" .. details.heading, vim.log.levels.WARN)
+      elseif details.block_id then
+        local path = vim.api.nvim_buf_get_name(0)
         local block_line = find_block_in_file(path, details.block_id)
         if block_line then
           vim.api.nvim_win_set_cursor(0, { block_line, 0 })
@@ -327,26 +294,72 @@ local function follow_link()
           vim.notify("Block not found: ^" .. details.block_id, vim.log.levels.WARN)
         end
       end
-    else
-      -- Create new notes in the same directory as the current buffer (Obsidian behavior)
-      local buf_dir = vim.fn.expand("%:p:h")
-      local new_path
-      if vim.startswith(buf_dir, engine.vault_path) then
-        new_path = buf_dir .. "/" .. link .. ".md"
-      else
-        new_path = engine.vault_path .. "/" .. link .. ".md"
-      end
-      local dir = vim.fn.fnamemodify(new_path, ":h")
-      vim.fn.mkdir(dir, "p")
-      vim.cmd("edit " .. vim.fn.fnameescape(new_path))
-      local key = link:lower()
-      if not cache[key] then
-        cache[key] = {}
-      end
-      table.insert(cache[key], new_path)
-      vim.notify("Created: " .. link .. ".md", vim.log.levels.INFO)
+      return
     end
-    return
+
+    -- Normal cross-file wikilink
+    if details.name ~= "" then
+      local link = details.name
+      local path = resolve_link(link)
+      if path then
+        vim.cmd("edit " .. vim.fn.fnameescape(path))
+
+        -- Jump to heading if specified
+        if details.heading then
+          local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+          local heading_slug = details.heading:lower()
+            :gsub("[^%w%s%-]", "")
+            :gsub("%s", "-")
+            :gsub("^%-+", "")
+            :gsub("%-+$", "")
+          for i, l in ipairs(lines) do
+            local heading_text = l:match("^#+%s+(.*)")
+            if heading_text then
+              local slug = heading_text:lower()
+                :gsub("[^%w%s%-]", "")
+                :gsub("%s", "-")
+                :gsub("^%-+", "")
+                :gsub("%-+$", "")
+              if slug == heading_slug then
+                vim.api.nvim_win_set_cursor(0, { i, 0 })
+                vim.cmd("normal! zz")
+                break
+              end
+            end
+          end
+        end
+
+        -- Jump to block reference if specified
+        if details.block_id then
+          local block_line = find_block_in_file(path, details.block_id)
+          if block_line then
+            vim.api.nvim_win_set_cursor(0, { block_line, 0 })
+            vim.cmd("normal! zz")
+          else
+            vim.notify("Block not found: ^" .. details.block_id, vim.log.levels.WARN)
+          end
+        end
+      else
+        -- Create new notes in the same directory as the current buffer (Obsidian behavior)
+        local buf_dir = vim.fn.expand("%:p:h")
+        local new_path
+        if engine.is_vault_path(buf_dir) then
+          new_path = buf_dir .. "/" .. link .. ".md"
+        else
+          new_path = engine.vault_path .. "/" .. link .. ".md"
+        end
+        local dir = vim.fn.fnamemodify(new_path, ":h")
+        vim.fn.mkdir(dir, "p")
+        vim.cmd("edit " .. vim.fn.fnameescape(new_path))
+        local key = link:lower()
+        if not cache[key] then
+          cache[key] = {}
+        end
+        table.insert(cache[key], new_path)
+        vim.notify("Created: " .. link .. ".md", vim.log.levels.INFO)
+      end
+      return
+    end
   end
 
   -- 2) Markdown link: [text](url-or-path) or [text](#anchor)
@@ -520,7 +533,7 @@ function M.setup()
     pattern = "*.md",
     callback = function(ev)
       local bufpath = vim.api.nvim_buf_get_name(ev.buf)
-      if vim.startswith(bufpath, engine.vault_path) then
+      if engine.is_vault_path(bufpath) then
         M.invalidate_cache()
       end
     end,
