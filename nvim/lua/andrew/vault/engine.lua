@@ -1,7 +1,41 @@
 local M = {}
 
--- Configurable vault root path
-M.vault_path = vim.fn.expand("~/Documents/Personal-Vault-Copy-02")
+-- Available vaults (name -> path)
+M.vaults = {
+  ["Main"] = vim.fn.expand("~/Documents/Obsidian-Vault/Obsidian-Vault"),
+  ["Personal"] = vim.fn.expand("~/Desktop/Personal Vault"),
+}
+
+-- Active vault (default to Main)
+M.vault_path = M.vaults["Main"]
+
+--- Switch to a different vault by name.
+---@param name string vault name from M.vaults
+function M.switch_vault(name)
+  local path = M.vaults[name]
+  if not path then
+    vim.notify("Vault: unknown vault '" .. name .. "'", vim.log.levels.ERROR)
+    return
+  end
+  M.vault_path = path
+  vim.notify("Vault: switched to " .. name .. " (" .. path .. ")", vim.log.levels.INFO)
+end
+
+--- Show a picker to select and switch vaults.
+function M.pick_vault()
+  local names = {}
+  for name, _ in pairs(M.vaults) do
+    names[#names + 1] = name
+  end
+  table.sort(names)
+
+  M.run(function()
+    local choice = M.select(names, { prompt = "Switch vault" })
+    if choice then
+      M.switch_vault(choice)
+    end
+  end)
+end
 
 --- Run a template function inside a coroutine.
 --- The function can call M.input() and M.select() which yield/resume automatically.
@@ -21,10 +55,12 @@ function M.input(opts)
   local co = coroutine.running()
   assert(co, "engine.input() must be called within engine.run()")
   vim.ui.input(opts, function(value)
-    local ok, err = coroutine.resume(co, value)
-    if not ok then
-      vim.notify("Vault: " .. tostring(err), vim.log.levels.ERROR)
-    end
+    vim.schedule(function()
+      local ok, err = coroutine.resume(co, value)
+      if not ok then
+        vim.notify("Vault: " .. tostring(err), vim.log.levels.ERROR)
+      end
+    end)
   end)
   return coroutine.yield()
 end
@@ -37,10 +73,12 @@ function M.select(items, opts)
   local co = coroutine.running()
   assert(co, "engine.select() must be called within engine.run()")
   vim.ui.select(items, opts, function(choice)
-    local ok, err = coroutine.resume(co, choice)
-    if not ok then
-      vim.notify("Vault: " .. tostring(err), vim.log.levels.ERROR)
-    end
+    vim.schedule(function()
+      local ok, err = coroutine.resume(co, choice)
+      if not ok then
+        vim.notify("Vault: " .. tostring(err), vim.log.levels.ERROR)
+      end
+    end)
   end)
   return coroutine.yield()
 end
@@ -67,9 +105,12 @@ function M.week_number()
   return os.date("%V")
 end
 
---- Returns YYYY-MM-DD offset by `days` from today (can be negative)
+--- Returns YYYY-MM-DD offset by `days` from today (can be negative).
+--- Uses os.time table normalization to handle DST correctly.
 function M.date_offset(days)
-  return os.date("%Y-%m-%d", os.time() + days * 86400)
+  local t = os.date("*t")
+  t.day = t.day + days
+  return os.date("%Y-%m-%d", os.time(t))
 end
 
 --- Create directory and all parents if they don't exist
@@ -80,18 +121,35 @@ end
 
 --- Write a note to the vault and open it in the current buffer.
 --- Creates parent directories as needed.
+--- If the file already exists, prompts for confirmation before overwriting.
+--- Must be called from within M.run() if overwrite confirmation is needed.
 ---@param rel_path string path relative to vault root, WITHOUT .md extension
 ---@param content string full file content including frontmatter
+---@return boolean success
 function M.write_note(rel_path, content)
   local full_path = M.vault_path .. "/" .. rel_path .. ".md"
   local dir = vim.fn.fnamemodify(full_path, ":h")
   M.ensure_dir(dir)
 
+  -- Guard against overwriting existing files
+  if vim.fn.filereadable(full_path) == 1 then
+    local choice = M.select(
+      { "Open existing", "Overwrite", "Cancel" },
+      { prompt = rel_path .. ".md already exists" }
+    )
+    if choice == "Open existing" then
+      vim.cmd("edit " .. vim.fn.fnameescape(full_path))
+      return false
+    elseif choice ~= "Overwrite" then
+      return false
+    end
+  end
+
   -- Write file
-  local file = io.open(full_path, "w")
+  local file, io_err = io.open(full_path, "w")
   if not file then
-    vim.notify("Vault: failed to write " .. full_path, vim.log.levels.ERROR)
-    return
+    vim.notify("Vault: failed to write " .. full_path .. ": " .. (io_err or "unknown error"), vim.log.levels.ERROR)
+    return false
   end
   file:write(content)
   file:close()
@@ -99,6 +157,7 @@ function M.write_note(rel_path, content)
   -- Open in editor
   vim.cmd("edit " .. vim.fn.fnameescape(full_path))
   vim.notify("Created: " .. rel_path .. ".md", vim.log.levels.INFO)
+  return true
 end
 
 --- Simple template variable substitution.

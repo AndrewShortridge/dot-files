@@ -17,6 +17,8 @@ function M.setup_highlights()
   set(0, "VaultQueryTaskOpen", { link = "Normal", default = true })
   set(0, "VaultQuerySep", { fg = "#c678dd", default = true })
   set(0, "VaultQueryGroupHeader", { link = "Title", default = true })
+  -- Dark blue for link items that reference existing vault files
+  set(0, "VaultQueryLink", { fg = "#3b82f6", bold = true, default = true })
 end
 
 M.setup_highlights()
@@ -89,12 +91,19 @@ local function render_table(item)
   end
 
   local str_rows = {}
+  local row_link_flags = {} -- row_link_flags[row_idx][col_idx] = true if cell is a link
   for _, row in ipairs(rows) do
     local sr = {}
+    local flags = {}
     for i = 1, #headers do
-      sr[i] = truncate(to_str(row[i]), max_cell)
+      local raw = row[i]
+      sr[i] = truncate(to_str(raw), max_cell)
+      -- Detect Link objects (table with path field or __tostring metamethod) and wikilink strings
+      flags[i] = (type(raw) == "table" and raw.path ~= nil)
+        or sr[i]:match("%[%[.-%]%]")
     end
     str_rows[#str_rows + 1] = sr
+    row_link_flags[#row_link_flags + 1] = flags
   end
 
   -- Calculate column widths
@@ -142,11 +151,13 @@ local function render_table(item)
   }
 
   -- Data rows
-  for _, row in ipairs(str_rows) do
+  for row_idx, row in ipairs(str_rows) do
     local cell_parts = {}
     for i = 1, #widths do
       local cell = row[i] or "\u{2014}"
-      local hl = (cell == "\u{2014}") and "VaultQueryNull" or "VaultQueryValue"
+      local hl = (cell == "\u{2014}") and "VaultQueryNull"
+        or row_link_flags[row_idx][i] and "VaultQueryLink"
+        or "VaultQueryValue"
       cell_parts[#cell_parts + 1] = { "\u{2502}", "VaultQueryBorder" }
       cell_parts[#cell_parts + 1] = { " " .. pad(cell, widths[i]) .. " ", hl }
     end
@@ -187,9 +198,13 @@ local function render_list(item)
 
   for _, v in ipairs(items) do
     local text = to_str(v)
+    -- Use dark blue for Link objects (existing vault files) or strings containing wikilinks
+    local is_link = (type(v) == "table" and v.path ~= nil)
+      or text:match("%[%[.-%]%]")
+    local hl = is_link and "VaultQueryLink" or "VaultQueryValue"
     lines[#lines + 1] = {
       { "  \u{2022} ", "VaultQueryBorder" },
-      { text, "VaultQueryValue" },
+      { text, hl },
     }
   end
 

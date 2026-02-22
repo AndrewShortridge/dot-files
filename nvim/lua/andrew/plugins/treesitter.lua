@@ -75,6 +75,9 @@ return {
         "vim",
         "rust",
         "c",
+        "fortran",
+        "python",
+        "latex",
 
         -- Neovim-specific
         "query",      -- Tree-sitter query language

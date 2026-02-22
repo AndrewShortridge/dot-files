@@ -17,6 +17,30 @@ local function shallow_copy(t)
   return copy
 end
 
+--- Generate a type-aware string key for GROUP BY grouping.
+--- Prevents collisions between different types (e.g., 1 vs "1" vs true).
+---@param val any
+---@return string
+local function group_key(val)
+  if val == nil then
+    return "nil:"
+  end
+  local t = type(val)
+  if t == "table" then
+    if val.path then
+      return "link:" .. val.path
+    end
+    if val.timestamp then
+      return "date:" .. tostring(val:timestamp())
+    end
+    if val.to_seconds then
+      return "dur:" .. tostring(val:to_seconds())
+    end
+    return "table:" .. tostring(val)
+  end
+  return t .. ":" .. tostring(val)
+end
+
 --- Derive a human-readable column name from an expression AST node.
 ---@param expr table
 ---@return string
@@ -107,7 +131,7 @@ local function contains_value(a, b)
             return true
           end
         elseif type(b) == "string" then
-          if v.path == b or v.path:match(b) then
+          if v.path == b or v.path:find(b, 1, true) then
             return true
           end
         end
@@ -445,6 +469,342 @@ local function eval_function(name, args, page, current_page)
       end
       return true
     end,
+
+    -- -----------------------------------------------------------------
+    -- String functions
+    -- -----------------------------------------------------------------
+
+    -- capitalize(str) -- first letter uppercase
+    capitalize = function(str)
+      str = tostring(str or "")
+      if #str == 0 then return str end
+      return str:sub(1, 1):upper() .. str:sub(2)
+    end,
+
+    -- startswith(str, prefix)
+    startswith = function(str, prefix)
+      if type(str) ~= "string" or type(prefix) ~= "string" then return false end
+      return str:sub(1, #prefix) == prefix
+    end,
+
+    -- endswith(str, suffix)
+    endswith = function(str, suffix)
+      if type(str) ~= "string" or type(suffix) ~= "string" then return false end
+      return str:sub(-#suffix) == suffix
+    end,
+
+    -- padleft(str, length, char?)
+    padleft = function(str, length, char)
+      str = tostring(str or "")
+      length = tonumber(length) or 0
+      char = tostring(char or " "):sub(1, 1)
+      while #str < length do
+        str = char .. str
+      end
+      return str
+    end,
+
+    -- padright(str, length, char?)
+    padright = function(str, length, char)
+      str = tostring(str or "")
+      length = tonumber(length) or 0
+      char = tostring(char or " "):sub(1, 1)
+      while #str < length do
+        str = str .. char
+      end
+      return str
+    end,
+
+    -- trim(str)
+    trim = function(str)
+      if type(str) ~= "string" then return tostring(str or "") end
+      return vim.trim(str)
+    end,
+
+    -- substring(str, start, end?)
+    substring = function(str, start_idx, end_idx)
+      if type(str) ~= "string" then return "" end
+      start_idx = tonumber(start_idx) or 1
+      if end_idx then
+        return str:sub(start_idx, tonumber(end_idx))
+      end
+      return str:sub(start_idx)
+    end,
+
+    -- truncate(str, length, suffix?)
+    truncate = function(str, length, suffix)
+      str = tostring(str or "")
+      length = tonumber(length) or #str
+      suffix = tostring(suffix or "...")
+      if #str <= length then return str end
+      return str:sub(1, length - #suffix) .. suffix
+    end,
+
+    -- regexreplace(str, pattern, replacement)
+    regexreplace = function(str, pattern, replacement)
+      if type(str) ~= "string" then return str end
+      return (str:gsub(tostring(pattern or ""), tostring(replacement or "")))
+    end,
+
+    -- extract(str, pattern) -- return first match
+    extract = function(str, pattern)
+      if type(str) ~= "string" or type(pattern) ~= "string" then return nil end
+      return str:match(pattern)
+    end,
+
+    -- -----------------------------------------------------------------
+    -- Numeric functions
+    -- -----------------------------------------------------------------
+
+    -- abs(num)
+    abs = function(num)
+      return math.abs(tonumber(num) or 0)
+    end,
+
+    -- ceil(num)
+    ceil = function(num)
+      return math.ceil(tonumber(num) or 0)
+    end,
+
+    -- floor(num)
+    floor = function(num)
+      return math.floor(tonumber(num) or 0)
+    end,
+
+    -- product(list)
+    product = function(list)
+      if type(list) ~= "table" or #list == 0 then return 0 end
+      local result = 1
+      for _, v in ipairs(list) do
+        result = result * (tonumber(v) or 0)
+      end
+      return result
+    end,
+
+    -- median(list)
+    median = function(list)
+      if type(list) ~= "table" or #list == 0 then return 0 end
+      local sorted = {}
+      for _, v in ipairs(list) do
+        sorted[#sorted + 1] = tonumber(v) or 0
+      end
+      table.sort(sorted)
+      local n = #sorted
+      if n % 2 == 0 then
+        return (sorted[n / 2] + sorted[n / 2 + 1]) / 2
+      else
+        return sorted[math.ceil(n / 2)]
+      end
+    end,
+
+    -- -----------------------------------------------------------------
+    -- Array functions
+    -- -----------------------------------------------------------------
+
+    -- unique(list) -- deduplicate
+    unique = function(list)
+      if type(list) ~= "table" then return list end
+      local seen = {}
+      local out = {}
+      for _, v in ipairs(list) do
+        local key = tostring(v)
+        if not seen[key] then
+          seen[key] = true
+          out[#out + 1] = v
+        end
+      end
+      return out
+    end,
+
+    -- slice(list, start, end?)
+    slice = function(list, start_idx, end_idx)
+      if type(list) ~= "table" then return {} end
+      start_idx = tonumber(start_idx) or 1
+      end_idx = tonumber(end_idx) or #list
+      if start_idx < 0 then start_idx = #list + start_idx + 1 end
+      if end_idx < 0 then end_idx = #list + end_idx + 1 end
+      local out = {}
+      for idx = math.max(1, start_idx), math.min(#list, end_idx) do
+        out[#out + 1] = list[idx]
+      end
+      return out
+    end,
+
+    -- first(list)
+    first = function(list)
+      if type(list) ~= "table" then return nil end
+      return list[1]
+    end,
+
+    -- last(list)
+    last = function(list)
+      if type(list) ~= "table" then return nil end
+      return list[#list]
+    end,
+
+    -- count(list)
+    count = function(list)
+      if type(list) ~= "table" then return 0 end
+      return #list
+    end,
+
+    -- zip(list1, list2)
+    zip = function(list1, list2)
+      if type(list1) ~= "table" or type(list2) ~= "table" then return {} end
+      local out = {}
+      for idx = 1, math.min(#list1, #list2) do
+        out[#out + 1] = { list1[idx], list2[idx] }
+      end
+      return out
+    end,
+
+    -- -----------------------------------------------------------------
+    -- Date/Range functions
+    -- -----------------------------------------------------------------
+
+    -- isbetween(val, min_val, max_val) -- inclusive range check
+    isbetween = function(val, min_val, max_val)
+      local cmp_min = types.compare(val, min_val)
+      local cmp_max = types.compare(val, max_val)
+      return cmp_min >= 0 and cmp_max <= 0
+    end,
+
+    -- today() -- return today's date
+    today = function()
+      return types.Date.today()
+    end,
+
+    -- now() -- return current date+time
+    now = function()
+      local d = os.date("*t")
+      return types.Date.new(d.year, d.month, d.day, d.hour, d.min, d.sec)
+    end,
+
+    -- yesterday()
+    yesterday = function()
+      local d = os.date("*t")
+      d.day = d.day - 1
+      local t = os.time(d)
+      local r = os.date("*t", t)
+      return types.Date.new(r.year, r.month, r.day)
+    end,
+
+    -- tomorrow()
+    tomorrow = function()
+      local d = os.date("*t")
+      d.day = d.day + 1
+      local t = os.time(d)
+      local r = os.date("*t", t)
+      return types.Date.new(r.year, r.month, r.day)
+    end,
+
+    -- daysago(n) -- date n days in the past
+    daysago = function(n)
+      n = tonumber(n) or 0
+      local d = os.date("*t")
+      d.day = d.day - n
+      local r = os.date("*t", os.time(d))
+      return types.Date.new(r.year, r.month, r.day)
+    end,
+
+    -- daysfromnow(n) -- date n days in the future
+    daysfromnow = function(n)
+      n = tonumber(n) or 0
+      local d = os.date("*t")
+      d.day = d.day + n
+      local r = os.date("*t", os.time(d))
+      return types.Date.new(r.year, r.month, r.day)
+    end,
+
+    -- weeksago(n) -- date n weeks in the past
+    weeksago = function(n)
+      n = tonumber(n) or 0
+      local d = os.date("*t")
+      d.day = d.day - (n * 7)
+      local r = os.date("*t", os.time(d))
+      return types.Date.new(r.year, r.month, r.day)
+    end,
+
+    -- monthsago(n) -- date n months in the past
+    monthsago = function(n)
+      n = tonumber(n) or 0
+      local d = os.date("*t")
+      d.month = d.month - n
+      local r = os.date("*t", os.time(d))
+      return types.Date.new(r.year, r.month, r.day)
+    end,
+
+    -- sow() -- start of current week (Monday)
+    sow = function()
+      local d = os.date("*t")
+      local wday = d.wday -- 1=Sunday, 2=Monday, ..., 7=Saturday
+      local offset = (wday == 1) and -6 or (2 - wday)
+      d.day = d.day + offset
+      local r = os.date("*t", os.time(d))
+      return types.Date.new(r.year, r.month, r.day)
+    end,
+
+    -- eow() -- end of current week (Sunday)
+    eow = function()
+      local d = os.date("*t")
+      local wday = d.wday
+      local offset = (wday == 1) and 0 or (8 - wday)
+      d.day = d.day + offset
+      local r = os.date("*t", os.time(d))
+      return types.Date.new(r.year, r.month, r.day)
+    end,
+
+    -- som() -- start of current month
+    som = function()
+      local d = os.date("*t")
+      return types.Date.new(d.year, d.month, 1)
+    end,
+
+    -- eom() -- end of current month
+    eom = function()
+      local d = os.date("*t")
+      d.month = d.month + 1
+      d.day = 0 -- day 0 of next month = last day of current month
+      local r = os.date("*t", os.time(d))
+      return types.Date.new(r.year, r.month, r.day)
+    end,
+
+    -- -----------------------------------------------------------------
+    -- Utility functions
+    -- -----------------------------------------------------------------
+
+    -- keys(object) -- get keys of a table
+    keys = function(obj)
+      if type(obj) ~= "table" then return {} end
+      local out = {}
+      for k in pairs(obj) do
+        if type(k) == "string" then
+          out[#out + 1] = k
+        end
+      end
+      table.sort(out)
+      return out
+    end,
+
+    -- values(object) -- get values of a table
+    values = function(obj)
+      if type(obj) ~= "table" then return {} end
+      local out = {}
+      for _, v in pairs(obj) do
+        out[#out + 1] = v
+      end
+      return out
+    end,
+
+    -- object(keys, values) -- create table from parallel arrays
+    object = function(key_list, val_list)
+      if type(key_list) ~= "table" or type(val_list) ~= "table" then return {} end
+      local out = {}
+      for idx = 1, math.min(#key_list, #val_list) do
+        out[tostring(key_list[idx])] = val_list[idx]
+      end
+      return out
+    end,
   }
 
   local fn = fns[name:lower()]
@@ -668,7 +1028,7 @@ local function apply_group_by(pages, ast, current_page)
   local key_map = {} -- tostring(key) -> { key = any, pages = {} }
   for _, page in ipairs(pages) do
     local val = eval_expr(ast.group_by.expr, page, current_page)
-    local str_key = tostring(val or "nil")
+    local str_key = group_key(val)
     if not key_map[str_key] then
       key_map[str_key] = { key = val, pages = {} }
       table.insert(key_order, str_key)
@@ -828,16 +1188,10 @@ local function build_task_results(ast, pages, groups, current_page)
       if ast.where then
         local ctx = make_task_context(page, task)
         if types.truthy(eval_expr(ast.where, ctx, current_page)) then
-          table.insert(out, {
-            text = task.text or "",
-            completed = task.completed or false,
-          })
+          table.insert(out, task)
         end
       else
-        table.insert(out, {
-          text = task.text or "",
-          completed = task.completed or false,
-        })
+        table.insert(out, task)
       end
     end
     return out
@@ -928,13 +1282,11 @@ function M.execute(ast, index, current_file_path)
     -- 4. SORT
     pages = apply_sort(pages, ast, current_page)
 
-    -- 5. GROUP BY
-    local groups = apply_group_by(pages, ast, current_page)
+    -- 5. LIMIT (applied to flat page list before grouping)
+    pages = apply_limit(pages, ast)
 
-    -- 6. LIMIT (applied to the flat page list, before grouping renders)
-    if not groups then
-      pages = apply_limit(pages, ast)
-    end
+    -- 6. GROUP BY
+    local groups = apply_group_by(pages, ast, current_page)
 
     -- 7. Result construction
     if ast.type == "TABLE" then

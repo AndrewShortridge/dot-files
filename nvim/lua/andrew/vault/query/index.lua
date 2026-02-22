@@ -39,6 +39,37 @@ function M.Index:build_sync()
   return self
 end
 
+--- Incrementally update the index: only re-index changed/new files, remove deleted ones.
+---@return table self
+function M.Index:update_incremental()
+  if not self._mtimes then
+    -- No previous build; fall back to full sync
+    return self:build_sync()
+  end
+
+  local seen = {}
+  self:_walk_incremental(self.vault_path, "", seen)
+
+  -- Remove pages for files that no longer exist
+  local to_remove = {}
+  for rel_path in pairs(self.pages) do
+    if not seen[rel_path] then
+      to_remove[#to_remove + 1] = rel_path
+    end
+  end
+  for _, rel_path in ipairs(to_remove) do
+    self.pages[rel_path] = nil
+    self._mtimes[rel_path] = nil
+  end
+
+  -- Recompute inlinks (must be done fully since any change can affect link targets)
+  for _, page in pairs(self.pages) do
+    page.file.inlinks = {}
+  end
+  self:_compute_inlinks()
+  return self
+end
+
 --- Get a page by its vault-relative path.
 ---@param rel_path string e.g. "Projects/Alpha/Dashboard.md"
 ---@return table|nil page
@@ -212,6 +243,43 @@ function M.Index:_walk(abs_dir, rel_dir)
   end
 end
 
+--- Incrementally walk a directory, only re-indexing files with changed mtime.
+---@param abs_dir string absolute directory path
+---@param rel_dir string directory path relative to vault root
+---@param seen table set of rel_paths encountered (populated by this method)
+function M.Index:_walk_incremental(abs_dir, rel_dir, seen)
+  local handle = vim.uv.fs_scandir(abs_dir)
+  if not handle then
+    return
+  end
+
+  while true do
+    local name, ftype = vim.uv.fs_scandir_next(handle)
+    if not name then
+      break
+    end
+
+    local abs_path = abs_dir .. "/" .. name
+    local rel_path = (rel_dir == "") and name or (rel_dir .. "/" .. name)
+
+    if ftype == "directory" then
+      if not SKIP_DIRS[name] then
+        self:_walk_incremental(abs_path, rel_path, seen)
+      end
+    elseif ftype == "file" and name:match("%.md$") then
+      seen[rel_path] = true
+      local stat = vim.uv.fs_stat(abs_path)
+      if stat then
+        local old_mtime = self._mtimes and self._mtimes[rel_path]
+        if not old_mtime or stat.mtime.sec ~= old_mtime then
+          -- File is new or modified; re-index it
+          self:_index_file(abs_path, rel_path)
+        end
+      end
+    end
+  end
+end
+
 --- Index a single markdown file.
 ---@param abs_path string absolute file path
 ---@param rel_path string path relative to vault root
@@ -276,6 +344,10 @@ function M.Index:_index_file(abs_path, rel_path)
   end
 
   self.pages[rel_path] = page
+
+  -- Track mtime for incremental updates
+  if not self._mtimes then self._mtimes = {} end
+  self._mtimes[rel_path] = stat.mtime.sec
 end
 
 --- Read a file's full contents.
@@ -469,9 +541,8 @@ function M.Index:_parse_scalar(text)
   if text == "true" then return true end
   if text == "false" then return false end
 
-  -- Date: YYYY-MM-DD (optionally with time)
-  local y, m, d = text:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)$")
-  if y then
+  -- Date: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS (and similar datetime formats)
+  if text:match("^%d%d%d%d%-%d%d%-%d%d$") or text:match("^%d%d%d%d%-%d%d%-%d%d[T ]") then
     local parsed = Date.parse(text)
     if parsed then return parsed end
   end
@@ -608,6 +679,8 @@ function M.Index:_extract_links(content)
   -- Match embeds: ![[...]] and wikilinks: [[...]]
   -- Process embeds first so we don't double-match
   for embed_content in clean:gmatch("!%[%[(.-)%]%]") do
+    -- Normalise \| escape used inside markdown tables
+    embed_content = embed_content:gsub("\\|", "|")
     local path, display = embed_content:match("^(.-)%|(.+)$")
     if not path then
       path = embed_content
@@ -630,6 +703,8 @@ function M.Index:_extract_links(content)
       local is_embed = (s > 1) and (line:sub(s - 1, s - 1) == "!")
       if not is_embed then
         local inner = line:sub(s + 2, e - 2)
+        -- Normalise \| escape used inside markdown tables
+        inner = inner:gsub("\\|", "|")
         -- Skip if it looks like an inline field: [key:: value]
         if not inner:match("^[%w_%-]+::") then
           local path, display = inner:match("^(.-)%|(.+)$")
@@ -842,11 +917,21 @@ end
 ---@param text string
 ---@return string cleaned text
 function M.Index:_strip_code_blocks(text)
-  -- Remove fenced code blocks: ```...```
-  text = text:gsub("```.-```", "")
-  -- Remove inline code: `...`
-  text = text:gsub("`[^`]+`", "")
-  return text
+  -- Remove fenced code blocks line-by-line to handle unclosed fences correctly
+  local lines = {}
+  local in_fence = false
+  for line in text:gmatch("[^\n]*") do
+    if line:match("^%s*```") then
+      in_fence = not in_fence
+      lines[#lines + 1] = ""
+    elseif in_fence then
+      lines[#lines + 1] = ""
+    else
+      -- Remove inline code: `...`
+      lines[#lines + 1] = line:gsub("`[^`]+`", "")
+    end
+  end
+  return table.concat(lines, "\n")
 end
 
 return M

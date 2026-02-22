@@ -665,6 +665,47 @@ function M.create_env(index, current_file_path)
       end
       dv.paragraph(table.concat(parts, "\t"))
     end,
+
+    -- Built-in utility functions ---------------------------------------------
+
+    --- Return true if `str` starts with `prefix`.
+    ---@param str    string
+    ---@param prefix string
+    ---@return boolean
+    startsWith = function(str, prefix)
+      return vim.startswith(str, prefix)
+    end,
+
+    --- Return true if `str` ends with `suffix`.
+    ---@param str    string
+    ---@param suffix string
+    ---@return boolean
+    endsWith = function(str, suffix)
+      return vim.endswith(str, suffix)
+    end,
+
+    --- Return a new list with duplicates removed (order preserved).
+    ---@param list table
+    ---@return table
+    unique = function(list)
+      local seen = {}
+      local out = {}
+      for _, v in ipairs(list) do
+        local key = tostring(v)
+        if not seen[key] then
+          seen[key] = true
+          out[#out + 1] = v
+        end
+      end
+      return out
+    end,
+
+    --- Return the number of items in a list/table.
+    ---@param list table
+    ---@return number
+    count = function(list)
+      return #list
+    end,
   }
 
   return env, output

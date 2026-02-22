@@ -49,7 +49,7 @@ function M.run(e, p)
     .. "run_id: " .. (run_id or "") .. "\n"
     .. "campaign: " .. (campaign or "") .. "\n"
     .. "status: " .. (status or "") .. "\n"
-    .. "parent-project: '[[" .. project .. "/Dashboard]]'\n"
+    .. "parent-project: '[[Projects/" .. project .. "/Dashboard|" .. project .. "]]'\n"
     .. "date_started: " .. date .. "\n"
     .. "date_completed:\n"
     .. "hpc_path: " .. (hpc_path or "") .. "\n"
@@ -70,7 +70,7 @@ function M.run(e, p)
   body = body
     .. "**Campaign:** [[" .. (campaign or "") .. "]]\n"
     .. "**Status:** " .. (status or "") .. "\n"
-    .. "**Project:** [[" .. project .. "/Dashboard]]\n"
+    .. "**Project:** [[Projects/" .. project .. "/Dashboard|" .. project .. "]]\n"
     .. "**Started:** " .. date .. "\n"
     .. "**HPC Path:** " .. (hpc_path or "") .. "\n\n"
     .. "---\n\n"

@@ -11,8 +11,8 @@ return {
 
   -- Dependencies
   dependencies = {
-    -- Snacks for UI components (input prompts)
-    { "folke/snacks.nvim", opts = { input = { enabled = true } } },
+    -- Snacks for UI components (configured in plugins/snacks.lua)
+    "folke/snacks.nvim",
   },
 
   -- =============================================================================
