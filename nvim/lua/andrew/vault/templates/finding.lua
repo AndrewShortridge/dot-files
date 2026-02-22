@@ -5,7 +5,7 @@ local body_template = [==[
 # ${title}
 
 **Status:** `${status}`
-**Project:** [[Projects/${project}/Dashboard|${project}]]
+**Project:** [[${project}/Dashboard]]
 **Created:** ${date}
 
 ---
@@ -86,7 +86,7 @@ function M.run(e, p)
     .. "type: finding\n"
     .. "title: " .. title .. "\n"
     .. "status: " .. status .. "\n"
-    .. "parent-project: '[[Projects/" .. project .. "/Dashboard|" .. project .. "]]'\n"
+    .. "parent-project: '[[" .. project .. "/Dashboard]]'\n"
     .. "date_created: " .. date .. "\n"
     .. "last_updated: " .. date .. "\n"
     .. "tags:\n"

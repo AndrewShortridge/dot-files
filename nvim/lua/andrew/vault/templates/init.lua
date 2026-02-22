@@ -8,9 +8,6 @@ return {
   -- Logs
   require("andrew.vault.templates.daily_log"),
   require("andrew.vault.templates.weekly_review"),
-  require("andrew.vault.templates.monthly_review"),
-  require("andrew.vault.templates.quarterly_review"),
-  require("andrew.vault.templates.yearly_review"),
 
   -- Project management
   require("andrew.vault.templates.project_dashboard"),

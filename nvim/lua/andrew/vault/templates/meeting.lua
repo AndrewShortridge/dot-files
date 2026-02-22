@@ -24,7 +24,7 @@ function M.run(e, p)
   if is_general then
     fm = fm .. "parent-project:\n"
   else
-    fm = fm .. "parent-project: '[[Projects/" .. project .. "/Dashboard|" .. project .. "]]'\n"
+    fm = fm .. "parent-project: '[[" .. project .. "/Dashboard]]'\n"
   end
   fm = fm
     .. "tags:\n"
@@ -37,7 +37,7 @@ function M.run(e, p)
   if is_general then
     body = body .. "**Project:** —\n"
   else
-    body = body .. "**Project:** [[Projects/" .. project .. "/Dashboard|" .. project .. "]]\n"
+    body = body .. "**Project:** [[" .. project .. "/Dashboard]]\n"
   end
   body = body .. [[
 

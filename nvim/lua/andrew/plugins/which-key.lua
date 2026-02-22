@@ -35,27 +35,13 @@ return {
     -- Pre-register groups so which-key shows them even for lazy-loaded plugins
 
     wk.add({
-      { "<leader>a", group = "Type Check" },
-      { "<leader>c", group = "Code Actions" },
       { "<leader>d", group = "Debug" },
-      { "<leader>e", group = "Explorer" },
-      { "<leader>f", group = "Find/Files" },
-      { "<leader>g", group = "Git" },
-      { "<leader>h", group = "Git Hunks" },
-      { "<leader>l", group = "Lint" },
-      { "<leader>m", group = "Make/Build" },
-      { "<leader>o", group = "OpenCode" },
       { "<leader>r", group = "Rust/Refactor" },
-      { "<leader>s", group = "Split/Window" },
-      { "<leader>t", group = "Tab/Terminal" },
-      { "<leader>v", group = "Vault" },
-      { "<leader>vt", group = "Templates" },
-      { "<leader>vf", group = "Find" },
-      { "<leader>vq", group = "Query" },
-      { "<leader>ve", group = "Edit" },
-      { "<leader>vx", group = "Tasks" },
-      { "<leader>vc", group = "Check" },
+      { "<leader>c", group = "Code Actions" },
+      { "<leader>f", group = "Find/Files" },
       { "<leader>x", group = "Trouble/Diagnostics" },
+      { "<leader>s", group = "Split/Window" },
+      { "<leader>g", group = "Git" },
     })
   end,
 }

@@ -4,7 +4,7 @@ M.name = "Journal Entry"
 local body_template = [==[
 # ${title}
 
-**Project:** [[Projects/${project}/Dashboard|${project}]]
+**Project:** [[${project}/Dashboard]]
 **Date:** ${date}
 
 ---
@@ -46,7 +46,7 @@ function M.run(e, p)
   local fm = "---\n"
     .. "type: journal-entry\n"
     .. "title: " .. title .. "\n"
-    .. "parent-project: '[[Projects/" .. project .. "/Dashboard|" .. project .. "]]'\n"
+    .. "parent-project: '[[" .. project .. "/Dashboard]]'\n"
     .. "date_created: " .. date .. "\n"
     .. "tags:\n"
     .. "  - journal-entry\n"

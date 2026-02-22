@@ -2,14 +2,13 @@ local M = {}
 M.name = "Weekly Review"
 
 function M.run(e, p)
+  local title = e.input({ prompt = "Week title (e.g., Week 07 Review)" })
+  if not title then return end
+
   local date = e.today()
   local date_long = e.today_long()
   local week_num = e.week_number()
   local week_ago = e.date_offset(-6)
-
-  local default_title = "Week " .. week_num .. " Review"
-  local title = e.input({ prompt = "Week title", default = default_title })
-  if not title or title == "" then return end
 
   local content = "---\n"
     .. "type: log\n"

@@ -5,7 +5,6 @@ local executor = require("andrew.vault.query.executor")
 local api = require("andrew.vault.query.api")
 local render = require("andrew.vault.query.render")
 local js2lua = require("andrew.vault.query.js2lua")
-local config = require("andrew.vault.config")
 
 local M = {}
 
@@ -16,18 +15,13 @@ local _index_mtime = 0
 --- Get or build the vault index. Rebuilds if vault was modified.
 local function get_index()
   local vault_path = engine.vault_path
+  -- Simple staleness check: rebuild if more than 30s old
   local now = os.time()
-  if _index and (now - _index_mtime) < config.query.index_ttl then
+  if _index and (now - _index_mtime) < 30 then
     return _index
   end
-  if _index and _index.vault_path == vault_path then
-    -- Incremental update: only re-index changed/new files
-    _index:update_incremental()
-  else
-    -- First build or vault changed: full sync
-    _index = index_mod.Index.new(vault_path)
-    _index:build_sync()
-  end
+  _index = index_mod.Index.new(vault_path)
+  _index:build_sync()
   _index_mtime = now
   return _index
 end
@@ -401,11 +395,11 @@ local opts = function(desc)
   return { desc = desc, silent = true }
 end
 
-keymap("n", "<leader>vqr", function() M.render_block() end, opts("Query: render"))
-keymap("n", "<leader>vqa", function() M.render_all() end, opts("Query: render all"))
-keymap("n", "<leader>vqc", function() M.clear_block() end, opts("Query: clear output"))
-keymap("n", "<leader>vqx", function() M.clear_all() end, opts("Query: clear all"))
-keymap("n", "<leader>vqq", function() M.toggle_block() end, opts("Query: toggle"))
-keymap("n", "<leader>vqi", function() M.rebuild_index() end, opts("Query: rebuild index"))
+keymap("n", "<leader>vqr", function() M.render_block() end, opts("Vault: render query"))
+keymap("n", "<leader>vqa", function() M.render_all() end, opts("Vault: render all queries"))
+keymap("n", "<leader>vqc", function() M.clear_block() end, opts("Vault: clear query output"))
+keymap("n", "<leader>vqx", function() M.clear_all() end, opts("Vault: clear all output"))
+keymap("n", "<leader>vqq", function() M.toggle_block() end, opts("Vault: toggle query"))
+keymap("n", "<leader>vqi", function() M.rebuild_index() end, opts("Vault: rebuild index"))
 
 return M

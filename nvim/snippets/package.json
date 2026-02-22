@@ -9,10 +9,6 @@
       {
         "language": "fortran",
         "path": "./new-snippets.json"
-      },
-      {
-        "language": "markdown",
-        "path": "./markdown.json"
       }
     ]
   }

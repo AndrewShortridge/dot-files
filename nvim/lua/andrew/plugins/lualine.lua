@@ -235,16 +235,6 @@ return {
         -- Right section: Progress
         lualine_y = {
           {
-            function()
-              local wc = vim.fn.wordcount().words
-              return wc .. "w"
-            end,
-            cond = function()
-              return vim.bo.filetype == "markdown"
-            end,
-            color = { fg = colors.cyan },
-          },
-          {
             "progress",
             color = { fg = colors.purple },
           },

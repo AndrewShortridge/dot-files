@@ -40,7 +40,7 @@ return {
         NormalFloat = { bg = "#17191d" },
 
         -- Floating window border: gray foreground with dark background
-        FloatBorder = { fg = "#E06C75", bg = "#1E222A" },
+        FloatBorder = { fg = "#3E4451", bg = "#1E222A" },
       },
 
       -- =============================================================================
