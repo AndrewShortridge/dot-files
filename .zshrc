@@ -53,7 +53,7 @@ alias la='ls -A'
 alias l='ls -aF'
 
 alias aptup='sudo apt update && sudo apt upgrade -y && sudo apt full-upgrade -y && sudo apt autoremove -y && flatpak update -y'
-alias vpn-connect='/opt/cisco/anyconnect/bin/vpnui'
+alias vpn-connect='/opt/cisco/anyconnect/bin/vpnui &'
 alias ovito='/home/andrew/Software/ovito-basic-3.7.12-x86_64/bin/ovito'
 alias python='python3'
 alias uconn-login='ssh ans18010@hpc2.storrs.hpc.uconn.edu'
@@ -123,6 +123,7 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 export PATH=/home/andrew/.opencode/bin:$PATH
 export PATH="$PATH:/opt/nvim-linux-x86_64/bin"
 export PATH="/opt/nvim-linux-x86_64/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 
 
 # fzf
@@ -140,7 +141,8 @@ export FZF_ALT_C_OPTS="--preview 'eza --tree --color=always {} | head -200'"
 # eza
 alias l="eza --no-time --no-permissions --no-user --long --color=always --icons=always"
 alias ll="eza --all --long --no-time --no-permissions --no-user --color=always --icons=always"
-alias ls="eza --color=always --icons=always"
+alias la="eza --all --long --color=always --icons=always"
+alias ls="eza --color=always --icons=always --grid --group-directories-first"
 # alias ls="eza --long --color=always --icons=always --no-user"
 # alias ls="eza --color=always --icons=always --no-user"
 # alias ls="eza --color=always --icons=always"
@@ -151,3 +153,8 @@ alias wezterm='wezterm --config-file ~/.config/wezterm/wezterm.lua'
 # Adding zsh autosuggestions, MUST have this to work
 source ~/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
 
+# Setting the ledger file location through an export varialbe
+export LEDGER_FILE="~/finance-ledger/2026.ledger"
+
+# Flatpak .desktop files for rofi
+export XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/var/lib/flatpak/exports/share:$HOME/.local/share/flatpak/exports/share"
