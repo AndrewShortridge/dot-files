@@ -1,0 +1,13 @@
+{
+  "folder": "05-Resources/Self-Study/Books",
+  "fileNameFormat": "{{title}}",
+  "frontmatter": "title: {{title}}\nauthor: {{author}}\ncategory: {{category}}\npublisher: {{publisher}}\npublish_date: {{publishDate}}\ntotal_page: {{totalPage}}\nisbn10: {{isbn10}}\nisbn13: {{isbn13}}\n",
+  "content": "**Title:** {{title}}\n**Author(s):** {{author}}\n**Type:** \n\n---",
+  "useDefaultFrontmatter": false,
+  "defaultFrontmatterKeyType": "Snake Case",
+  "templateFile": "Templates/Books/Book.md",
+  "serviceProvider": "google",
+  "naverClientId": "",
+  "naverClientSecret": "",
+  "localePreference": "default"
+}
