@@ -1,0 +1,296 @@
+/* ══════════════════════════════════════════════════════════
+   One Dark color scheme override for Blue Topaz theme
+
+   Palette reference (Atom One Dark):
+     Red        #e06c75    Dark Red   #be5046
+     Green      #98c379    Dark Green #7a9f60
+     Yellow     #e5c07b
+     Blue       #61afef    Dark Blue  #528bcc
+     Purple     #c678dd
+     Cyan       #56b6c2
+     Orange     #d19a66
+     Foreground #abb2bf    White      #d7dae0
+     Comment    #5c6370    Gutter     #4b5263
+     BG         #282c34    BG Light   #2c313a
+     BG Dark    #21252b    BG Darker  #1e2227
+     Border     #3e4451    Selection  #3e4451
+   ══════════════════════════════════════════════════════════ */
+
+.theme-dark {
+
+  /* ── Core Backgrounds ── */
+  --background-primary: #282c34;
+  --background-primary-alt: #2c313a;
+  --background-secondary: #21252b;
+  --background-secondary-alt: #1e2227;
+  --background-modifier-border: #3e4451;
+  --background-modifier-border-hr: #3e4451;
+  --background-modifier-border-asymm: #3e4451;
+  --background-modifier-border-checkbox: #5c6370;
+
+  /* Blue Topaz internal background vars */
+  --background-primary-bg-4-bt: #282c34;
+  --background-primary-alt-bg-4-bt: #2c313a;
+  --background-secondary-bg-4-bt: #21252b;
+  --background-secondary-alt-bg-4-bt: #1e2227;
+
+  /* ── Text Colors ── */
+  --text-normal: #abb2bf;
+  --text-muted: #5c6370;
+  --text-muted-rgb: 92, 99, 112;
+  --text-faint: #4b5263;
+  --text-folder-file: #abb2bf;
+  --text-on-accent: #e4e4e4;
+  --text-error: #e06c75;
+  --text-error-hover: #be5046;
+  --text-selection: #3e4451cc;
+  --search-text: #abb2bf;
+  --folder-title: #d7dae0;
+
+  /* ── Accent / Theme Color ── */
+  --accent-h: 207;
+  --accent-s: 82%;
+  --accent-l: 66%;
+  --interactive-accent: #61afef;
+  --interactive-accent-rgb: 97, 175, 239;
+  --color-accent: #61afef;
+  --color-accent-1: #61afef;
+  --color-accent-2: #528bcc;
+  --theme-color: #61afef;
+  --theme-color-translucent-015: rgba(97, 175, 239, 0.15);
+
+  /* ── Interactive ── */
+  --interactive-normal: #2c313a;
+  --interactive-hover: #353b45;
+  --panel-border-color: #1e2227;
+
+  /* ── Bold / Strong ── */
+  --accent-strong: #d7dae0;
+  --font-weight-strong: bold;
+  --print-strong-color: #d7dae0;
+
+  /* ── Italic / Emphasis ── */
+  --accent-em: #98c379;
+  --font-style-em: italic;
+  --print-em-color: #98c379;
+
+  /* ── Bold + Italic (gradient) ── */
+  --strong-em-highlight-color: #c678dd;
+  --strong-em-color-1: #56b6c2;
+  --strong-em-color-2: #c678dd;
+
+  /* ── Semantic Palette ── */
+  --gray-1: #5c6370;
+  --gray-2: #abb2bf;
+  --red: #e06c75;
+  --red-1: #be5046;
+  --orange: #d19a66;
+  --orange-1: #d19a66;
+  --green: #98c379;
+  --green-1: #98c379;
+  --darkgreen: #7a9f60;
+  --aqua: #56b6c2;
+  --purple: #c678dd;
+  --blue: #61afef;
+  --darkblue: #528bcc;
+  --yellow: #e5c07b;
+  --light-yellow: #e5c07b;
+  --white: #d7dae0;
+
+  /* ── Links ── */
+  --text-accent: #61afef;
+  --text-accent-hover: #528bcc;
+  --link-url: #56b6c2;
+  --link-unresolved-decoration-color: #e06c75;
+  --unresolved-link: #e06c75;
+
+  /* ── Highlights & Search ── */
+  --text-highlight-bg: rgba(229, 192, 123, 0.25);
+  --text-highlight-bg-h-dark: 39;
+  --text-highlight-bg-s-dark: 67%;
+  --text-highlight-bg-l-dark: 69%;
+  --text-highlight-bg-a-dark: 0.25;
+  --mark-highlight-strong-em: rgba(229, 192, 123, 0.2);
+  --text-search-highlight-bg: rgba(224, 108, 117, 0.6);
+  --search-result-file-matched-bg: rgba(97, 175, 239, 0.2);
+  --search-result-file-title-color: #d7dae0;
+  --background-modifier-success: #98c379;
+  --background-modifier-success-rgb: 152, 195, 121;
+  --background-modifier-error: #e06c75;
+  --background-modifier-error-rgb: 224, 108, 117;
+  --background-match-highlight: rgba(229, 192, 123, 0.2);
+
+  /* ── Code ── */
+  --background-code: #1e222888;
+  --background-code-2: #2c313ab0;
+  --text-color-code: #d19a66;
+  --text-color-code-normal: #abb2bf;
+  --color-specification: #98c379;
+
+  /* ── Blockquote ── */
+  --background-blockquote: rgba(97, 175, 239, 0.08);
+
+  /* ── Horizontal Rules ── */
+  --hr-color-1: #e06c75;
+  --hr-color-2: #e5c07b;
+  --hr-color-3: #56b6c2;
+  --hr-color-4: #c678dd;
+  --hr-color-icon-1: #e06c75;
+  --hr-color-icon-2: #e5c07b;
+  --hr-color-icon-3: #56b6c2;
+  --hr-color-icon-4: #c678dd;
+  --hr-color-numbers-line-1: #e06c75;
+  --hr-color-numbers-line-2: #e5c07b;
+  --hr-color-numbers-line-3: #56b6c2;
+  --hr-color-numbers-line-4: #c678dd;
+  --hr-color-numbers-bg-color: rgba(97, 175, 239, 0.15);
+  --hr-color-numbers-color: #61afef;
+
+  /* ── Lists ── */
+  --list-ul-block-color: rgba(209, 154, 102, 0.65);
+  --list-ul-disc-color: #d19a66;
+  --list-ul-hover: #e5c07b;
+  --list-ol-block-color: rgba(97, 175, 239, 0.7);
+  --list-ol-hover: #61afef;
+  --list-marker-color-collapsed: #61afef;
+  --list-colorful-marker: #61afef;
+
+  /* ── Checkboxes ── */
+  --checkbox-color-0: #61afef;
+  --checkbox-color-1: #e5c07b;
+  --checkbox-color-2: #98c379;
+  --checkbox-color-3: #e06c75;
+  --checkbox-color-4: #d19a66;
+  --checkbox-color-5: #c678dd;
+  --checkbox-color-6: #5c6370;
+
+  /* ── Tags ── */
+  --tag-text: #d7dae0;
+  --stag1: #e06c75;
+  --stag1-bg: rgba(224, 108, 117, 0.2);
+  --stag2: #e5c07b;
+  --stag2-bg: rgba(229, 192, 123, 0.2);
+  --stag3: #98c379;
+  --stag3-bg: rgba(152, 195, 121, 0.2);
+  --tag1: #61afef;
+  --tag2: #56b6c2;
+  --tag3: #98c379;
+  --tag4: #c678dd;
+  --tag5: #d19a66;
+  --tag-dailynote: #61afef;
+  --tag-dailynote-bg: rgba(97, 175, 239, 0.2);
+  --tag-weeklynote: #56b6c2;
+  --tag-weeklynote-bg: rgba(86, 182, 194, 0.2);
+  --tag-questions: #c678dd;
+  --tag-questions-bg: rgba(198, 120, 221, 0.2);
+  --tag-ideas: #e5c07b;
+  --tag-ideas-bg: rgba(229, 192, 123, 0.15);
+
+  /* ── Headings ── */
+  --h1-color: #e06c75;
+  --h2-color: #e5c07b;
+  --h3-color: #98c379;
+  --h4-color: #56b6c2;
+  --h5-color: #61afef;
+  --h6-color: #c678dd;
+
+  --h1-bg-color: rgba(224, 108, 117, 0.15);
+  --h2-bg-color: rgba(229, 192, 123, 0.15);
+  --h3-bg-color: rgba(152, 195, 121, 0.15);
+  --h4-bg-color: rgba(86, 182, 194, 0.15);
+  --h5-bg-color: rgba(97, 175, 239, 0.15);
+  --h6-bg-color: rgba(198, 120, 221, 0.15);
+
+  --print-h1-color: #e06c75;
+  --print-h2-color: #e5c07b;
+  --print-h3-color: #98c379;
+  --print-h4-color: #56b6c2;
+  --print-h5-color: #61afef;
+  --print-h6-color: #c678dd;
+
+  /* ── Graph View ── */
+  --graph-text-color: #abb2bf;
+  --graph-tag: rgba(152, 195, 121, 0.75);
+  --graph-attach: rgba(86, 182, 194, 0.75);
+  --graph-circle: rgba(97, 175, 239, 0.75);
+  --graph-line: #5c6370;
+  --graph-unresolved: rgba(224, 108, 117, 0.85);
+  --graph-arrow: #e06c75;
+  --graph-control-bg: rgba(30, 34, 39, 0.8);
+  --graph-circle-outline: transparent;
+  --graph-canvas-bg: #282c34;
+  --graph-circle-fill-highlight: #61afef;
+  --graph-line-fill-highlight: rgba(97, 175, 239, 0.7);
+
+  /* ── Scrollbar ── */
+  --scrollbar-thumb: rgba(92, 99, 112, 0.5);
+
+  /* ── Translucent & Misc ── */
+  --background-mobile-drawer-1: #1e2227;
+  --background-mobile-drawer-2: rgba(30, 34, 39, 0.4);
+  --background-transparent-black-or-white-1: rgba(30, 34, 39, 0.6);
+  --background-transparent-black-or-white-2: rgba(33, 37, 43, 0.75);
+  --background-transparent-black-or-white-3: rgba(44, 49, 58, 0.4);
+  --background-transparent-black-or-white-4: rgba(92, 99, 112, 0.4);
+  --background-transparent-black-or-white-5: rgba(24, 26, 31, 0.4);
+  --background-black-or-white-1: #353b45;
+  --background-modifier-border-1: #1e2227;
+  --background-transparent-blue: rgba(40, 71, 112, 0.6);
+  --background-modifier-box-shadow: rgba(0, 0, 0, 0.2);
+  --secondary-translucent: rgba(44, 49, 58, 0.15);
+  --background-secondary-translucent: rgba(44, 49, 58, 0.15);
+  --background-secondary-translucent-1: rgba(44, 49, 58, 0.15);
+
+  /* ── Cloze / Flashcards ── */
+  --cloze-bg-color: #d7dae0;
+  --cloze-decoration-color: #e06c75;
+  --cloze-decoration-color-2: #61afef;
+  --cloze-decoration-color-3: #61afef;
+}
+
+/* ══════════════════════════════════════════════════════════
+   One Dark Callout Colors
+   ══════════════════════════════════════════════════════════ */
+
+/* Blue — note, info, todo */
+.callout[data-callout="note"] { --callout-color: 97, 175, 239; }
+.callout[data-callout="info"] { --callout-color: 97, 175, 239; }
+.callout[data-callout="todo"] { --callout-color: 97, 175, 239; }
+
+/* Cyan — summary, abstract, tldr, tip, hint */
+.callout[data-callout="summary"],
+.callout[data-callout="abstract"],
+.callout[data-callout="tldr"] { --callout-color: 86, 182, 194; }
+.callout[data-callout="tip"],
+.callout[data-callout="hint"] { --callout-color: 86, 182, 194; }
+
+/* Green — success, check, done */
+.callout[data-callout="success"],
+.callout[data-callout="check"],
+.callout[data-callout="done"] { --callout-color: 152, 195, 121; }
+
+/* Yellow — warning, question, help, faq */
+.callout[data-callout="warning"] { --callout-color: 229, 192, 123; }
+.callout[data-callout="question"],
+.callout[data-callout="help"],
+.callout[data-callout="faq"] { --callout-color: 229, 192, 123; }
+
+/* Orange — caution, attention, important */
+.callout[data-callout="caution"],
+.callout[data-callout="attention"] { --callout-color: 209, 154, 102; }
+.callout[data-callout="important"] { --callout-color: 209, 154, 102; }
+
+/* Red — danger, error, failure, fail, missing, bug */
+.callout[data-callout="danger"],
+.callout[data-callout="error"] { --callout-color: 224, 108, 117; }
+.callout[data-callout="failure"],
+.callout[data-callout="fail"],
+.callout[data-callout="missing"] { --callout-color: 224, 108, 117; }
+.callout[data-callout="bug"] { --callout-color: 224, 108, 117; }
+
+/* Purple — example */
+.callout[data-callout="example"] { --callout-color: 198, 120, 221; }
+
+/* Gray — quote, cite */
+.callout[data-callout="quote"],
+.callout[data-callout="cite"] { --callout-color: 92, 99, 112; }

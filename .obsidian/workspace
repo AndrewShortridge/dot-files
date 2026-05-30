@@ -1,0 +1,133 @@
+{
+  "main": {
+    "id": "bd1a4cc40eb9a434",
+    "type": "split",
+    "children": [
+      {
+        "id": "d3f695ee93a517a6",
+        "type": "leaf",
+        "state": {
+          "type": "empty",
+          "state": {}
+        }
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "741dddb2936e89eb",
+    "type": "split",
+    "children": [
+      {
+        "id": "89acc163cd43649b",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "2fb740c754ee9186",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {}
+            }
+          },
+          {
+            "id": "9e597474450607ee",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              }
+            }
+          },
+          {
+            "id": "a9b30dc75bf98d79",
+            "type": "leaf",
+            "state": {
+              "type": "starred",
+              "state": {}
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "e76c539dc8e63050",
+    "type": "split",
+    "children": [
+      {
+        "id": "bf081cf3a78796ef",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "9a9be647a201a307",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              }
+            }
+          },
+          {
+            "id": "1a143aea4f3626e1",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              }
+            }
+          },
+          {
+            "id": "5a297811749aa864",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true
+              }
+            }
+          },
+          {
+            "id": "95b0e1d6e306f101",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {}
+            }
+          }
+        ],
+        "currentTab": 3
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "active": "2fb740c754ee9186",
+  "lastOpenFiles": [
+    "PhD-Research/Molecular Dynamics Simulation/Polymer Overview.md",
+    "PhD-Research/Molecular Dynamics Simulation/Research - LAAMPS.md",
+    "PhD-Research/Research Paper/Relevant Research Background Info./Programmable-Polymer-Bonding.pdf",
+    "PhD-Research/LAMMPS-Manual.pdf",
+    "PhD-Research/Research Project Overview.md",
+    "PhD-Research/Untitled.md",
+    "Example-Tutorials.md"
+  ]
+}

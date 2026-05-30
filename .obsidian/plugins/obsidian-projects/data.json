@@ -1,0 +1,307 @@
+{
+  "version": 2,
+  "projects": [
+    {
+      "fieldConfig": {},
+      "defaultName": "",
+      "templates": [
+        "Templates/"
+      ],
+      "excludedNotes": [],
+      "isDefault": false,
+      "dataSource": {
+        "kind": "folder",
+        "config": {
+          "path": "Projects",
+          "recursive": true
+        }
+      },
+      "newNotesFolder": "",
+      "views": [
+        {
+          "config": {
+            "fieldConfig": {
+              "path": {
+                "hide": true
+              },
+              "links": {
+                "hide": true
+              },
+              "created": {
+                "hide": true
+              }
+            }
+          },
+          "filter": {
+            "conditions": [
+              {
+                "field": "category",
+                "operator": "is",
+                "value": "research"
+              }
+            ]
+          },
+          "colors": {
+            "conditions": []
+          },
+          "sort": {
+            "criteria": []
+          },
+          "id": "a3abeb84-e81e-474a-9175-a44e0ca3cc3e",
+          "name": "Table",
+          "type": "table"
+        },
+        {
+          "config": {
+            "interval": "month",
+            "dateField": "due",
+            "checkField": "completed"
+          },
+          "filter": {
+            "conditions": [
+              {
+                "field": "category",
+                "operator": "is",
+                "value": "research"
+              }
+            ]
+          },
+          "colors": {
+            "conditions": []
+          },
+          "sort": {
+            "criteria": []
+          },
+          "id": "6ad27e43-a592-4cec-ac31-44f607cb939d",
+          "name": "Calendar",
+          "type": "calendar"
+        },
+        {
+          "config": {
+            "columns": {
+              "No status": {
+                "weight": 0
+              },
+              "Research - NIUVT": {
+                "weight": 1
+              }
+            },
+            "groupByField": "project",
+            "priorityField": "updated"
+          },
+          "filter": {
+            "conditions": [
+              {
+                "field": "category",
+                "operator": "is",
+                "value": "research"
+              }
+            ]
+          },
+          "colors": {
+            "conditions": []
+          },
+          "sort": {
+            "criteria": []
+          },
+          "id": "82ad1cdf-306e-46ec-9ef4-3c1339958ec8",
+          "name": "Board",
+          "type": "board"
+        }
+      ],
+      "name": "Research",
+      "id": "697cebd5-325e-4bab-914b-2420a2600a96"
+    },
+    {
+      "fieldConfig": {},
+      "defaultName": "",
+      "templates": [
+        "Templates/"
+      ],
+      "excludedNotes": [],
+      "isDefault": false,
+      "dataSource": {
+        "kind": "folder",
+        "config": {
+          "path": "Projects",
+          "recursive": true
+        }
+      },
+      "newNotesFolder": "",
+      "views": [
+        {
+          "config": {
+            "fieldConfig": {
+              "links": {
+                "hide": true
+              },
+              "tags": {
+                "hide": false
+              },
+              "path": {
+                "hide": true
+              },
+              "created": {
+                "hide": true
+              },
+              "name": {
+                "hide": false
+              }
+            }
+          },
+          "filter": {
+            "conditions": [
+              {
+                "field": "category",
+                "operator": "is",
+                "value": "personal"
+              }
+            ]
+          },
+          "colors": {
+            "conditions": [
+              {
+                "color": "#a882ff",
+                "condition": {
+                  "field": "project",
+                  "operator": "is",
+                  "value": "Machine Learning"
+                }
+              }
+            ]
+          },
+          "sort": {
+            "criteria": []
+          },
+          "id": "ffeca1ea-443b-4951-b9fc-c97982e94d1f",
+          "name": "Table",
+          "type": "table"
+        },
+        {
+          "config": {
+            "interval": "month",
+            "checkField": "completed"
+          },
+          "filter": {
+            "conditions": [
+              {
+                "field": "category",
+                "operator": "is",
+                "value": "personal"
+              }
+            ]
+          },
+          "colors": {
+            "conditions": []
+          },
+          "sort": {
+            "criteria": []
+          },
+          "id": "7476a958-fee1-4991-9b7c-8a72a4b0adba",
+          "name": "Calendar",
+          "type": "calendar"
+        },
+        {
+          "config": {
+            "groupByField": "status",
+            "priorityField": "due"
+          },
+          "filter": {
+            "conditions": [
+              {
+                "field": "category",
+                "operator": "is",
+                "value": "personal"
+              }
+            ]
+          },
+          "colors": {
+            "conditions": []
+          },
+          "sort": {
+            "criteria": []
+          },
+          "id": "ab97130c-3db7-4f49-8bab-f1ed9d822471",
+          "name": "Board",
+          "type": "board"
+        }
+      ],
+      "name": "Personal",
+      "id": "71a9f06c-c583-4c05-a156-16bd5eabaeef"
+    },
+    {
+      "fieldConfig": {},
+      "defaultName": "",
+      "templates": [
+        "Templates/"
+      ],
+      "excludedNotes": [],
+      "isDefault": false,
+      "dataSource": {
+        "kind": "folder",
+        "config": {
+          "path": "Projects",
+          "recursive": true
+        }
+      },
+      "newNotesFolder": "",
+      "views": [
+        {
+          "config": {
+            "fieldConfig": {
+              "path": {
+                "hide": true
+              },
+              "links": {
+                "hide": true
+              },
+              "created": {
+                "hide": true
+              }
+            }
+          },
+          "filter": {
+            "conditions": []
+          },
+          "colors": {
+            "conditions": []
+          },
+          "sort": {
+            "criteria": []
+          },
+          "id": "c1a2b3d4-e5f6-7890-abcd-ef1234567890",
+          "name": "All Projects Table",
+          "type": "table"
+        },
+        {
+          "config": {
+            "groupByField": "status",
+            "priorityField": "deadline"
+          },
+          "filter": {
+            "conditions": []
+          },
+          "colors": {
+            "conditions": []
+          },
+          "sort": {
+            "criteria": []
+          },
+          "id": "d2b3c4e5-f6a7-8901-bcde-f12345678901",
+          "name": "Board by Status",
+          "type": "board"
+        }
+      ],
+      "name": "All Projects",
+      "id": "e3c4d5f6-a7b8-9012-cdef-123456789012"
+    }
+  ],
+  "preferences": {
+    "projectSizeLimit": 1000,
+    "frontmatter": {
+      "quoteStrings": "PLAIN"
+    },
+    "commands": [],
+    "linkBehavior": "open-editor"
+  }
+}

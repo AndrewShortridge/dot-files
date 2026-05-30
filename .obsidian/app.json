@@ -1,0 +1,18 @@
+{
+  "spellcheck": true,
+  "vimMode": true,
+  "alwaysUpdateLinks": true,
+  "livePreview": true,
+  "readableLineLength": true,
+  "showFrontmatter": true,
+  "showLineNumber": true,
+  "newFileLocation": "root",
+  "promptDelete": false,
+  "attachmentFolderPath": "./Attachments",
+  "pdfExportSettings": {
+    "pageSize": "Letter",
+    "landscape": false,
+    "margin": "0",
+    "downscalePercent": 100
+  }
+}

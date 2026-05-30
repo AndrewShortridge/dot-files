@@ -1,0 +1,34 @@
+{
+  "insert-template": [
+    {
+      "modifiers": [
+        "Alt"
+      ],
+      "key": "T"
+    }
+  ],
+  "obsidian-zotero-desktop-connector:zdc-exp-Import #1": [
+    {
+      "modifiers": [
+        "Alt",
+        "Shift"
+      ],
+      "key": "T"
+    }
+  ],
+  "obsidian-book-search-plugin:open-book-search-modal": [
+    {
+      "modifiers": [
+        "Alt"
+      ],
+      "key": "B"
+    }
+  ],
+  "editor:toggle-bold": [],
+  "editor:toggle-italics": [],
+  "app:go-back": [],
+  "app:go-forward": [],
+  "editor:delete-paragraph": [],
+  "editor:open-search": [],
+  "editor:insert-link": []
+}
