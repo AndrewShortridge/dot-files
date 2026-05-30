@@ -1,0 +1,3 @@
+spawn as many subagents as possible to investigate the current nvim config found here                                                                                                     
+    @~/.config/nvim and provide suggestions on improvements that could be made for working                                                                                                    
+    with markdown files as if it is an obsidian vault         

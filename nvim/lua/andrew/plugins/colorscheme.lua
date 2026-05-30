@@ -40,7 +40,13 @@ return {
         NormalFloat = { bg = "#17191d" },
 
         -- Floating window border: gray foreground with dark background
-        FloatBorder = { fg = "#3E4451", bg = "#1E222A" },
+        FloatBorder = { fg = "#E06C75", bg = "#1E222A" },
+
+        -- Spell checking: subtle undercurl using OneDarkPro palette colors
+        SpellBad = { sp = "#e06c75", undercurl = true },
+        SpellCap = { sp = "#e5c07b", undercurl = true },
+        SpellLocal = { sp = "#56b6c2", undercurl = true },
+        SpellRare = { sp = "#c678dd", undercurl = true },
       },
 
       -- =============================================================================

@@ -45,6 +45,12 @@ opt.smartcase = true    -- Become case-sensitive if search contains uppercase
 -- Highlight the cursor line for better visibility
 opt.cursorline = true
 
+-- Attach the Cursor/lCursor highlight groups to each mode so the colorscheme's
+-- Cursor color actually applies. The Neovim default guicursor specifies shapes
+-- only (no highlight group on the block/bar), leaving the cursor at the
+-- terminal's default color.
+opt.guicursor = "n-v-c-sm:block-Cursor/lCursor,i-ci-ve:ver25-Cursor/lCursor,r-cr-o:hor20-Cursor/lCursor,t:block-blinkon500-blinkoff500-TermCursor"
+
 -- Enable true color support and dark background for terminal colors
 opt.termguicolors = true  -- Enable 24-bit RGB color in terminal
 opt.background = "dark"   -- Set background color scheme to dark
@@ -61,6 +67,26 @@ opt.backspace = "indent,eol,start"
 -- =============================================================================
 -- Use system clipboard as the default unnamed register for yank/put operations
 opt.clipboard:append("unnamedplus")
+
+-- =============================================================================
+-- Undo and Swap
+-- =============================================================================
+opt.undofile = true     -- Persistent undo across sessions
+opt.swapfile = false    -- Avoid swap prompts (git provides safety)
+
+-- =============================================================================
+-- Scrolling
+-- =============================================================================
+opt.scrolloff = 8       -- Keep 8 lines visible above/below cursor
+opt.sidescrolloff = 8   -- Horizontal equivalent for nowrap mode
+
+-- =============================================================================
+-- Performance and UI
+-- =============================================================================
+opt.updatetime = 250    -- Faster CursorHold (default 4000ms is too slow for gitsigns/diagnostics)
+opt.showmode = false    -- Lualine already displays the mode
+opt.pumheight = 15      -- Limit completion popup height
+opt.completeopt = "menu,menuone,noselect"  -- Better native completion behavior
 
 -- =============================================================================
 -- Window Splitting

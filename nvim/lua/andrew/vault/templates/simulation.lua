@@ -1,3 +1,5 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 
 M.name = "Simulation Note"
@@ -49,7 +51,7 @@ function M.run(e, p)
     .. "run_id: " .. (run_id or "") .. "\n"
     .. "campaign: " .. (campaign or "") .. "\n"
     .. "status: " .. (status or "") .. "\n"
-    .. "parent-project: '[[" .. project .. "/Dashboard]]'\n"
+    .. "parent-project: '[[" .. config.dirs.projects .. "/" .. project .. "/Dashboard|" .. project .. "]]'\n"
     .. "date_started: " .. date .. "\n"
     .. "date_completed:\n"
     .. "hpc_path: " .. (hpc_path or "") .. "\n"
@@ -70,7 +72,7 @@ function M.run(e, p)
   body = body
     .. "**Campaign:** [[" .. (campaign or "") .. "]]\n"
     .. "**Status:** " .. (status or "") .. "\n"
-    .. "**Project:** [[" .. project .. "/Dashboard]]\n"
+    .. "**Project:** [[" .. config.dirs.projects .. "/" .. project .. "/Dashboard|" .. project .. "]]\n"
     .. "**Started:** " .. date .. "\n"
     .. "**HPC Path:** " .. (hpc_path or "") .. "\n\n"
     .. "---\n\n"
@@ -220,7 +222,7 @@ function M.run(e, p)
 ## Notes
 ]==]
 
-  e.write_note("Projects/" .. project .. "/Simulations/" .. title, fm .. body)
+  e.write_note(config.dirs.projects .. "/" .. project .. "/Simulations/" .. title, fm .. body)
 end
 
 return M

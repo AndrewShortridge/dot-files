@@ -1,12 +1,14 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Methodology Note"
 
 local body_template = [==[
-# ${title}
+# {{title}}
 
-**Status:** `${status}`
-**Created:** ${date}
-**Last Updated:** ${date}
+**Status:** `{{status}}`
+**Created:** {{date}}
+**Last Updated:** {{date}}
 
 ---
 
@@ -90,7 +92,7 @@ local body_template = [==[
 
 | Date | Change | Reason |
 | ---- | ------ | ------ |
-| ${date} | Created | |
+| {{date}} | Created | |
 |      |        |        |
 
 ## Notes
@@ -119,7 +121,7 @@ function M.run(e, p)
     .. "  - methodology\n"
     .. "---\n"
 
-  e.write_note("Methods/" .. title, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.methods .. "/" .. title, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M

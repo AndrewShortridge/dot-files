@@ -1,0 +1,61 @@
+[
+  {
+    "socket": "/tmp/kitty-3001",
+    "ls": [
+      {
+        "id": 1,
+        "wm_class": "kitty-project-alpha",
+        "is_focused": true,
+        "tabs": [
+          {
+            "id": 1,
+            "is_active": true,
+            "windows": [
+              { "id": 10, "is_active": false, "is_self": false, "overlay_parent": null, "last_focused_at": 500.0 },
+              { "id": 11, "is_active": true,  "is_self": false, "overlay_parent": 10,    "last_focused_at": 600.0 }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "socket": "/tmp/kitty-3002",
+    "ls": [
+      {
+        "id": 1,
+        "wm_class": "kitty-overlay",
+        "is_focused": false,
+        "tabs": [
+          {
+            "id": 1,
+            "is_active": true,
+            "windows": [
+              { "id": 20, "is_active": true, "is_self": false, "last_focused_at": 9999.0 }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "socket": "/tmp/kitty-3003",
+    "ls": [
+      {
+        "id": 1,
+        "wm_class": "kitty-project-beta",
+        "is_focused": false,
+        "tabs": [
+          {
+            "id": 1,
+            "is_active": true,
+            "windows": [
+              { "id": 30, "is_active": true,  "is_self": true,  "last_focused_at": 999.0 },
+              { "id": 31, "is_active": false, "is_self": false, "last_focused_at": 400.0 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

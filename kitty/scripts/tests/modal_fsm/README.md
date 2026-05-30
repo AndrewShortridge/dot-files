@@ -1,0 +1,1 @@
+Run: `bash scripts/tests/modal_fsm/run.sh` from the repo root (or just execute the script directly); `transitions.tsv` is a 4-column fixture table driving `picker_transition` from `scripts/lib/modal_fsm.sh`, one assertion per row.

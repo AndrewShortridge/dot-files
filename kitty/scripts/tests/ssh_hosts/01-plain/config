@@ -1,0 +1,9 @@
+Host alpha
+    HostName alpha.example.com
+
+Host beta
+    HostName beta.example.com
+    User andrew
+
+Host gamma
+    HostName gamma.example.com

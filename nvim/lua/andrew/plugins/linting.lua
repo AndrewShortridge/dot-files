@@ -18,6 +18,7 @@ return {
   config = function()
     -- Load lint module
     local lint = require("lint")
+    local lua_dirname = require("andrew.vault.link_utils").lua_dirname
 
     -- =============================================================================
     -- User Configuration (set these in your init.lua before loading this plugin)
@@ -197,7 +198,7 @@ return {
             return path
           end
         end
-        path = vim.fn.fnamemodify(path, ":h")
+        path = lua_dirname(path)
       end
       -- Fallback: use directory of current file
       return vim.fn.expand("%:p:h")

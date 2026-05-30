@@ -1,14 +1,17 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Weekly Review"
 
 function M.run(e, p)
-  local title = e.input({ prompt = "Week title (e.g., Week 07 Review)" })
-  if not title then return end
-
   local date = e.today()
   local date_long = e.today_long()
   local week_num = e.week_number()
   local week_ago = e.date_offset(-6)
+
+  local default_title = "Week " .. week_num .. " Review"
+  local title = e.input({ prompt = "Week title", default = default_title })
+  if not title or title == "" then return end
 
   local content = "---\n"
     .. "type: log\n"
@@ -24,7 +27,7 @@ function M.run(e, p)
     .. "## This Week's Log Entries\n\n"
     .. "```dataview\n"
     .. "LIST\n"
-    .. "FROM \"Log\"\n"
+    .. "FROM \"" .. config.dirs.log .. "\"\n"
     .. "WHERE type = \"log\" AND !contains(tags, \"weekly-review\")\n"
     .. "WHERE date >= date(\"" .. week_ago .. "\") AND date <= date(\"" .. date .. "\")\n"
     .. "SORT date ASC\n"
@@ -56,11 +59,11 @@ function M.run(e, p)
     .. "  .replace(/\\[\\[(?:[^\\]|]*\\|)?([^\\]]*)\\]\\]/g, \"$1\")\n"
     .. "  .replace(/^\\s*(?::\\s*)+/, \"\").replace(/(?:\\s*:)+\\s*$/, \"\").trim();\n"
     .. "\n"
-    .. "for (const p of dv.pages('\"Projects\" OR \"Areas\"'))\n"
+    .. "for (const p of dv.pages('\"" .. config.dirs.projects .. "\" OR \"" .. config.dirs.areas .. "\"'))\n"
     .. "  for (const t of p.file.tasks.where(t => t.completed && t.completion && t.completion >= weekStart))\n"
     .. "    rows.push([dv.fileLink(p.file.path, false, clean(t.text) || t.text), t.completion]);\n"
     .. "\n"
-    .. "for (const n of dv.pages('\"Projects\"').where(p => p.type === \"task\" && p.status === \"Complete\" && p.date_completed && dv.date(p.date_completed) >= weekStart))\n"
+    .. "for (const n of dv.pages('\"" .. config.dirs.projects .. "\"').where(p => p.type === \"task\" && p.status === \"Complete\" && p.date_completed && dv.date(p.date_completed) >= weekStart))\n"
     .. "  rows.push([dv.fileLink(n.file.path, false, n.file.name), n.date_completed]);\n"
     .. "\n"
     .. "rows.sort((a, b) => b[1] < a[1] ? -1 : b[1] > a[1] ? 1 : 0);\n"
@@ -76,11 +79,11 @@ function M.run(e, p)
     .. "  .replace(/\\[\\[(?:[^\\]|]*\\|)?([^\\]]*)\\]\\]/g, \"$1\")\n"
     .. "  .replace(/^\\s*(?::\\s*)+/, \"\").replace(/(?:\\s*:)+\\s*$/, \"\").trim();\n"
     .. "\n"
-    .. "for (const p of dv.pages('\"Projects\" OR \"Areas\"'))\n"
+    .. "for (const p of dv.pages('\"" .. config.dirs.projects .. "\" OR \"" .. config.dirs.areas .. "\"'))\n"
     .. "  for (const t of p.file.tasks.where(t => !t.completed && t.due && t.priority && t.due < today))\n"
     .. "    rows.push([dv.fileLink(p.file.path, false, clean(t.text) || t.text), t.due, t.priority, \"Open\"]);\n"
     .. "\n"
-    .. "for (const n of dv.pages('\"Projects\"').where(p => p.type === \"task\" && p.status !== \"Complete\" && p.status !== \"Cancelled\" && p.due && p.priority && p.due < today))\n"
+    .. "for (const n of dv.pages('\"" .. config.dirs.projects .. "\"').where(p => p.type === \"task\" && p.status !== \"Complete\" && p.status !== \"Cancelled\" && p.due && p.priority && p.due < today))\n"
     .. "  rows.push([dv.fileLink(n.file.path, false, n.file.name), n.due, n.priority, n.status || \"\xE2\x80\x94\"]);\n"
     .. "\n"
     .. "rows.sort((a, b) => a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0);\n"
@@ -93,14 +96,14 @@ function M.run(e, p)
     .. "  link(file.link, file.name) AS \"Task\",\n"
     .. "  area AS \"Area\",\n"
     .. "  next_due AS \"Due\"\n"
-    .. "FROM \"Areas\"\n"
+    .. "FROM \"" .. config.dirs.areas .. "\"\n"
     .. "WHERE type = \"recurring-task\" AND next_due <= date(today)\n"
     .. "SORT next_due ASC\n"
     .. "```\n\n"
     .. "## Key Insights\n\n"
     .. "> [!tip] Ideas, patterns, or connections that emerged this week\n\n"
     .. "-\n\n"
-    .. "> **Promotion check:** Should any of these become a concept note in `Domains/`?\n\n"
+    .. "> **Promotion check:** Should any of these become a concept note in `" .. config.dirs.domains .. "/`?\n\n"
     .. "## Decisions Made\n\n"
     .. "> [!info] Significant choices and their reasoning\n\n"
     .. "-\n\n"
@@ -127,7 +130,7 @@ function M.run(e, p)
     .. "1.\n\n"
     .. "## Notes\n"
 
-  e.write_note("Log/" .. title, content)
+  e.write_note(config.dirs.log .. "/" .. title, content)
 end
 
 return M

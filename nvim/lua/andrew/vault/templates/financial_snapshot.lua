@@ -1,11 +1,13 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Financial Snapshot"
 
 local body_template = [==[
-# Financial Snapshot — ${period}
+# Financial Snapshot — {{period}}
 
-**Type:** `${snapshot_type}` Review
-**Date:** ${date}
+**Type:** `{{snapshot_type}}` Review
+**Date:** {{date}}
 
 ---
 
@@ -98,7 +100,7 @@ function M.run(e, p)
     .. "  - snapshot\n"
     .. "---\n"
 
-  e.write_note("Areas/Finance/Financial Snapshot - " .. period, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.areas .. "/Finance/Financial Snapshot - " .. period, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M

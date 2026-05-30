@@ -890,18 +890,9 @@ prettier, ty, ruff, eslint_d, rust_analyzer, codelldb, lua_ls, emmet_ls, prismal
 
 ## Known Deprecations in This Config
 
-These deprecated patterns exist in the codebase and should be updated when touched:
+All previously known deprecations have been resolved. Last audited: 2026-02-25.
 
-| File | Lines | Issue | Fix |
-|---|---|---|---|
-| `custom/plugins/terminal.lua` | 143-153 | `nvim_win_set_option()` | Use `vim.wo[winid]` |
-| `lazy.lua` | 16 | `vim.loop` | Use `vim.uv` |
-| `core/keymaps.lua` | 71 | `vim.highlight` | Use `vim.hl` |
-| `plugins/lsp/lspconfig.lua` | 277, 281 | `vim.diagnostic.goto_prev/next()` | Use `vim.diagnostic.jump()` |
-| `plugins/lsp/lspconfig.lua` | 577 | `vim.lsp.stop_client()` | Use `client:stop()` |
-| `plugins/lsp/mason.lua` | - | `williamboman/mason.nvim` | Update to `mason-org/mason.nvim` |
-| `plugins/lsp/mason.lua` | - | `williamboman/mason-lspconfig.nvim` | Update to `mason-org/mason-lspconfig.nvim` |
-| `plugins/lsp/lspconfig.lua` | - | `folke/neodev.nvim` dependency | Replace with `folke/lazydev.nvim` |
+No deprecated patterns remain in the codebase.
 
 ## Agent Best Practices
 

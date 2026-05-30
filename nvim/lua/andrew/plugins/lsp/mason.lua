@@ -12,8 +12,8 @@ return {
 
   {
     -- Plugin: mason-lspconfig - LSP server manager integration
-    -- Repository: https://github.com/williamboman/mason-lspconfig.nvim
-    "williamboman/mason-lspconfig.nvim",
+    -- Repository: https://github.com/mason-org/mason-lspconfig.nvim
+    "mason-org/mason-lspconfig.nvim",
 
     -- Configuration options
     opts = {
@@ -35,7 +35,7 @@ return {
     dependencies = {
       -- mason: Core package manager
       {
-        "williamboman/mason.nvim",
+        "mason-org/mason.nvim",
         opts = {
           -- UI configuration for mason status display
           ui = {
@@ -77,7 +77,7 @@ return {
 
     dependencies = {
       -- mason: Core package manager dependency
-      "williamboman/mason.nvim",
+      "mason-org/mason.nvim",
     },
   },
 }

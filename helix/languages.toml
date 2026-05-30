@@ -1,0 +1,72 @@
+# Fortran language configuration for Helix editor
+# =============================================================================
+# Install tools:
+#   pip install fortls fprettify ford fortitude
+#   # or
+#   conda install -c conda-forge fortls fprettify ford fortitude
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Language Server: fortls (Fortran Language Server)
+# -----------------------------------------------------------------------------
+[language-server.fortls]
+command = "fortls"
+args = [
+    "--lowercase_intrinsics",
+    "--hover_signature", 
+    "--notify_init",
+    "--variable_hover",
+    "--enable_code_actions",
+    "--max_line_length", "120",
+    "--max_comment_line_length", "80"
+]
+required-root-patterns = []
+config = { lowercase_intrinsics = true, hover_signature = true, hover_language = "fortran90", disable_diagnostics = false, variable_hover = true, keywords_autocomplete = true }
+
+# -----------------------------------------------------------------------------
+# Fortran Language Definition
+# -----------------------------------------------------------------------------
+[[language]]
+name = "fortran"
+scope = "source.fortran"
+injection-regex = "fortran"
+file-types = ["f", "for", "f90", "f95", "f03", "f08", "f18", "F", "F90", "F95", "F03", "F08", "F18"]
+
+# Don't require root markers - allow LSP to start anywhere
+roots = []
+
+comment-token = "!"
+indent = { tab-width = 4, unit = "    "}
+language-servers = ["fortls"]
+
+# Show all diagnostics including hints and info
+diagnostic-severity = "hint"
+
+formatter = { command = "fprettify", args = ["-", "-i", "4"] }
+
+# -----------------------------------------------------------------------------
+# Tasks
+# -----------------------------------------------------------------------------
+[task.ford-docs]
+cmd = "ford"
+args = ["-d", ".", "project.yml"]
+
+[task.fortitude-lint]
+cmd = "fortitude"
+args = ["check", "."]
+
+[task.gfortran-check]
+cmd = "gfortran"
+args = ["-Wall", "-Wextra", "-fsyntax-only", "-fdiagnostics-plain-output"]
+
+[task.fpm-build]
+cmd = "fpm"
+args = ["build"]
+
+[task.fpm-test]
+cmd = "fpm"
+args = ["test"]
+
+[task.fortran-all]
+cmd = "just"
+args = ["fortran-all"]

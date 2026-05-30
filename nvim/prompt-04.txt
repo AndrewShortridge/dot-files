@@ -1,0 +1,2 @@
+ spawn as many subagents an necessary. using the implementation plan of                                                                                                                    
+  @improvements/08-smart-list-continuation-on-enter.md , implement the necessary features and spawn as many parallel subagnets as necessary to investigate dead code or duplicated code     

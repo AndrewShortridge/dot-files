@@ -1,0 +1,14 @@
+# top-level comment
+# another comment
+
+    # indented comment
+
+	Host	tabbed-host
+	    HostName tabbed.example.com  # trailing comment
+
+   Host    spaced-host   # trailing comment after host alias
+       User andrew
+
+
+Host two-aliases   second-alias # comment after multi
+   HostName two.example.com

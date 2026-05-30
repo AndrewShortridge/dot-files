@@ -21,6 +21,7 @@ return {
 
   config = function()
     local fzf = require("fzf-lua")
+    local lua_dirname = require("andrew.vault.link_utils").lua_dirname
 
     -- Store last selected Makefile for re-runs
     local last_makefile = nil
@@ -30,7 +31,7 @@ return {
     -- ==========================================================================
     local function run_make_in_split(makefile_path, target)
       -- Get directory containing the Makefile
-      local makefile_dir = vim.fn.fnamemodify(makefile_path, ":h")
+      local makefile_dir = lua_dirname(makefile_path)
       local makefile_name = vim.fn.fnamemodify(makefile_path, ":t")
       local cmd = string.format("cd %s && make -f %s %s",
         vim.fn.shellescape(makefile_dir),

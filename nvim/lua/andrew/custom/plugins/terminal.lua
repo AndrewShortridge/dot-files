@@ -126,7 +126,7 @@ function floating_terminal.open()
     vim.bo[floating_terminal.bufnr].bufhidden = "hide"
 
     -- Start terminal process
-    floating_terminal.termpid = vim.fn.termopen(floating_terminal.options.shell)
+    floating_terminal.termpid = vim.fn.jobstart(floating_terminal.options.shell, { term = true })
 
     -- Auto-hide on terminal exit (preserve session for reopening)
     if floating_terminal.options.hide_on_exit then
@@ -140,17 +140,14 @@ function floating_terminal.open()
   end
 
   -- Configure window appearance
-  vim.api.nvim_win_set_option(floating_terminal.winid, "number", false)
-  vim.api.nvim_win_set_option(floating_terminal.winid, "relativenumber", false)
-  vim.api.nvim_win_set_option(floating_terminal.winid, "signcolumn", "no")
-  vim.api.nvim_win_set_option(floating_terminal.winid, "foldcolumn", "0")
-  vim.api.nvim_win_set_option(floating_terminal.winid, "spell", false)
-  vim.api.nvim_win_set_option(floating_terminal.winid, "cursorline", false)
-  vim.api.nvim_win_set_option(
-    floating_terminal.winid,
-    "winblend",
-    floating_terminal.options.winblend
-  )
+  local winid = floating_terminal.winid
+  vim.wo[winid].number = false
+  vim.wo[winid].relativenumber = false
+  vim.wo[winid].signcolumn = "no"
+  vim.wo[winid].foldcolumn = "0"
+  vim.wo[winid].spell = false
+  vim.wo[winid].cursorline = false
+  vim.wo[winid].winblend = floating_terminal.options.winblend
 
   -- Enter insert mode if not already in it
   if not vim.opt_local.insertmode:get() then

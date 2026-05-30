@@ -1,3 +1,5 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Project Dashboard"
 
@@ -90,11 +92,11 @@ function M.run(e, p)
   b[#b+1] = "> [!info] Links to subfolders, key documents, external tools, repos"
   b[#b+1] = ""
   b[#b+1] = "- **Subfolder notes:**"
-  b[#b+1] = "  - [[" .. title .. "/Simulations/|Simulations]]"
-  b[#b+1] = "  - [[" .. title .. "/Analysis/|Analysis]]"
-  b[#b+1] = "  - [[" .. title .. "/Meetings/|Meetings]]"
-  b[#b+1] = "  - [[" .. title .. "/Findings/|Findings]]"
-  b[#b+1] = "  - [[" .. title .. "/Journal/|Journal]]"
+  b[#b+1] = "  - [Simulations](#simulations)"
+  b[#b+1] = "  - [Analysis](#analysis)"
+  b[#b+1] = "  - [Meetings](#meetings)"
+  b[#b+1] = "  - [Findings](#findings)"
+  b[#b+1] = "  - [Journal](#journal)"
   b[#b+1] = "- **HPC path:** ``"
   b[#b+1] = "- **Code repo:** ``"
   b[#b+1] = ""
@@ -121,7 +123,7 @@ function M.run(e, p)
   b[#b+1] = ""
   b[#b+1] = "```dataviewjs"
   b[#b+1] = 'const weekAgo = dv.date("today").minus({days: 7});'
-  b[#b+1] = 'const projFolder = "Projects/' .. title .. '";'
+  b[#b+1] = 'const projFolder = "' .. config.dirs.projects .. '/' .. title .. '";'
   b[#b+1] = "const rows = [];"
   b[#b+1] = "const clean = t => t"
   b[#b+1] = '  .replace(/\\*{0,2}\\[\\w+::[^\\]]*\\]\\*{0,2}/g, "")'
@@ -144,7 +146,7 @@ function M.run(e, p)
   b[#b+1] = ">"
   b[#b+1] = "> ```dataviewjs"
   b[#b+1] = '> const weekAgo = dv.date("today").minus({days: 7});'
-  b[#b+1] = '> const projFolder = "Projects/' .. title .. '";'
+  b[#b+1] = '> const projFolder = "' .. config.dirs.projects .. '/' .. title .. '";'
   b[#b+1] = "> const rows = [];"
   b[#b+1] = "> const clean = t => t"
   b[#b+1] = '>   .replace(/\\*{0,2}\\[\\w+::[^\\]]*\\]\\*{0,2}/g, "")'
@@ -166,7 +168,7 @@ function M.run(e, p)
   b[#b+1] = "### All Open Tasks"
   b[#b+1] = ""
   b[#b+1] = "```dataviewjs"
-  b[#b+1] = 'const projFolder = "Projects/' .. title .. '";'
+  b[#b+1] = 'const projFolder = "' .. config.dirs.projects .. '/' .. title .. '";'
   b[#b+1] = "const rows = [];"
   b[#b+1] = "const clean = t => t"
   b[#b+1] = '  .replace(/\\*{0,2}\\[\\w+::[^\\]]*\\]\\*{0,2}/g, "")'
@@ -196,7 +198,7 @@ function M.run(e, p)
   b[#b+1] = "> [!example]- Unscheduled Tasks"
   b[#b+1] = ">"
   b[#b+1] = "> ```dataviewjs"
-  b[#b+1] = '> const projFolder = "Projects/' .. title .. '";'
+  b[#b+1] = '> const projFolder = "' .. config.dirs.projects .. '/' .. title .. '";'
   b[#b+1] = "> const rows = [];"
   b[#b+1] = "> const clean = t => t"
   b[#b+1] = '>   .replace(/\\*{0,2}\\[\\w+::[^\\]]*\\]\\*{0,2}/g, "")'
@@ -224,7 +226,7 @@ function M.run(e, p)
   b[#b+1] = '>     priority AS "Priority",'
   b[#b+1] = '>     due AS "Due",'
   b[#b+1] = '>     date_completed AS "Completed"'
-  b[#b+1] = '> FROM "Projects/' .. title .. '/Tasks"'
+  b[#b+1] = '> FROM "' .. config.dirs.projects .. '/' .. title .. '/Tasks"'
   b[#b+1] = '> WHERE type = "task"'
   b[#b+1] = "> SORT date_completed DESC, priority ASC"
   b[#b+1] = "> ```"
@@ -254,7 +256,7 @@ function M.run(e, p)
   b[#b+1] = '>     file.link AS "Note",'
   b[#b+1] = '>     type AS "Type",'
   b[#b+1] = '>     join(file.tags, ", ") AS "Tags"'
-  b[#b+1] = '> FROM "Reference" OR "Areas"'
+  b[#b+1] = '> FROM "Reference" OR "' .. config.dirs.areas .. '"'
   b[#b+1] = "> WHERE related-projects AND contains(string(related-projects), this.file.name)"
   b[#b+1] = "> SORT type ASC, file.name ASC"
   b[#b+1] = "> ```"
@@ -265,7 +267,7 @@ function M.run(e, p)
   b[#b+1] = "> TABLE WITHOUT ID"
   b[#b+1] = '>     file.link AS "Paper",'
   b[#b+1] = '>     dateformat(file.ctime, "yyyy-MM-dd") AS "Added"'
-  b[#b+1] = '> FROM "Library"'
+  b[#b+1] = '> FROM "' .. config.dirs.library .. '"'
   b[#b+1] = "> WHERE related-projects AND contains(string(related-projects), this.file.name)"
   b[#b+1] = "> SORT file.ctime DESC"
   b[#b+1] = "> ```"
@@ -281,7 +283,7 @@ function M.run(e, p)
   b[#b+1] = '>     file.link AS "Simulation",'
   b[#b+1] = '>     status AS "Status",'
   b[#b+1] = '>     date_started AS "Started"'
-  b[#b+1] = '> FROM "Projects/' .. title .. '/Simulations"'
+  b[#b+1] = '> FROM "' .. config.dirs.projects .. '/' .. title .. '/Simulations"'
   b[#b+1] = '> WHERE type = "simulation"'
   b[#b+1] = "> SORT date_started DESC"
   b[#b+1] = "> ```"
@@ -293,7 +295,7 @@ function M.run(e, p)
   b[#b+1] = '>     file.link AS "Analysis",'
   b[#b+1] = '>     status AS "Status",'
   b[#b+1] = '>     date_created AS "Created"'
-  b[#b+1] = '> FROM "Projects/' .. title .. '/Analysis"'
+  b[#b+1] = '> FROM "' .. config.dirs.projects .. '/' .. title .. '/Analysis"'
   b[#b+1] = '> WHERE type = "analysis"'
   b[#b+1] = "> SORT date_created DESC"
   b[#b+1] = "> ```"
@@ -305,7 +307,7 @@ function M.run(e, p)
   b[#b+1] = '>     file.link AS "Meeting",'
   b[#b+1] = '>     date AS "Date",'
   b[#b+1] = '>     attendees AS "Attendees"'
-  b[#b+1] = '> FROM "Projects/' .. title .. '/Meetings"'
+  b[#b+1] = '> FROM "' .. config.dirs.projects .. '/' .. title .. '/Meetings"'
   b[#b+1] = '> WHERE type = "meeting"'
   b[#b+1] = "> SORT date DESC"
   b[#b+1] = "> ```"
@@ -317,7 +319,7 @@ function M.run(e, p)
   b[#b+1] = '>     file.link AS "Finding",'
   b[#b+1] = '>     status AS "Status",'
   b[#b+1] = '>     date_created AS "Created"'
-  b[#b+1] = '> FROM "Projects/' .. title .. '/Findings"'
+  b[#b+1] = '> FROM "' .. config.dirs.projects .. '/' .. title .. '/Findings"'
   b[#b+1] = '> WHERE type = "finding"'
   b[#b+1] = "> SORT date_created DESC"
   b[#b+1] = "> ```"
@@ -328,7 +330,7 @@ function M.run(e, p)
   b[#b+1] = "> TABLE WITHOUT ID"
   b[#b+1] = '>     file.link AS "Entry",'
   b[#b+1] = '>     date_created AS "Date"'
-  b[#b+1] = '> FROM "Projects/' .. title .. '/Journal"'
+  b[#b+1] = '> FROM "' .. config.dirs.projects .. '/' .. title .. '/Journal"'
   b[#b+1] = '> WHERE type = "journal-entry"'
   b[#b+1] = "> SORT date_created DESC"
   b[#b+1] = "> ```"
@@ -355,7 +357,7 @@ function M.run(e, p)
 
   local body = table.concat(b, "\n")
 
-  e.write_note("Projects/" .. title .. "/Dashboard", fm .. body)
+  e.write_note(config.dirs.projects .. "/" .. title .. "/Dashboard", fm .. body)
 end
 
 return M

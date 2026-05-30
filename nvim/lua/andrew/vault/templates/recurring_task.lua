@@ -1,10 +1,12 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Recurring Task"
 
 local body_template = [[
-# ${title}
+# {{title}}
 
-> **Frequency:** `${frequency}` | **Next Due:** `${next_due}` | **Area:** ${area}
+> **Frequency:** `{{frequency}}` | **Next Due:** `{{next_due}}` | **Area:** {{area}}
 
 ---
 
@@ -57,7 +59,7 @@ function M.run(e, p)
     .. "  - recurring\n"
     .. "---\n"
 
-  e.write_note("Areas/" .. area .. "/" .. title, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.areas .. "/" .. area .. "/" .. title, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M

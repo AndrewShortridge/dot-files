@@ -41,6 +41,15 @@ return {
       desc = "Fuzzy find recently opened files",
     },
 
+    -- Vault file search (frecency-sorted)
+    {
+      "<leader>vff",
+      function()
+        require("andrew.vault.frecency").files()
+      end,
+      desc = "Vault: find files (frecency)",
+    },
+
     -- Search operations
     {
       "<leader>fs",
@@ -121,7 +130,7 @@ return {
         -- --type f: search files only (not directories)
         -- --hidden: include hidden files
         -- --exclude .git: ignore .git directory
-        cmd = "fd --type f --hidden --exclude .git",
+        cmd = "fdfind --type f --hidden --exclude .git",
       },
 
       -- =============================================================================
@@ -136,6 +145,7 @@ return {
           "--line-number",      -- Show line numbers
           "--column",           -- Show column numbers
           "--smart-case",       -- Case-insensitive unless uppercase in query
+          "-e",                 -- Next arg is the pattern (prevents -pattern misparse)
         }, " "),
       },
 
@@ -157,15 +167,18 @@ return {
       -- Keybindings Inside fzf Window
       -- =============================================================================
       keymap = {
-        -- Neovim side keybindings
         builtin = {
-          ["<C-j>"] = "down",  -- Move to next result
-          ["<C-k>"] = "up",    -- Move to previous result
+          ["<C-n>"] = "down",
+          ["<C-p>"] = "up",
+          ["<C-j>"] = "preview-down",
+          ["<C-k>"] = "preview-up",
         },
-
-        -- fzf side keybindings
         fzf = {
-          ["ctrl-q"] = "select-all+accept",  -- Select all and accept
+          ["ctrl-n"] = "down",
+          ["ctrl-p"] = "up",
+          ["ctrl-j"] = "preview-down",
+          ["ctrl-k"] = "preview-up",
+          ["ctrl-q"] = "select-all+accept",
         },
       },
 

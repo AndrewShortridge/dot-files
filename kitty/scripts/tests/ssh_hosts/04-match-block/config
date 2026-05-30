@@ -1,0 +1,12 @@
+Host before
+    User andrew
+
+Match host nomatch-target user andrew
+    ForwardAgent yes
+    IdentityFile ~/.ssh/id_rsa_special
+
+Host after
+    HostName after.example.com
+
+Match exec "true"
+    User andrew

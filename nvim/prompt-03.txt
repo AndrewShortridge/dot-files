@@ -1,0 +1,2 @@
+spawn as many subagents as possible to investigate the current configuration nvim files                                                                                                 
+    found in @~/.config/nvim/  to suggest improvements that for specifically working with markdonw files as if it was with an obsidian vault     

@@ -5,33 +5,75 @@ local executor = require("andrew.vault.query.executor")
 local api = require("andrew.vault.query.api")
 local render = require("andrew.vault.query.render")
 local js2lua = require("andrew.vault.query.js2lua")
-
+local palette = require("andrew.vault.command_palette")
+local notify = require("andrew.vault.notify")
+local gen_cache = require("andrew.vault.gen_cache")
+local pat = require("andrew.vault.patterns")
 local M = {}
 
--- Cached index instance (rebuilt on demand)
-local _index = nil
-local _index_mtime = 0
+-- Generation-cached query index.
+-- key_fn returns vault_path so the cache rebuilds when the vault changes.
+-- build_fn handles incremental vs full rebuild based on whether an existing
+-- index for the same vault is available.
+local _prev_index = nil -- retained between builds for incremental updates
+
+local _index_cache = gen_cache.gen_cache(function(_idx)
+  local vault_path = engine.vault_path
+  if _prev_index and _prev_index.vault_path == vault_path then
+    _prev_index:update_incremental()
+  else
+    _prev_index = index_mod.Index.new(vault_path)
+    _prev_index:build_sync()
+  end
+  return _prev_index
+end, {
+  key_fn = function() return engine.vault_path end,
+})
 
 --- Get or build the vault index. Rebuilds if vault was modified.
 local function get_index()
-  local vault_path = engine.vault_path
-  -- Simple staleness check: rebuild if more than 30s old
-  local now = os.time()
-  if _index and (now - _index_mtime) < 30 then
-    return _index
-  end
-  _index = index_mod.Index.new(vault_path)
-  _index:build_sync()
-  _index_mtime = now
-  return _index
+  return _index_cache.get()
 end
 
 --- Force rebuild the index
 function M.rebuild_index()
-  _index = nil
-  _index_mtime = 0
+  _prev_index = nil
+  _index_cache.invalidate()
   get_index()
-  vim.notify("Vault query: index rebuilt", vim.log.levels.INFO)
+  notify.info("query: index rebuilt")
+end
+
+-- Register with central cache registry
+engine.register_cache({
+  name = "query_index",
+  module = "andrew.vault.query",
+  invalidate = function()
+    _prev_index = nil
+    _index_cache.invalidate()
+  end,
+  stats = function()
+    local index = _prev_index
+    return {
+      entries = index and index.pages and vim.tbl_count(index.pages) or 0,
+      index_generation = _prev_index and "cached" or "none",
+      vault = index and index.vault_path or nil,
+    }
+  end,
+})
+
+do
+  local profiler = require("andrew.vault.memory_profiler")
+  profiler.register_cache({
+    name = "query_index",
+    get_size = function()
+      local index = _prev_index
+      return index and index.pages and vim.tbl_count(index.pages) or 0
+    end,
+    get_capacity = function() return nil end,
+    get_hits = function() return _index_cache.get_hits() end,
+    get_misses = function() return _index_cache.get_misses() end,
+    get_evictions = function() return 0 end,
+  })
 end
 
 --- Find the code block boundaries around the cursor position.
@@ -157,7 +199,7 @@ function M.render_block()
       end
     end
     if not found_inline then
-      vim.notify("Vault query: cursor not inside a code block or inline expression", vim.log.levels.WARN)
+      notify.warn("query: cursor not inside a code block or inline expression")
     end
     return
   end
@@ -190,7 +232,7 @@ end
 function M.clear_block()
   local block_type, _, _, close_line = find_code_block_at_cursor()
   if not block_type then
-    vim.notify("Vault query: cursor not inside a code block", vim.log.levels.WARN)
+    notify.warn("query: cursor not inside a code block")
     return
   end
   render.clear(vim.api.nvim_get_current_buf(), close_line)
@@ -200,7 +242,7 @@ end
 function M.toggle_block()
   local block_type, content, _, close_line = find_code_block_at_cursor()
   if not block_type then
-    vim.notify("Vault query: cursor not inside a code block", vim.log.levels.WARN)
+    notify.warn("query: cursor not inside a code block")
     return
   end
 
@@ -218,7 +260,7 @@ function M.toggle_block()
     elseif block_type == "vault" then
       results = execute_lua(content, current_file)
     else
-      vim.notify("Vault query: unsupported block type '" .. block_type .. "'", vim.log.levels.WARN)
+      notify.warn("query: unsupported block type '" .. block_type .. "'")
       return
     end
     render.render(buf, close_line, results)
@@ -262,13 +304,9 @@ function M.render_all()
             end
           end)
           if ok then
-            local n = results and #results or 0
-            if n == 0 then
-              vim.notify("Vault query debug: block at line " .. i .. " (" .. block_type .. ") returned 0 results", vim.log.levels.WARN)
-            end
             render.render(buf, close_line, results)
           else
-            vim.notify("Vault query debug: block at line " .. i .. " error: " .. tostring(results), vim.log.levels.ERROR)
+            notify.info("query: block at line " .. i .. " error: " .. tostring(results))
             render.render(buf, close_line, {
               { type = "error", message = tostring(results) },
             })
@@ -297,9 +335,9 @@ function M.render_all()
     parts[#parts + 1] = inline_count .. " inline"
   end
   if #parts == 0 then
-    vim.notify("Vault query: no dataview/vault queries found in buffer", vim.log.levels.WARN)
+    notify.warn("query: no dataview/vault queries found in buffer")
   else
-    vim.notify("Vault query: rendered " .. table.concat(parts, ", "), vim.log.levels.INFO)
+    notify.info("query: rendered " .. table.concat(parts, ", "))
   end
 end
 
@@ -313,7 +351,7 @@ function M.render_inline_all()
 
   for i, line in ipairs(lines) do
     -- Track code block boundaries so we skip fenced blocks
-    if line:match("^%s*```") then
+    if pat.is_code_fence(line) then
       inside_code_block = not inside_code_block
     elseif not inside_code_block then
       -- Find all `$=...` patterns on this line
@@ -395,11 +433,21 @@ local opts = function(desc)
   return { desc = desc, silent = true }
 end
 
-keymap("n", "<leader>vqr", function() M.render_block() end, opts("Vault: render query"))
-keymap("n", "<leader>vqa", function() M.render_all() end, opts("Vault: render all queries"))
-keymap("n", "<leader>vqc", function() M.clear_block() end, opts("Vault: clear query output"))
-keymap("n", "<leader>vqx", function() M.clear_all() end, opts("Vault: clear all output"))
-keymap("n", "<leader>vqq", function() M.toggle_block() end, opts("Vault: toggle query"))
-keymap("n", "<leader>vqi", function() M.rebuild_index() end, opts("Vault: rebuild index"))
+keymap("n", "<leader>vqr", function() M.render_block() end, opts("Query: render"))
+keymap("n", "<leader>vqa", function() M.render_all() end, opts("Query: render all"))
+keymap("n", "<leader>vqc", function() M.clear_block() end, opts("Query: clear output"))
+keymap("n", "<leader>vqx", function() M.clear_all() end, opts("Query: clear all"))
+keymap("n", "<leader>vqq", function() M.toggle_block() end, opts("Query: toggle"))
+keymap("n", "<leader>vqi", function() M.rebuild_index() end, opts("Query: rebuild index"))
+
+-- ---------------------------------------------------------------------------
+-- Palette registrations: Search
+-- ---------------------------------------------------------------------------
+palette.register_command("VaultQuery", "Render vault query under cursor", "Search", function() M.render_block() end, "<leader>vqr")
+palette.register_command("VaultQueryAll", "Render all vault queries in buffer", "Search", function() M.render_all() end, "<leader>vqa")
+palette.register_command("VaultQueryClear", "Clear rendered output under cursor", "Search", function() M.clear_block() end, "<leader>vqc")
+palette.register_command("VaultQueryClearAll", "Clear all rendered output in buffer", "Search", function() M.clear_all() end, "<leader>vqx")
+palette.register_command("VaultQueryToggle", "Toggle vault query output under cursor", "Search", function() M.toggle_block() end, "<leader>vqq")
+palette.register_command("VaultQueryRebuild", "Rebuild vault query index", "Search", function() M.rebuild_index() end, "<leader>vqi")
 
 return M

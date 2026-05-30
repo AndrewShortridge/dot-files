@@ -15,6 +15,56 @@ return {
   -- Use latest stable version
   version = "*",
 
-  -- Built-in configuration (default settings are sufficient)
-  config = true,
+  opts = {
+    surrounds = {
+      -- LaTeX environment: use "e" to wrap with \begin{env}...\end{env}
+      -- Usage: ysiwe → wrap word, ySse → wrap line, vSe → wrap selection
+      ["e"] = {
+        add = function()
+          local env = require("nvim-surround.config").get_input("Environment: ")
+          if env then
+            return {
+              { "\\begin{" .. env .. "}" },
+              { "\\end{" .. env .. "}" },
+            }
+          end
+        end,
+        find = "\\begin%b{}.-\\end%b{}",
+        delete = "^(\\begin%b{})().-(\\end%b{})()$",
+        change = {
+          target = "^\\begin{(.-)}().+\\end{(.-)}()$",
+          replacement = function()
+            local env = require("nvim-surround.config").get_input("Environment: ")
+            if env then
+              return { { env }, { env } }
+            end
+          end,
+        },
+      },
+      -- LaTeX command: use "c" in tex files to wrap with \cmd{}
+      -- Usage: ysiwc → wrap word, vSc → wrap selection
+      ["c"] = {
+        add = function()
+          local cmd = require("nvim-surround.config").get_input("Command: ")
+          if cmd then
+            return {
+              { "\\" .. cmd .. "{" },
+              { "}" },
+            }
+          end
+        end,
+        find = "\\%a+%b{}",
+        delete = "^(\\%a+{)().-(})()$",
+        change = {
+          target = "^\\(%a+){().-(})()$",
+          replacement = function()
+            local cmd = require("nvim-surround.config").get_input("Command: ")
+            if cmd then
+              return { { cmd }, { "" } }
+            end
+          end,
+        },
+      },
+    },
+  },
 }

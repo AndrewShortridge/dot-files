@@ -1,0 +1,1 @@
+Run: `bash scripts/tests/frecency/run.sh` from the repo root (or execute the script directly). Fixtures under `fixtures/` are paired `<name>.entries.json` / `<name>.now` / `<name>.expected.txt` triples piped through `scripts/lib/score.jq`; library scenarios (missing file, malformed file, concurrent bumps, round trip, remove) run inline against ephemeral `$FRECENCY_STORE` paths.

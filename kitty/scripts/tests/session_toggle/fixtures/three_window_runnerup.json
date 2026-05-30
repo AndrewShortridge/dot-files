@@ -1,0 +1,59 @@
+[
+  {
+    "socket": "/tmp/kitty-2001",
+    "ls": [
+      {
+        "id": 1,
+        "wm_class": "kitty-project-alpha",
+        "is_focused": false,
+        "tabs": [
+          {
+            "id": 1,
+            "is_active": true,
+            "windows": [
+              { "id": 11, "is_active": true, "is_self": false, "last_focused_at": 100.0 }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "socket": "/tmp/kitty-2002",
+    "ls": [
+      {
+        "id": 1,
+        "wm_class": "kitty-project-beta",
+        "is_focused": true,
+        "tabs": [
+          {
+            "id": 1,
+            "is_active": true,
+            "windows": [
+              { "id": 22, "is_active": true, "is_self": false, "last_focused_at": 300.0 }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "socket": "/tmp/kitty-2003",
+    "ls": [
+      {
+        "id": 1,
+        "wm_class": "kitty-project-gamma",
+        "is_focused": false,
+        "tabs": [
+          {
+            "id": 1,
+            "is_active": true,
+            "windows": [
+              { "id": 33, "is_active": true, "is_self": false, "last_focused_at": 250.0 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

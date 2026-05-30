@@ -1,3 +1,5 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Meeting Note"
 
@@ -24,7 +26,7 @@ function M.run(e, p)
   if is_general then
     fm = fm .. "parent-project:\n"
   else
-    fm = fm .. "parent-project: '[[" .. project .. "/Dashboard]]'\n"
+    fm = fm .. "parent-project: '[[" .. config.dirs.projects .. "/" .. project .. "/Dashboard|" .. project .. "]]'\n"
   end
   fm = fm
     .. "tags:\n"
@@ -37,7 +39,7 @@ function M.run(e, p)
   if is_general then
     body = body .. "**Project:** —\n"
   else
-    body = body .. "**Project:** [[" .. project .. "/Dashboard]]\n"
+    body = body .. "**Project:** [[" .. config.dirs.projects .. "/" .. project .. "/Dashboard|" .. project .. "]]\n"
   end
   body = body .. [[
 
@@ -81,7 +83,7 @@ function M.run(e, p)
   if is_general then
     dest = title
   else
-    dest = "Projects/" .. project .. "/Meetings/" .. title
+    dest = config.dirs.projects .. "/" .. project .. "/Meetings/" .. title
   end
 
   e.write_note(dest, fm .. body)

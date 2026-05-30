@@ -68,6 +68,6 @@ vim.api.nvim_create_autocmd("TextYankPost", {
   group = vim.api.nvim_create_augroup("highlight-yank", { clear = true }),
   callback = function()
     -- Highlight the yanked text region for 300ms
-    vim.highlight.on_yank({ higroup = "IncSearch", timeout = 300 })
+    vim.hl.on_yank({ higroup = "IncSearch", timeout = 300 })
   end,
 })

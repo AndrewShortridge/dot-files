@@ -1,13 +1,15 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Asset Note"
 
 local body_template = [==[
-# ${name}
+# {{name}}
 
-**Type:** `${asset_type}`
-**Area:** [[${area}]]
-**Acquired:** ${acquired}
-**Current Value:** ${value}
+**Type:** `{{asset_type}}`
+**Area:** [[{{area}}]]
+**Acquired:** {{acquired}}
+**Current Value:** {{value}}
 
 ---
 
@@ -30,7 +32,7 @@ local body_template = [==[
 
 ```dataview
 LIST
-FROM "Areas"
+FROM "{{dir_areas}}"
 WHERE type = "recurring-task" AND contains(file.outlinks, this.file.link)
 ```
 
@@ -83,7 +85,7 @@ function M.run(e, p)
   local value = e.input({ prompt = "Current/purchase value ($)", default = "" })
 
   local date = e.today()
-  local vars = { name = name, asset_type = type_val, area = area, acquired = acquired or "", value = value or "" }
+  local vars = { name = name, asset_type = type_val, area = area, acquired = acquired or "", value = value or "", dir_areas = config.dirs.areas }
 
   local fm = "---\n"
     .. "type: asset\n"
@@ -97,7 +99,7 @@ function M.run(e, p)
     .. "  - asset\n"
     .. "---\n"
 
-  e.write_note("Areas/" .. area .. "/" .. name, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.areas .. "/" .. area .. "/" .. name, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M

@@ -5,6 +5,7 @@ require("andrew.core")
 require("andrew.lazy")
 require("andrew.custom.plugins.terminal")
 require("andrew.vault")
+require("andrew.themes.toggle").setup()
 
 vim.opt.termguicolors = true
 

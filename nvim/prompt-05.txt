@@ -1,0 +1,3 @@
+read the implementation document "@improvements/51-async-completion-filtering.md .
+THEN spawn as many subagents as possible to investigate the current nvim config found here
+@~/.config/nvim . THEN update the implementation document to follow the current up to date code base.

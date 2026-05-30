@@ -1,0 +1,25 @@
+theme = "zed_onedark"
+
+[editor]
+evil = true
+color-modes = true
+line-number = "relative"
+
+[editor.cursor-shape]
+insert = "block"
+normal = "block"
+select = "block"
+
+[editor.statusline]
+mode = ["normal", "insert"]
+diagnostics = ["error", "warning"]
+
+# Keybindings for Fortitude linter under "l" group
+# Press Space, then l, then the command key
+[keys.normal."space".l]
+# Space l l = Lint
+l = ":run-shell-command fortitude check --exit-zero ."
+# Space l d = Diff  
+d = ":run-shell-command fortitude check --exit-zero --diff ."
+# Space l f = Fix
+f = ":run-shell-command fortitude check --fix ."

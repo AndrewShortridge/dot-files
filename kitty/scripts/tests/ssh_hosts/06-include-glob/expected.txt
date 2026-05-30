@@ -1,0 +1,4 @@
+home-nas
+home-pi
+top-host
+work-bastion

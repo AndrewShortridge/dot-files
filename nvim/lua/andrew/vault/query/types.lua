@@ -1,6 +1,8 @@
 -- andrew/vault/query/types.lua
 -- Core value types for Dataview-style query evaluation.
 
+local date_utils = require("andrew.vault.date_utils")
+
 local M = {}
 
 -- ---------------------------------------------------------------------------
@@ -13,7 +15,7 @@ Duration.__index = Duration
 --- Approximate conversion constants (seconds).
 local SECS_PER_MINUTE = 60
 local SECS_PER_HOUR = 3600
-local SECS_PER_DAY = 86400
+local SECS_PER_DAY = date_utils.SECS_PER_DAY
 local SECS_PER_WEEK = 7 * SECS_PER_DAY
 local SECS_PER_MONTH = 30.44 * SECS_PER_DAY
 local SECS_PER_YEAR = 365.25 * SECS_PER_DAY
@@ -253,33 +255,25 @@ function Date.parse(str)
     local t = os.date("*t") --[[@as osdate]]
     -- Lua wday: 1=Sunday ... 7=Saturday
     local wday = t.wday
-    local days_since_monday = (wday - 2) % 7
+    local days_since_monday = date_utils.days_since_monday(wday)
     local monday = os.time({ year = t.year, month = t.month, day = t.day }) - days_since_monday * SECS_PER_DAY
     local mt = os.date("*t", monday) --[[@as osdate]]
     return Date.new(mt.year, mt.month, mt.day, 0, 0, 0)
   elseif lower == "eow" then
-    -- End of week (Sunday)
+    -- End of week (Sunday). If today IS Sunday, eow is today (not next Sunday).
     local t = os.date("*t") --[[@as osdate]]
     local wday = t.wday
     local days_until_sunday = (1 - wday) % 7
-    if days_until_sunday == 0 then
-      days_until_sunday = 7
-    end
     local sunday = os.time({ year = t.year, month = t.month, day = t.day }) + days_until_sunday * SECS_PER_DAY
     local st = os.date("*t", sunday) --[[@as osdate]]
     return Date.new(st.year, st.month, st.day, 0, 0, 0)
   end
 
-  -- ISO 8601 with time: 2026-02-18T10:30:00
-  local y, m, d, H, M_val, S = str:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)$")
-  if y then
-    return Date.new(tonumber(y), tonumber(m), tonumber(d), tonumber(H), tonumber(M_val), tonumber(S))
-  end
-
-  -- ISO date: 2026-02-18
-  y, m, d = str:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)$")
-  if y then
-    return Date.new(tonumber(y), tonumber(m), tonumber(d))
+  -- ISO 8601: "2026-02-18T10:30:00" or "2026-02-18" — delegate to date_utils
+  local iso_ts = date_utils.parse_iso_datetime(str, 0)
+  if iso_ts then
+    local t = os.date("*t", iso_ts) --[[@as osdate]]
+    return Date.new(t.year, t.month, t.day, t.hour, t.min, t.sec)
   end
 
   -- Long form: February 18, 2026

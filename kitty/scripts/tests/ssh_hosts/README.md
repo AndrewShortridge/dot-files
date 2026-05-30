@@ -1,0 +1,1 @@
+Run: `bash scripts/tests/ssh_hosts/run.sh` from the repo root (or just execute the script directly); each subdirectory is a fixture whose `config` is parsed by `scripts/lib/ssh_hosts.sh` and diffed against `expected.txt`.

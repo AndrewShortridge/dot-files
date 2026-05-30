@@ -1,13 +1,15 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Draft Note"
 
 local body_template = [==[
-# ${version}
+# {{version}}
 
-**Project:** [[${project}/Dashboard]]
-**Status:** `${status}`
-**Date:** ${date}
-**File:** `${file_location}`
+**Project:** [[{{project}}/Dashboard]]
+**Status:** `{{status}}`
+**Date:** {{date}}
+**File:** `{{file_location}}`
 
 ---
 
@@ -84,7 +86,7 @@ function M.run(e, p)
     .. "  - draft\n"
     .. "---\n"
 
-  e.write_note("Projects/" .. project .. "/Drafts/" .. version, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.projects .. "/" .. project .. "/Drafts/" .. version, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M

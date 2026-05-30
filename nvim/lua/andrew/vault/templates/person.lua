@@ -1,12 +1,14 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Person Note"
 
 local body_template = [==[
-# ${name}
+# {{name}}
 
-**Role:** ${role}
-**Institution:** ${institution}
-**Email:** ${email}
+**Role:** {{role}}
+**Institution:** {{institution}}
+**Email:** {{email}}
 
 ---
 
@@ -19,7 +21,7 @@ local body_template = [==[
 
 ```dataview
 LIST
-FROM "Projects"
+FROM "{{dir_projects}}"
 WHERE contains(file.outlinks, this.file.link) AND type = "project-dashboard"
 ```
 
@@ -30,7 +32,7 @@ WHERE contains(file.outlinks, this.file.link) AND type = "project-dashboard"
 
 ```dataview
 LIST
-FROM "Log"
+FROM "{{dir_log}}"
 WHERE contains(file.outlinks, this.file.link)
 SORT file.name DESC
 LIMIT 10
@@ -75,7 +77,11 @@ function M.run(e, p)
   local email = e.input({ prompt = "Email (leave blank if unknown)", default = "" })
 
   local date = e.today()
-  local vars = { name = name, role = role, institution = institution or "", email = email or "", date = date }
+  local vars = {
+    name = name, role = role, institution = institution or "", email = email or "", date = date,
+    dir_projects = config.dirs.projects,
+    dir_log = config.dirs.log,
+  }
 
   local fm = "---\n"
     .. "type: person\n"
@@ -88,7 +94,7 @@ function M.run(e, p)
     .. "  - person\n"
     .. "---\n"
 
-  e.write_note("People/" .. name, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.people .. "/" .. name, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M

@@ -1,0 +1,2 @@
+b-high	40
+a-low	8

@@ -13,7 +13,7 @@
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 
 -- Check if lazy.nvim is already installed
-if not vim.loop.fs_stat(lazypath) then
+if not vim.uv.fs_stat(lazypath) then
   -- Clone the repository using Git with blobless clone for faster downloads
   vim.fn.system({
     "git",

@@ -24,8 +24,17 @@ return {
     -- File operations: Rename/move files with LSP awareness
     { "antosha417/nvim-lsp-file-operations", config = true },
 
-    -- Neovim Lua development: Improves Lua LSP understanding of vim API
-    { "folke/neodev.nvim", opts = {} },
+    -- Neovim Lua development: Faster LuaLS setup with lazy workspace libraries
+    {
+      "folke/lazydev.nvim",
+      ft = "lua",
+      opts = {
+        library = {
+          -- Load luvit types when vim.uv is referenced
+          { path = "${3rd}/luv/library", words = { "vim%.uv" } },
+        },
+      },
+    },
   },
 
   -- =============================================================================
@@ -274,11 +283,15 @@ return {
 
         -- Navigate to previous diagnostic
         opts.desc = "Go to previous diagnostic"
-        keymap.set("n", "[d", vim.diagnostic.goto_prev, opts)
+        keymap.set("n", "[d", function()
+          vim.diagnostic.jump({ count = -1, float = true })
+        end, opts)
 
         -- Navigate to next diagnostic
         opts.desc = "Go to next diagnostic"
-        keymap.set("n", "]d", vim.diagnostic.goto_next, opts)
+        keymap.set("n", "]d", function()
+          vim.diagnostic.jump({ count = 1, float = true })
+        end, opts)
 
         -- =============================================================================
         -- Documentation Keybindings
@@ -332,19 +345,8 @@ return {
             -- Use ty if available
             if ty_client then
               vim.b.lsp_popup_kind = "signature"
-              local params =
-                vim.lsp.util.make_position_params(0, ty_client.offset_encoding or "utf-16")
-              ty_client.request("textDocument/signatureHelp", params, function(err, result, ctx, _)
-                if err then
-                  vim.notify(
-                    err.message or tostring(err),
-                    vim.log.levels.ERROR,
-                    { title = "LSP Signature Popup" }
-                  )
-                  return
-                end
-                vim.lsp.handlers["textDocument/signatureHelp"](err, result, ctx, _)
-              end, bufnr)
+              -- Neovim 0.11+ vim.lsp.buf.signature_help handles the full round-trip
+              vim.lsp.buf.signature_help()
               return
             end
           end
@@ -574,7 +576,9 @@ return {
     -- Ctags LSP Commands
     -- =============================================================================
     vim.api.nvim_create_user_command("CtagsLspRestart", function()
-      vim.lsp.stop_client(vim.lsp.get_clients({ name = "ctags_lsp" }))
+      for _, client in ipairs(vim.lsp.get_clients({ name = "ctags_lsp" })) do
+        client:stop()
+      end
       vim.defer_fn(function()
         vim.cmd("edit")  -- Reopen buffer to trigger LSP attach
         vim.notify("Ctags LSP restarted", vim.log.levels.INFO)

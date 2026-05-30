@@ -1,0 +1,5 @@
+Host survivor
+    HostName survivor.example.com
+
+Include does-not-exist.conf
+Include also-missing/*.conf

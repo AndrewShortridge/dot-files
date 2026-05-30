@@ -1,13 +1,15 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Analysis Note"
 
 local body_template = [==[
-# ${title}
+# {{title}}
 
-**Status:** `${status}`
-**Project:** [[${project}/Dashboard]]
-**Created:** ${date}
-**Last Updated:** ${date}
+**Status:** `{{status}}`
+**Project:** [[{{dir_projects}}/{{project}}/Dashboard|{{project}}]]
+**Created:** {{date}}
+**Last Updated:** {{date}}
 
 ---
 
@@ -102,20 +104,20 @@ function M.run(e, p)
   if not project then return end
 
   local date = e.today()
-  local vars = { title = title, status = status, project = project, date = date }
+  local vars = { title = title, status = status, project = project, date = date, dir_projects = config.dirs.projects }
 
   local fm = "---\n"
     .. "type: analysis\n"
     .. "title: " .. title .. "\n"
     .. "status: " .. status .. "\n"
-    .. "parent-project: '[[" .. project .. "/Dashboard]]'\n"
+    .. "parent-project: '[[" .. config.dirs.projects .. "/" .. project .. "/Dashboard|" .. project .. "]]'\n"
     .. "date_created: " .. date .. "\n"
     .. "last_updated: " .. date .. "\n"
     .. "tags:\n"
     .. "  - analysis\n"
     .. "---\n"
 
-  e.write_note("Projects/" .. project .. "/Analysis/" .. title, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.projects .. "/" .. project .. "/Analysis/" .. title, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M

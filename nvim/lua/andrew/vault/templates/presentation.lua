@@ -1,14 +1,16 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Presentation Note"
 
 local body_template = [==[
-# ${title}
+# {{title}}
 
-**Event:** ${event}
-**Date:** ${date}
-**Project:** [[${project}/Dashboard]]
-**File:** `${file_location}`
-**Status:** `${status}`
+**Event:** {{event}}
+**Date:** {{date}}
+**Project:** [[{{project}}/Dashboard]]
+**File:** `{{file_location}}`
+**Status:** `{{status}}`
 
 ---
 
@@ -90,7 +92,7 @@ function M.run(e, p)
     .. "  - presentation\n"
     .. "---\n"
 
-  e.write_note("Projects/" .. project .. "/Presentations/" .. title, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.projects .. "/" .. project .. "/Presentations/" .. title, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M

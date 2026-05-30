@@ -1,0 +1,8 @@
+Host a b c
+    User andrew
+
+Host d
+    HostName d.example.com
+
+Host e f
+    Port 2222

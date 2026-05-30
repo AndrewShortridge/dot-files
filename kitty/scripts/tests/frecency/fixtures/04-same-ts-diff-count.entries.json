@@ -1,0 +1,4 @@
+{
+  "a-low":  { "count": 2,  "last_used_ms": 1699999999000 },
+  "b-high": { "count": 10, "last_used_ms": 1699999999000 }
+}

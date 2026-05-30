@@ -1,12 +1,14 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Literature Note"
 
 local body_template = [==[
-# ${authors} (${year}) — ${title}
+# {{authors}} ({{year}}) — {{title}}
 
 > [!cite] Citation
-> ${authors}, "${title}," *${journal}*, ${year}.
-> DOI: ${doi}
+> {{authors}}, "{{title}}," *{{journal}}*, {{year}}.
+> DOI: {{doi}}
 
 ---
 
@@ -104,7 +106,7 @@ function M.run(e, p)
   -- Sanitize title for filename
   local safe_title = title:gsub(":", " -"):gsub("/", "-"):gsub("[%*%?|]", "")
 
-  e.write_note("Library/" .. safe_title, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.library .. "/" .. safe_title, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M

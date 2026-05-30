@@ -328,7 +328,7 @@ vim.api.nvim_create_user_command("CtagsInfo", function()
   local tags_file = project_root .. "/.tags-headers"
 
   if vim.fn.filereadable(tags_file) == 1 then
-    local stat = vim.loop.fs_stat(tags_file)
+    local stat = vim.uv.fs_stat(tags_file)
     local size = stat and stat.size or 0
     local mtime = stat and os.date("%Y-%m-%d %H:%M:%S", stat.mtime.sec) or "unknown"
     vim.notify(string.format(

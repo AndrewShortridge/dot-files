@@ -1,0 +1,4 @@
+Host top-host
+    HostName top.example.com
+
+Include config.d/*.conf

@@ -41,7 +41,8 @@ return {
       vim.bo[buf].filetype = "typecheck"    -- Syntax highlighting
 
       -- Run command in terminal
-      vim.fn.termopen(cmd, {
+      vim.fn.jobstart(cmd, {
+        term = true,
         cwd = vim.fn.getcwd(),  -- Use current working directory
         on_exit = function(_, code, _)
           -- Notify on completion (success=info, failure=error)
@@ -153,6 +154,8 @@ return {
     -- Track current Fortran type checker (mpif90/gfortran or mpiifx)
     _G.fortran_typechecker = "mpif90"
 
+    local lua_dirname = require("andrew.vault.link_utils").lua_dirname
+
     -- Compiler paths
     local mpiifx_path = "/gpfs/sharedfs1/admin/hpc2.0/apps/intel/oneapi/2024.2.1/mpi/2021.13/bin/mpiifx"
 
@@ -168,7 +171,7 @@ return {
             return path
           end
         end
-        path = vim.fn.fnamemodify(path, ":h")
+        path = lua_dirname(path)
       end
       return vim.fn.expand("%:p:h")
     end

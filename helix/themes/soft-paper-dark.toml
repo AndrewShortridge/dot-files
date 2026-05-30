@@ -1,0 +1,165 @@
+# Soft Paper Dark Theme for Helix
+# Based on the Soft Paper theme by nickmilo (https://github.com/nickmilo/soft-paper)
+
+# UI Colors
+"ui.background" = { bg = "bg" }
+"ui.text" = { fg = "text" }
+"ui.text.directory" = { fg = "blue" }
+"ui.text.focus" = { fg = "text", bg = "surface2", modifiers = ["bold"] }
+
+"ui.cursor" = { fg = "text", modifiers = ["reversed"] }
+"ui.cursor.primary" = { fg = "bg", bg = "mauve", modifiers = ["reversed"] }
+"ui.cursor.match" = { bg = "surface2" }
+
+"ui.selection" = { bg = "surface1" }
+"ui.selection.primary" = { bg = "surface2" }
+"ui.cursorline.primary" = { bg = "surface1" }
+
+"ui.highlight" = { bg = "surface2" }
+"ui.highlight.frameline" = { bg = "red" }
+
+"ui.linenr" = { fg = "surface2" }
+"ui.linenr.selected" = { fg = "text" }
+
+"ui.statusline" = { fg = "text", bg = "surface1" }
+"ui.statusline.inactive" = { fg = "muted", bg = "surface1" }
+"ui.statusline.normal" = { fg = "bg", bg = "blue", modifiers = ["bold"] }
+"ui.statusline.insert" = { fg = "bg", bg = "green", modifiers = ["bold"] }
+"ui.statusline.select" = { fg = "bg", bg = "purple", modifiers = ["bold"] }
+
+"ui.bufferline" = { fg = "muted", bg = "surface1" }
+"ui.bufferline.active" = { fg = "text", bg = "bg", underline = { color = "mauve", style = "line" } }
+"ui.bufferline.background" = { bg = "surface1" }
+
+"ui.popup" = { bg = "surface1" }
+"ui.popup.text" = { fg = "text" }
+"ui.popup.info" = { fg = "muted", bg = "surface1" }
+
+"ui.menu" = { fg = "text", bg = "surface1" }
+"ui.menu.selected" = { fg = "text", bg = "mauve" }
+"ui.menu.scroll" = { fg = "text", bg = "surface2" }
+
+"ui.help" = { fg = "text", bg = "surface1" }
+"ui.tooltip" = { fg = "text", bg = "surface1" }
+"ui.tooltip.matches" = { bg = "surface2" }
+
+"ui.virtual" = { fg = "surface2" }
+"ui.virtual.indent-guide" = { fg = "surface2" }
+"ui.virtual.whitespace" = { fg = "surface2" }
+"ui.virtual.ruler" = { bg = "surface2" }
+"ui.virtual.inlay-hint" = { fg = "text", bg = "surface1" }
+"ui.virtual.jump-label" = { fg = "mauve", modifiers = ["bold"] }
+
+"ui.window" = { fg = "surface2" }
+"ui.debug" = { fg = "red" }
+
+"ui.gutter" = { bg = "bg" }
+
+# Syntax highlighting
+"keyword" = { fg = "mauve" }
+"keyword.control" = { fg = "mauve" }
+"keyword.storage" = { fg = "mauve" }
+"keyword.operator" = { fg = "mauve" }
+
+"function" = { fg = "green" }
+"function.builtin" = { fg = "green" }
+"function.macro" = { fg = "green" }
+"function.method" = { fg = "green" }
+
+"variable" = { fg = "text" }
+"variable.builtin" = { fg = "purple" }
+"variable.parameter" = { fg = "peach" }
+"variable.other.member" = { fg = "red" }
+
+"constant" = { fg = "cyan" }
+"constant.numeric" = { fg = "peach" }
+"constant.builtin" = { fg = "peach" }
+"constant.builtin.boolean" = { fg = "peach" }
+"constant.character.escape" = { fg = "peach" }
+
+"type" = { fg = "blue" }
+"type.builtin" = { fg = "blue" }
+
+"tag" = { fg = "red" }
+"attribute" = { fg = "yellow" }
+"namespace" = { fg = "yellow" }
+
+"string" = { fg = "green" }
+"string.escape" = { fg = "green" }
+"string.special" = { fg = "green" }
+
+"comment" = { fg = "gray", modifiers = ["italic"] }
+"comment.block" = { fg = "gray", modifiers = ["italic"] }
+"comment.line" = { fg = "gray", modifiers = ["italic"] }
+
+"operator" = { fg = "text" }
+"punctuation" = { fg = "text" }
+"special" = { fg = "blue" }
+"constructor" = { fg = "blue" }
+"label" = { fg = "purple" }
+
+# Markup / Markdown
+"markup.heading" = { fg = "rosewater" }
+"markup.heading.1" = { fg = "rosewater" }
+"markup.heading.2" = { fg = "rosewater" }
+"markup.heading.3" = { fg = "rosewater" }
+"markup.heading.4" = { fg = "rosewater" }
+"markup.heading.5" = { fg = "rosewater" }
+"markup.heading.6" = { fg = "rosewater" }
+
+"markup.bold" = { fg = "yellow", modifiers = ["bold"] }
+"markup.italic" = { fg = "purple", modifiers = ["italic"] }
+"markup.strikethrough" = { modifiers = ["crossed_out"] }
+"markup.list" = { fg = "red" }
+"markup.quote" = { fg = "purple" }
+"markup.raw" = { fg = "green" }
+"markup.raw.inline" = { fg = "green" }
+
+"markup.link.url" = { fg = "cyan", modifiers = ["underlined"] }
+"markup.link.text" = { fg = "purple" }
+
+# Diff
+"diff.plus" = { fg = "green" }
+"diff.minus" = { fg = "red" }
+"diff.delta" = { fg = "yellow" }
+
+# Diagnostics
+"diagnostic.error" = { fg = "red" }
+"diagnostic.error.underline" = { color = "red", style = "curl" }
+"diagnostic.warning" = { fg = "yellow" }
+"diagnostic.warning.underline" = { color = "yellow", style = "curl" }
+"diagnostic.info" = { fg = "blue" }
+"diagnostic.info.underline" = { color = "blue", style = "curl" }
+"diagnostic.hint" = { fg = "cyan" }
+"diagnostic.hint.underline" = { color = "cyan", style = "curl" }
+"diagnostic.unnecessary" = { modifiers = ["dim"] }
+"diagnostic.deprecated" = { modifiers = ["crossed_out"] }
+
+# Status (legacy)
+"error" = { fg = "red", modifiers = ["bold"] }
+"warning" = { fg = "yellow", modifiers = ["bold"] }
+"info" = { fg = "blue", modifiers = ["bold"] }
+"hint" = { fg = "cyan", modifiers = ["bold"] }
+
+[palette]
+bg = "#303446"
+surface0 = "#414559"
+surface1 = "#51566C"
+surface2 = "#62667E"
+text = "#C6CEEF"
+muted = "#6C6F85"
+gray = "#6C6F85"
+mauve = "#AAAAAA"
+red = "#E78284"
+orange = "#EF9F76"
+yellow = "#C9BE3E"
+green = "#67C48F"
+cyan = "#99D1DB"
+blue = "#8CAAEE"
+sapphire = "#89B4FA"
+purple = "#BB93D6"
+pink = "#E58FB3"
+teal = "#99D1DB"
+rosewater = "#BA7184"
+peach = "#FAB387"
+lavender = "#89B4FA"

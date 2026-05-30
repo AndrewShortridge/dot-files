@@ -1,12 +1,14 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Changelog"
 
 local body_template = [==[
-# Changelog: ${from_version} → ${to_version}
+# Changelog: {{from_version}} → {{to_version}}
 
-**Project:** [[${project}/Dashboard]]
-**Date:** ${date_long}
-**Author:** ${author}
+**Project:** [[{{project}}/Dashboard]]
+**Date:** {{date_long}}
+**Author:** {{author}}
 
 ---
 
@@ -55,8 +57,8 @@ local body_template = [==[
 
 ## Links
 
-- **Previous version:** [[${from_version}]]
-- **New version:** [[${to_version}]]
+- **Previous version:** [[{{from_version}}]]
+- **New version:** [[{{to_version}}]]
 - **Related analysis:** [[]]
 ]==]
 
@@ -93,7 +95,7 @@ function M.run(e, p)
     .. "  - changelog\n"
     .. "---\n"
 
-  e.write_note("Projects/" .. project .. "/Changelogs/" .. title, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.projects .. "/" .. project .. "/Changelogs/" .. title, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M

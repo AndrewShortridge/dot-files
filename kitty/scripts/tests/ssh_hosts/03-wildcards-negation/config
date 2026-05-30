@@ -1,0 +1,14 @@
+Host *
+    User andrew
+
+Host *.example.com
+    User andrew
+
+Host prod-?
+    Port 22
+
+Host !forbidden good-host
+    User andrew
+
+Host keeper
+    HostName keeper.example.com

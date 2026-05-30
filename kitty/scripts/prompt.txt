@@ -1,0 +1,6 @@
+spawn as many subagents as necessary to investigate the issue that occurs when i attmpet to restore the
+ session by using "ctrl+space>o" in the current kitty instance. when attempting to open "nvim-tmux"
+ which has tab 1 as a shell/terminal, tab 2 as a tmux instance that has 2 split tmux panes, and tab 3 as
+ a running nvim instance with an open file. when i attempt to open it, what really occurs is tab 1 has
+ 2 splits of a proper shell when it should have 1. tab 2 exists shortly with the proper tmux instance running and the proper tmux splits, but is overwritten (i can see it briefly before it is overwritten).tab 2 that has
+overwritten the inital proper tmux tab, has an active tmux instance (when it should not) and an empty shell/windows instead of the open nvim file.

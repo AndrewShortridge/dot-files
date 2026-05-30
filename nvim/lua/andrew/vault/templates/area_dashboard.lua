@@ -1,3 +1,5 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Area Dashboard"
 
@@ -34,7 +36,7 @@ function M.run(e, p)
 
   -- The dataview query uses tp.file.folder(true) in Obsidian.
   -- Since we know the folder, we hardcode it.
-  local folder_path = "Areas/" .. title
+  local folder_path = config.dirs.areas .. "/" .. title
 
   local body = "\n# " .. title .. "\n\n"
     .. "**Category:** `" .. cat_val .. "`\n"
@@ -49,7 +51,7 @@ function M.run(e, p)
     .. "## Active Projects\n\n"
     .. "```dataview\n"
     .. "LIST\n"
-    .. "FROM \"Projects\"\n"
+    .. "FROM \"" .. config.dirs.projects .. "\"\n"
     .. "WHERE type = \"project-dashboard\" AND status != \"Archived\" AND contains(file.outlinks, this.file.link)\n"
     .. "```\n\n"
     .. "> Manual links:\n"

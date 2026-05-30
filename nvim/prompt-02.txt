@@ -1,0 +1,8 @@
+spawn as many subagents as necessary, create detailed implementation documents outlining how to implement each one of the features below. every subagent spawned should be responsible for
+  an individual isolated doucment. save the documents to the directory "./improvements/"                                                                                                      
+                                                                                                                                                                                            
+    6. Graph Filters Integrated into Search                                                                                                                                                   
+      - graph_filter.lua and search_filter.lua are parallel systems                                                                                                                           
+      - Suggestion: Allow search queries like graph:depth=2 tag:active to combine graph traversal with search
+      - Or: pipe search results into graph view                                                                                                                                               
+                                                   

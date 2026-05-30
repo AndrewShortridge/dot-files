@@ -320,7 +320,7 @@ local function parse_atom(source, pos)
   end
 
   -- Tag: #tag or #tag/subtag
-  if source:sub(pos, pos) == "#" then
+  if source:byte(pos) == 35 then
     local tag_end = source:find("[%s%)]+", pos + 1) or (#source + 1)
     local tag = source:sub(pos + 1, tag_end - 1)
     return { type = "tag", tag = tag }, tag_end
@@ -569,22 +569,6 @@ function M.create_env(index, current_file_path)
     if type(str) ~= "string" then
       return nil
     end
-    local lower = str:lower()
-    if lower == "today" or lower == "now" then
-      return types.Date.today()
-    elseif lower == "tomorrow" then
-      local d = types.Date.today()
-      if d and d.add_days then
-        return d:add_days(1)
-      end
-      return types.Date.parse(os.date("%Y-%m-%d", os.time() + 86400))
-    elseif lower == "yesterday" then
-      local d = types.Date.today()
-      if d and d.add_days then
-        return d:add_days(-1)
-      end
-      return types.Date.parse(os.date("%Y-%m-%d", os.time() - 86400))
-    end
     return types.Date.parse(str)
   end
 
@@ -665,6 +649,47 @@ function M.create_env(index, current_file_path)
       end
       dv.paragraph(table.concat(parts, "\t"))
     end,
+
+    -- Built-in utility functions ---------------------------------------------
+
+    --- Return true if `str` starts with `prefix`.
+    ---@param str    string
+    ---@param prefix string
+    ---@return boolean
+    startsWith = function(str, prefix)
+      return vim.startswith(str, prefix)
+    end,
+
+    --- Return true if `str` ends with `suffix`.
+    ---@param str    string
+    ---@param suffix string
+    ---@return boolean
+    endsWith = function(str, suffix)
+      return vim.endswith(str, suffix)
+    end,
+
+    --- Return a new list with duplicates removed (order preserved).
+    ---@param list table
+    ---@return table
+    unique = function(list)
+      local seen = {}
+      local out = {}
+      for _, v in ipairs(list) do
+        local key = tostring(v)
+        if not seen[key] then
+          seen[key] = true
+          out[#out + 1] = v
+        end
+      end
+      return out
+    end,
+
+    --- Return the number of items in a list/table.
+    ---@param list table
+    ---@return number
+    count = function(list)
+      return #list
+    end,
   }
 
   return env, output
@@ -691,7 +716,7 @@ function M.execute_block(code, index, current_file_path)
   -- Compile the code.
   local fn, compile_err = loadstring(code, "vault-query")
   if not fn then
-    return nil, "Syntax error in vault query block:\n" .. tostring(compile_err)
+    return nil, "syntax error in vault query block:\n" .. tostring(compile_err)
   end
 
   -- Apply the sandbox.
@@ -700,7 +725,7 @@ function M.execute_block(code, index, current_file_path)
   -- Execute.
   local ok, result_or_err = pcall(fn)
   if not ok then
-    return nil, "Runtime error in vault query block:\n" .. tostring(result_or_err)
+    return nil, "runtime error in vault query block:\n" .. tostring(result_or_err)
   end
 
   local results = output:get_results()

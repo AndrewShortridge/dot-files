@@ -1,0 +1,21 @@
+[
+  {
+    "socket": "/tmp/kitty-4001",
+    "ls": [
+      {
+        "id": 1,
+        "wm_class": "kitty-project-solo",
+        "is_focused": true,
+        "tabs": [
+          {
+            "id": 1,
+            "is_active": true,
+            "windows": [
+              { "id": 99, "is_active": true, "is_self": false, "last_focused_at": 12345.6789 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -1,11 +1,13 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Concept Note"
 
 local body_template = [==[
-# ${title}
+# {{title}}
 
-**Domain:** [[${domain}]]
-**Maturity:** `${maturity}`
+**Domain:** [[{{domain}}]]
+**Maturity:** `{{maturity}}`
 
 ---
 
@@ -68,7 +70,7 @@ function M.run(e, p)
   if not domain then return end
 
   local maturity = e.select(
-    { "Seed", "Developing", "Mature", "Evergreen" },
+    config.maturity_values,
     { prompt = "Maturity" }
   )
   if not maturity then return end
@@ -87,7 +89,7 @@ function M.run(e, p)
     .. "  - concept\n"
     .. "---\n"
 
-  e.write_note("Domains/" .. domain .. "/" .. title, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.domains .. "/" .. domain .. "/" .. title, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M

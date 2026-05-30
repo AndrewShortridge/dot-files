@@ -1,8 +1,10 @@
+local config = require("andrew.vault.config")
+
 local M = {}
 M.name = "Domain MOC"
 
 local body_template = [==[
-# ${title}
+# {{title}}
 
 > [!abstract] What is this domain?
 >
@@ -25,7 +27,7 @@ local body_template = [==[
 
 ```dataview
 LIST
-FROM "Projects"
+FROM "{{dir_projects}}"
 WHERE type = "project-dashboard" AND status != "Archived" AND contains(file.outlinks, this.file.link)
 ```
 
@@ -36,7 +38,7 @@ WHERE type = "project-dashboard" AND status != "Archived" AND contains(file.outl
 
 ```dataview
 LIST
-FROM "Projects"
+FROM "{{dir_projects}}"
 WHERE type = "project-dashboard" AND status = "Archived" AND contains(file.outlinks, this.file.link)
 ```
 
@@ -44,7 +46,7 @@ WHERE type = "project-dashboard" AND status = "Archived" AND contains(file.outli
 
 ```dataview
 LIST
-FROM "Methods"
+FROM "{{dir_methods}}"
 WHERE contains(file.outlinks, this.file.link)
 SORT file.name ASC
 ```
@@ -56,7 +58,7 @@ SORT file.name ASC
 
 ```dataview
 LIST
-FROM "Library"
+FROM "{{dir_library}}"
 WHERE contains(file.tags, this.file.tags)
 SORT year DESC
 ```
@@ -102,7 +104,12 @@ function M.run(e, p)
   if not title then return end
 
   local date = e.today()
-  local vars = { title = title, date = date }
+  local vars = {
+    title = title, date = date,
+    dir_projects = config.dirs.projects,
+    dir_methods = config.dirs.methods,
+    dir_library = config.dirs.library,
+  }
 
   local fm = "---\n"
     .. "type: domain\n"
@@ -113,7 +120,7 @@ function M.run(e, p)
     .. "  - MOC\n"
     .. "---\n"
 
-  e.write_note("Domains/" .. title .. "/" .. title, fm .. "\n" .. e.render(body_template, vars))
+  e.write_note(config.dirs.domains .. "/" .. title .. "/" .. title, fm .. "\n" .. e.render(body_template, vars))
 end
 
 return M
