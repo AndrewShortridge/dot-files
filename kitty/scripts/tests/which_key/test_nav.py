@@ -19,7 +19,7 @@ sys.path.insert(
 
 from kittens.chord_trie import build, navigate, entries, Prefix  # noqa: E402
 from kittens.which_key_nav import (  # noqa: E402
-    nav_step, layout_block, char_to_key, display_key,
+    nav_step, layout_block, char_to_key, display_key, filter_tab_entries,
     Descend, Dispatch, Pop, CANCEL, STAY, KEY_ESC, KEY_BACKSPACE,
 )
 
@@ -196,6 +196,49 @@ class CharToKey(unittest.TestCase):
         for ch, expected in cases:
             with self.subTest(ch=ch):
                 self.assertEqual(char_to_key(ch), expected)
+
+
+class FilterTabEntries(unittest.TestCase):
+    # Rows as chord_trie.entries() emits them: (key, desc, is_group). Digits
+    # 1..9 are goto_tab N; 0 is goto_tab -1 (last-visited tab).
+    ROWS = [
+        ("t", "new tab", False),
+        ("1", "tab 1", False),
+        ("2", "tab 2", False),
+        ("3", "tab 3", False),
+        ("9", "tab 9", False),
+        ("0", "last tab", False),
+        ("slash", "scrollback", False),
+        ("g", "+group", True),
+    ]
+
+    def _keys(self, tab_count):
+        return [r[0] for r in filter_tab_entries(self.ROWS, tab_count)]
+
+    def test_count_bounds_digits_and_zero_needs_two_tabs(self):
+        cases = [
+            # one tab: no numbered chord beyond 1, and nothing to toggle to
+            (1, ["t", "1", "slash", "g"]),
+            (2, ["t", "1", "2", "0", "slash", "g"]),
+            (3, ["t", "1", "2", "3", "0", "slash", "g"]),
+            # count above the bound spec keeps every row
+            (12, ["t", "1", "2", "3", "9", "0", "slash", "g"]),
+            # degenerate count hides every tab row, keeps the rest in order
+            (0, ["t", "slash", "g"]),
+        ]
+        for tab_count, expected in cases:
+            with self.subTest(tab_count=tab_count):
+                self.assertEqual(self._keys(tab_count), expected)
+
+    def test_unknown_count_keeps_everything(self):
+        # None = the live query failed; never hide chords that still dispatch.
+        self.assertEqual(filter_tab_entries(self.ROWS, None), self.ROWS)
+
+    def test_rows_pass_through_verbatim(self):
+        # Surviving rows are the same tuples (desc/is_group untouched).
+        out = filter_tab_entries(self.ROWS, 2)
+        self.assertEqual(out[1], ("1", "tab 1", False))
+        self.assertEqual(out[-1], ("g", "+group", True))
 
 
 if __name__ == "__main__":

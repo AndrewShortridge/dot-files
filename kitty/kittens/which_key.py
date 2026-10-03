@@ -69,7 +69,7 @@ try:
     import which_key_spec as _spec_mod
     from which_key_cache import load_or_build
     from which_key_nav import (
-        nav_step, char_to_key, display_key, resolve_key,
+        nav_step, char_to_key, display_key, resolve_key, filter_tab_entries,
         Descend, Dispatch, Pop, CANCEL, STAY, KEY_ESC, KEY_BACKSPACE,
         buffered_key_decision, HONOR, SOFT_BELL, BEL,
     )
@@ -80,7 +80,7 @@ except ImportError:  # imported as kittens.* under the test sys.path
     from kittens import which_key_spec as _spec_mod
     from kittens.which_key_cache import load_or_build
     from kittens.which_key_nav import (
-        nav_step, char_to_key, display_key, resolve_key,
+        nav_step, char_to_key, display_key, resolve_key, filter_tab_entries,
         Descend, Dispatch, Pop, CANCEL, STAY, KEY_ESC, KEY_BACKSPACE,
         buffered_key_decision, HONOR, SOFT_BELL, BEL,
     )
@@ -133,6 +133,11 @@ def main(args):
             # the thread finishes. [] = capture failed -> blank background.
             self._bg_lines = []
             self._bg_ready = None
+            # Number of tabs in the OS window the leader was pressed in, so
+            # the popup lists only the numbered-tab chords that can target a
+            # real tab (filter_tab_entries). Fetched in the same background
+            # thread as the snapshot. None = unknown -> show every chord.
+            self._tab_count = None
             # Set once the chord has resolved (a leaf dispatched, Esc/Backspace
             # cancelled) and the loop is quitting — used to stop draining
             # spawn-window keys after one of them already ended the chord.
@@ -271,11 +276,29 @@ def main(args):
             # kitty has focused this overlay, which can lag the spawn) overlaps
             # the WAIT_FIRST delay. draw() waits on _bg_ready with a bound.
             # Best-effort: any failure leaves _bg_lines == [] -> blank background.
+            import json
             import threading
             import time
             self._bg_ready = threading.Event()
 
             def capture():
+                # Tab count first: `ls` needs no focus so it never retries, and
+                # it must be in hand before the first draw. Unfiltered on
+                # purpose — a window `match` prunes non-matching tabs from the
+                # reply — so locate our OS window by the `is_self` marker kitty
+                # sets from the kitty_window_id _rc sends (this overlay's id;
+                # it lives in the parent's tab, hence the parent's OS window).
+                # ls returns its JSON document as a STRING in `data`.
+                resp = _rc("ls", {})
+                if resp is not None and resp.get("ok"):
+                    try:
+                        for osw in json.loads(resp["data"]):
+                            if any(w.get("is_self")
+                                   for t in osw["tabs"] for w in t["windows"]):
+                                self._tab_count = len(osw["tabs"])
+                                break
+                    except (KeyError, TypeError, ValueError):
+                        pass
                 rows = []
                 t0 = time.time()
                 for _attempt in range(8):
@@ -292,8 +315,9 @@ def main(args):
                     # Typically "No matching windows": kitty has not focused
                     # this overlay yet, so state:overlay_parent is unresolvable.
                     time.sleep(0.02)
-                _wk_test_log("capture rows=%d attempts=%d %.1fms" % (
-                    len(rows), _attempt + 1, (time.time() - t0) * 1000))
+                _wk_test_log("capture rows=%d attempts=%d tabs=%r %.1fms" % (
+                    len(rows), _attempt + 1, self._tab_count,
+                    (time.time() - t0) * 1000))
                 self._bg_lines = rows
                 self._bg_ready.set()
 
@@ -307,8 +331,14 @@ def main(args):
             so the snapshot never bleeds through them."""
             node = self.stack[-1]
             total_rows, total_cols = self._dimensions()
+            # The capture thread also fills _tab_count; wait for it (bounded)
+            # BEFORE the grid is laid out so the filter sees the live count.
+            # The same wait covers the snapshot painted further down.
+            if self._bg_ready is not None:
+                self._bg_ready.wait(0.3)
+            rows = filter_tab_entries(entries(node), self._tab_count)
             # Keys bold (SGR 1 / 22 = bold off), descriptions in normal weight.
-            block = layout(entries(node), total_cols, key_sgr=_KEY_SGR)
+            block = layout(rows, total_cols, key_sgr=_KEY_SGR)
 
             # Band: a full-width rule separates the snapshot from the header +
             # entries, so the popup reads as a distinct panel at the bottom.
@@ -322,13 +352,12 @@ def main(args):
 
             self.write(clear_screen())
 
-            # Background snapshot: paint the captured rows top-down. Normally
-            # the capture thread finished during the WAIT_FIRST delay; bound the
-            # wait so a dead socket can only cost a blank background, never a
-            # hung popup. Reset SGR after each row so a trailing color can't
-            # tint the next row or the band.
-            if self._bg_ready is not None:
-                self._bg_ready.wait(0.3)
+            # Background snapshot: paint the captured rows top-down. The
+            # capture thread normally finished during the WAIT_FIRST delay
+            # (and draw already waited on _bg_ready above, bounded, so a dead
+            # socket can only cost a blank background, never a hung popup).
+            # Reset SGR after each row so a trailing color can't tint the next
+            # row or the band.
             for i, line in enumerate(self._bg_lines[:total_rows]):
                 self.write("\x1b[%d;1H" % (i + 1))
                 self.write(line)

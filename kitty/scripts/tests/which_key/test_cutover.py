@@ -131,6 +131,16 @@ CONF_CHORDS = [
     (["shift+n"], "move_tab_forward"),
     (["shift+p"], "move_tab_backward"),
     (["shift+r"], "set_tab_title"),
+    (["1"], "goto_tab 1"),  # added post-cutover (numbered tabs)
+    (["2"], "goto_tab 2"),
+    (["3"], "goto_tab 3"),
+    (["4"], "goto_tab 4"),
+    (["5"], "goto_tab 5"),
+    (["6"], "goto_tab 6"),
+    (["7"], "goto_tab 7"),
+    (["8"], "goto_tab 8"),
+    (["9"], "goto_tab 9"),
+    (["0"], "goto_tab -1"),
     (["slash"], _SCROLLBACK),
     (["shift+slash"], "command_palette"),
     (["s"], "launch --type=overlay --cwd=current "
@@ -154,9 +164,10 @@ class SpecIntegrity(unittest.TestCase):
 
     def test_all_conf_chords_present(self):
         # Guard against silently dropping (or adding) a chord: the 27 migrated
-        # chords plus `w` (pane picker, added after the cutover).
-        self.assertEqual(len(CONF_CHORDS), 28)
-        self.assertEqual(len(spec_mod.SPEC), 28)
+        # chords plus `w` (pane picker) and `1`-`9`/`0` (numbered tabs), both
+        # added after the cutover.
+        self.assertEqual(len(CONF_CHORDS), 38)
+        self.assertEqual(len(spec_mod.SPEC), 38)
 
     def test_every_conf_chord_dispatches_exact_action(self):
         # Walk the trie per key in each path; the terminal node must be a Leaf

@@ -74,6 +74,19 @@ SPEC = [
     {"key": "shift+n", "action": "move_tab_forward",  "desc": "move tab forward"},
     {"key": "shift+p", "action": "move_tab_backward", "desc": "move tab backward"},
     {"key": "shift+r", "action": "set_tab_title",     "desc": "rename tab"},
+    # -- jump to tab N (mirrors alt+1..9 / alt+0 on the keyd Tab layer).
+    #    Tab titles are prefixed "N:" so the target is visible in the bar.
+    #    0 = last-visited tab (goto_tab -1), toggling between two tabs.
+    {"key": "1", "action": "goto_tab 1", "desc": "tab 1"},
+    {"key": "2", "action": "goto_tab 2", "desc": "tab 2"},
+    {"key": "3", "action": "goto_tab 3", "desc": "tab 3"},
+    {"key": "4", "action": "goto_tab 4", "desc": "tab 4"},
+    {"key": "5", "action": "goto_tab 5", "desc": "tab 5"},
+    {"key": "6", "action": "goto_tab 6", "desc": "tab 6"},
+    {"key": "7", "action": "goto_tab 7", "desc": "tab 7"},
+    {"key": "8", "action": "goto_tab 8", "desc": "tab 8"},
+    {"key": "9", "action": "goto_tab 9", "desc": "tab 9"},
+    {"key": "0", "action": "goto_tab -1", "desc": "last tab"},
 
     # -- scrollback in nvim (expanded alias — see _SCROLLBACK_NVIM) ----------
     {"key": "slash", "action": _SCROLLBACK_NVIM, "desc": "scrollback in nvim"},

@@ -208,6 +208,41 @@ def display_key(key_name):
     return key_name
 
 
+# --- filter_tab_entries (popup shows only the tabs that exist) --------------
+# The spec binds `1`..`9` -> goto_tab N and `0` -> goto_tab -1 (last-visited
+# tab) unconditionally; the trie is static and cached, so those chords always
+# dispatch. The POPUP, however, should only list the tabs the OS window really
+# has. This is a pure display filter over chord_trie.entries() rows; the driver
+# feeds it the live tab count (fetched over remote control in the background
+# capture thread) and passes the result to layout(). Unknown count (None, e.g.
+# the socket query failed) -> show everything rather than hide valid chords.
+
+_TAB_DIGITS = frozenset("123456789")
+
+
+def filter_tab_entries(rows, tab_count):
+    """Pure: drop numbered-tab rows that cannot target an existing tab.
+
+    `rows` is chord_trie.entries() output ([(key, desc, is_group), ...]).
+    A `1`..`9` row survives iff int(key) <= tab_count; the `0` (last-visited
+    tab) row survives iff tab_count >= 2 (with one tab there is nothing to
+    toggle to). Every other row is kept verbatim, in order. tab_count None
+    -> rows unchanged.
+    """
+    if tab_count is None:
+        return list(rows)
+    out = []
+    for row in rows:
+        key = row[0]
+        if key in _TAB_DIGITS:
+            if int(key) > tab_count:
+                continue
+        elif key == "0" and tab_count < 2:
+            continue
+        out.append(row)
+    return out
+
+
 # --- resolve_key (key-event -> spec key name; issue 08 cutover) -------------
 # The full migrated spec (issue 08) introduces shifted/named keys —
 # shift+h/j/k/l, shift+n/p/r/s, slash, shift+slash — that the plain glyph map

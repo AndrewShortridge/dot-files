@@ -112,6 +112,8 @@ cancellable with `Esc` or `Backspace`. Tunable: `BUDGET_S` in
 | `ctrl+space > N` | Move tab forward |
 | `ctrl+space > P` | Move tab backward |
 | `ctrl+space > R` | Rename current tab |
+| `ctrl+space > 1` … `9` | Go to tab N (tab titles are prefixed `N:`) |
+| `ctrl+space > 0` | Go to last-visited tab (toggle between two tabs) |
 | `ctrl+space > /` | Scrollback in nvim (kitty-scrollback.nvim) |
 | `ctrl+space > ?` (`shift+/`) | Command palette |
 | `ctrl+space > s` | Fuzzy session picker (fzf across all OS windows) |
