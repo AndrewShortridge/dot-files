@@ -10,11 +10,20 @@
     "context": "Workspace && !menu",
     "bindings": {
       // "shift shift": "file_finder::Toggle",
-      "alt-h": "workspace::ActivatePaneLeft",
-      "alt-j": "workspace::ActivatePaneDown",
-      "alt-k": "workspace::ActivatePaneUp",
-      "alt-l": "workspace::ActivatePaneRight"
-    }
+      // "alt-h": "workspace::ActivatePaneLeft",
+      // "alt-j": "workspace::ActivatePaneDown",
+      // "alt-k": "workspace::ActivatePaneUp",
+      // "alt-l": "workspace::ActivatePaneRight",
+      "space s h": "workspace::ActivatePaneLeft",
+      "space s j": "workspace::ActivatePaneDown",
+      "space s k": "workspace::ActivatePaneUp",
+      "space s l": "workspace::ActivatePaneRight",
+      "space s n": "workspace::ActivateNextPane",
+      "space s p": "workspace::ActivatePreviousPane",
+      // Maximize / restore the focused pane or panel (incl. the terminal).
+      "ctrl-shift-m": "workspace::ToggleZoom",
+      "g e": "vim::PreviousSubwordEnd",
+    },
   },
   {
     "context": "VimControl && !menu",
@@ -39,40 +48,36 @@
       "space s |": "pane::SplitVertical",
       "space s -": "pane::SplitHorizontal",
       "space s x": "pane::CloseActiveItem",
-      "ctrl+h": "workspace::ActivatePaneLeft",
-      "ctrl+j": "workspace::ActivatePaneDown",
-      "ctrl+k": "workspace::ActivatePaneUp",
-      "ctrl+l": "workspace::ActivatePaneRight",
-      "shift-alt-h": "vim::ResizePaneLeft",
-      "shift-alt-j": "vim::ResizePaneDown",
-      "shift-alt-k": "vim::ResizePaneUp",
-      "shift-alt-l": "vim::ResizePaneRight",
       "space a l": [
         "task::Spawn",
-        { "task_name": "Fortran: gfortran syntax only (./code)" }
-      ]
+        { "task_name": "Fortran: gfortran syntax only (./code)" },
+      ],
+      "w": "vim::NextSubwordStart",
+      "b": "vim::PreviousSubwordStart",
+      "e": "vim::NextSubwordEnd",
+      "g e": "vim::PreviousSubwordEnd",
       // "space s x": "pane::SplitVertical",
-    }
+    },
   },
   {
     "context": "Editor && vim_mode == visual && !VimWaiting && !Menu",
     "bindings": {
       // Put key bindings here if you want them to work in visual mode.
       "shift-j": "editor::MoveLineDown",
-      "shift-K": "editor::MoveLineUp"
-    }
+      "shift-K": "editor::MoveLineUp",
+    },
   },
   {
     "context": "vim_mode == normal && !menu",
     "bindings": {
       // "shift-y": ["workspace::SendKeystrokes", "y $"] // Use neovim's yank behavior: yank to end of line.
-    }
+    },
   },
   {
     "context": "vim_mode == insert",
     "bindings": {
-      "j k": "vim::NormalBefore" // In insert mode, make jk escape to normal mode.
-    }
+      "j k": "vim::NormalBefore", // In insert mode, make jk escape to normal mode.
+    },
   },
   {
     "context": "EmptyPane || SharedScreen",
@@ -80,22 +85,37 @@
       // Put key bindings here (in addition to the context above) if you want them to
       // work when no editor exists.
       // "space f": "file_finder::Toggle"
-    }
+    },
   },
   {
     "context": "Terminal",
     "bindings": {
-      "space t t": "terminal_panel::Toggle",
-      "space s m": "workspace::ToggleZoom"
-    }
+      // Bind plain `space` here so it sends a literal space immediately.
+      // The Workspace/VimControl `space …` chords (space s h, space f, etc.)
+      // otherwise arm while the terminal is focused, making Zed wait for the
+      // next key instead of typing a space. A Terminal-context single-key
+      // binding is more specific and wins over those chords.
+      "space": ["terminal::SendText", " "],
+      // Same fix for `g`: the Workspace `g e` chord (and VimControl `g r`/`g o`)
+      // otherwise arms while the terminal is focused, making Zed wait for the
+      // next key instead of typing `g`.
+      "g": ["terminal::SendText", "g"],
+      // Cycle between terminal tabs while the terminal is focused.
+      "ctrl-j": "pane::ActivateNextItem",
+      "ctrl-k": "pane::ActivatePreviousItem",
+      // Disabled: these space-prefixed chords swallow the space key
+      // while the terminal is focused instead of typing a space.
+      // "space t t": "terminal_panel::Toggle",
+      // "space s m": "workspace::ToggleZoom",
+    },
   },
   {
     "context": "FileFinder",
     "bindings": {
-      "ctrl-v": "file_finder::ToggleSplitMenu"
+      "ctrl-v": "file_finder::ToggleSplitMenu",
       // "space s |": "project_panel::OpenSplitVertical",
       // "space s -": "project_panel::OpenSplitVertical",
-    }
+    },
   },
   // {
   //   "context": "(FileFinder > Picker > menu)",
@@ -109,7 +129,24 @@
   //   },
   // },
   {
-    "context": "Editor",
-    "bindings": {}
-  }
+    "context": "VimControl && !menu || !Editor && !Terminal",
+    "bindings": {
+      // window related commands (ctrl-w X)
+      "shift-alt-l": "vim::ResizePaneLeft",
+      "shift-alt-j": "vim::ResizePaneDown",
+      "shift-alt-k": "vim::ResizePaneUp",
+      "shift-alt-h": "vim::ResizePaneRight",
+      "shift-alt-m": "vim::MaximizePane",
+      "alt-=": "vim::ResetPaneSizes",
+      "shift-alt-c": "pane::CloseActiveItem",
+      "shift-alt-q": "pane::CloseAllItems",
+    },
+  },
+  {
+    "context": "ProjectPanel && not_editing",
+    "bindings": {
+      "o": "project_panel::NewFile",
+      "i": "project_panel::NewFile",
+    },
+  },
 ]
