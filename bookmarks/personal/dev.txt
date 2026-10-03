@@ -1,0 +1,7 @@
+# personal / dev  —  label :: url   (or just a url)
+GitHub :: https://github.com
+crates.io :: https://crates.io
+Docs.rs :: https://docs.rs/
+Rust std :: https://doc.rust-lang.org/std/
+MDN :: https://developer.mozilla.org
+Compiler Explorer :: https://godbolt.org

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bsession</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 48rem; margin: 3rem auto; padding: 0 1rem; }
+  header { display: flex; align-items: baseline; gap: 1rem; }
+  h1 { font-size: 1.4rem; margin: 0; }
+  h1 small { opacity: .6; font-weight: normal; }
+  button { margin-left: auto; padding: .35rem .9rem; border-radius: .4rem; border: 1px solid currentColor; background: none; color: inherit; cursor: pointer; }
+  button:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+  ul { list-style: none; padding: 0; margin: 1.5rem 0; }
+  li { padding: .25rem 0; display: flex; gap: .75rem; }
+  li a { text-decoration: none; }
+  li .url { opacity: .5; font-size: .85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #status { opacity: .7; font-size: .9em; min-height: 1.5em; }
+  .err { color: #d33; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <button id="save" title="Write this window's tabs to the project session file">Save session</button>
+</header>
+<div id="status"></div>
+<ul id="list"></ul>
+<script src="project.js"></script>
+</body>
+</html>
