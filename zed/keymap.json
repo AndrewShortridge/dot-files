@@ -13,8 +13,8 @@
       "alt-h": "workspace::ActivatePaneLeft",
       "alt-j": "workspace::ActivatePaneDown",
       "alt-k": "workspace::ActivatePaneUp",
-      "alt-l": "workspace::ActivatePaneRight",
-    },
+      "alt-l": "workspace::ActivatePaneRight"
+    }
   },
   {
     "context": "VimControl && !menu",
@@ -49,30 +49,30 @@
       "shift-alt-l": "vim::ResizePaneRight",
       "space a l": [
         "task::Spawn",
-        { "task_name": "Fortran: gfortran syntax only (./code)" },
-      ],
+        { "task_name": "Fortran: gfortran syntax only (./code)" }
+      ]
       // "space s x": "pane::SplitVertical",
-    },
+    }
   },
   {
     "context": "Editor && vim_mode == visual && !VimWaiting && !Menu",
     "bindings": {
       // Put key bindings here if you want them to work in visual mode.
       "shift-j": "editor::MoveLineDown",
-      "shift-K": "editor::MoveLineUp",
-    },
+      "shift-K": "editor::MoveLineUp"
+    }
   },
   {
     "context": "vim_mode == normal && !menu",
     "bindings": {
       // "shift-y": ["workspace::SendKeystrokes", "y $"] // Use neovim's yank behavior: yank to end of line.
-    },
+    }
   },
   {
     "context": "vim_mode == insert",
     "bindings": {
-      "j k": "vim::NormalBefore", // In insert mode, make jk escape to normal mode.
-    },
+      "j k": "vim::NormalBefore" // In insert mode, make jk escape to normal mode.
+    }
   },
   {
     "context": "EmptyPane || SharedScreen",
@@ -80,22 +80,22 @@
       // Put key bindings here (in addition to the context above) if you want them to
       // work when no editor exists.
       // "space f": "file_finder::Toggle"
-    },
+    }
   },
   {
     "context": "Terminal",
     "bindings": {
       "space t t": "terminal_panel::Toggle",
-      "space s m": "workspace::ToggleZoom",
-    },
+      "space s m": "workspace::ToggleZoom"
+    }
   },
   {
     "context": "FileFinder",
     "bindings": {
-      "ctrl-v": "file_finder::ToggleSplitMenu",
+      "ctrl-v": "file_finder::ToggleSplitMenu"
       // "space s |": "project_panel::OpenSplitVertical",
       // "space s -": "project_panel::OpenSplitVertical",
-    },
+    }
   },
   // {
   //   "context": "(FileFinder > Picker > menu)",
@@ -110,6 +110,6 @@
   // },
   {
     "context": "Editor",
-    "bindings": {},
-  },
+    "bindings": {}
+  }
 ]
