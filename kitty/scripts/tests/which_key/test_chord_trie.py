@@ -15,7 +15,7 @@ sys.path.insert(
 )
 
 from kittens.chord_trie import (  # noqa: E402
-    build, navigate, entries, Leaf, Prefix, NO_MATCH,
+    build, navigate, entries, sections, Leaf, Prefix, NO_MATCH,
 )
 
 # A small fixture spec exercising leaves, one real nested group, and a
@@ -157,6 +157,59 @@ class ChordTrieMalformed(unittest.TestCase):
         # One warning per skipped entry: not-a-dict, missing key, no
         # action/children, empty action, empty group = 5.
         self.assertEqual(len(root.warnings), 5)
+
+
+class ChordTrieSections(unittest.TestCase):
+    # "section" is a display-only label. sections() groups entries() rows by
+    # it: same label -> one section (even if declared apart), sections in order
+    # of first appearance, rows in declared order, None for unsectioned rows.
+    SECTIONED_SPEC = [
+        {"key": "t", "action": "new_tab", "desc": "new tab", "section": "Tabs"},
+        {"key": "c", "action": "close_window", "desc": "close",
+         "section": "Windows"},
+        {"key": "x", "action": "close_tab", "desc": "close tab",
+         "section": "Tabs"},
+        {"key": "q", "action": "quit", "desc": "quit"},            # unsectioned
+        {"key": "w", "group": "window", "section": "Windows", "children": [
+            {"key": "h", "action": "left", "desc": "left"},
+        ]},
+        {"key": "z", "action": "zz", "desc": "bad label", "section": 7},
+        {"key": "e", "action": "ee", "desc": "empty label", "section": ""},
+    ]
+
+    def test_groups_by_label_in_first_appearance_order(self):
+        root = build(self.SECTIONED_SPEC)
+        self.assertEqual(root.warnings, [])
+        self.assertEqual(
+            sections(root),
+            [
+                ("Tabs", [("t", "new tab", False), ("x", "close tab", False)]),
+                ("Windows", [("c", "close", False), ("w", "window", True)]),
+                (None, [("q", "quit", False), ("z", "bad label", False),
+                        ("e", "empty label", False)]),
+            ],
+        )
+
+    def test_section_never_changes_navigation(self):
+        # Labels are display-only: every key is still a direct child of root.
+        root = build(self.SECTIONED_SPEC)
+        self.assertEqual(
+            [k for k, _, _ in entries(root)],
+            ["t", "c", "x", "q", "w", "z", "e"],
+        )
+        self.assertIsInstance(navigate(root, "t"), Leaf)
+        self.assertIsInstance(navigate(root, "w"), Prefix)
+        self.assertIs(navigate(root, "Tabs"), NO_MATCH)
+
+    def test_unsectioned_spec_is_one_headerless_section(self):
+        root = build(FIXTURE_SPEC)
+        self.assertEqual(sections(root), [(None, entries(root))])
+
+    def test_children_sections_independent_of_parent(self):
+        # A group's children carry their own (here absent) labels.
+        root = build(self.SECTIONED_SPEC)
+        w = navigate(root, "w")
+        self.assertEqual(sections(w.node), [(None, [("h", "left", False)])])
 
 
 if __name__ == "__main__":

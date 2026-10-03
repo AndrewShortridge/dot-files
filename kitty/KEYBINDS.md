@@ -92,8 +92,11 @@ Notes:
 
 Defined in `kittens/which_key_spec.py`. The popup appears ~200ms after the
 keypress (known keys typed within that window fire with no popup) and is
-cancellable with `Esc` or `Backspace`. Tunable: `BUDGET_S` in
-`kittens/which_key_timing.py`; the floor is the kitten's own spawn (~180ms).
+cancellable with `Esc` or `Backspace`. Its rows are grouped under headers —
+Windows, Navigate, Tabs, Go to tab, Sessions, Tools — set by each entry's
+`"section"` label in the spec (display only; the keystroke is still
+`ctrl+space > key`). Tunable: `BUDGET_S` in `kittens/which_key_timing.py`;
+the floor is the kitten's own spawn (~180ms).
 
 | Chord | Action |
 |---|---|

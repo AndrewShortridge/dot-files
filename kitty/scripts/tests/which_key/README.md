@@ -4,8 +4,11 @@ repo's first Python test suite — `test_chord_trie.py` is a fixture-table
 unittest (one `subTest` per row, in the spirit of `modal_fsm/transitions.tsv`)
 covering the pure chord-trie module (`kittens/chord_trie.py`): `build()` shape
 via `entries()`, `navigate()` hit/partial/miss, declared-order preservation,
-sub-prefix group flagging, and malformed-entry skip (build never aborts; each
-skip is recorded on `root.warnings`). Only the pure, kitty-free core is
+sub-prefix group flagging, malformed-entry skip (build never aborts; each
+skip is recorded on `root.warnings`), and `sections()` — `entries()` rows
+grouped by the display-only `"section"` label (same label merges, first-
+appearance order, `None` for unsectioned, never affects `navigate()`). Only
+the pure, kitty-free core is
 automated here; the overlay launch, raw-tty key read in `main()`, and
 `boss.call_remote_control` dispatch are terminal-interactive and verified
 manually (press the scratch trigger, then `|`/`-`/`c`/`w h`).
@@ -70,9 +73,18 @@ packed across columns, declared-order preservation, and narrow-terminal
 truncation (no line exceeds the terminal; at the extreme floor the separator +
 descriptions drop to a key-only column). All pure — stdlib `unittest`, no
 terminal/socket/real-time wait, runs under both miniconda 3.13 and kitty's
-bundled 3.14. The overlay render/anchor (`WhichKeyDriver.draw()` now calls
-`layout(entries(node), self._term_width())`) stays terminal-interactive and is
-verified manually: trigger `ctrl+shift+f3`, descend into a crowded prefix to see
+bundled 3.14. `layout_sections(sections, term_width, key_sgr, header_sgr)` is
+the headed variant the driver uses: each labeled section is a header line plus
+its rows, never split across columns (height grows to the tallest section), a
+blank line separates sections stacked in one column, unlabeled rows flow
+column-first, and each column is only as wide as its own rows/header. The
+tests pin `layout(e, w) == layout_sections([(None, e)], w)` at many widths, the
+no-split rule at the exact two-box width, gutter continuity past short
+columns, per-column widths, header truncation on narrow terminals, and that
+`header_sgr` wraps labels only and is width-neutral. The overlay render/anchor
+(`WhichKeyDriver.draw()` calls `layout_sections(sections(node), ...)` after
+`filter_tab_entries` per section) stays terminal-interactive and is verified
+manually: trigger `ctrl+shift+f3`, descend into a crowded prefix to see
 multi-column packing, then shrink the window to watch descriptions truncate with
 `…` rather than wrap.
 

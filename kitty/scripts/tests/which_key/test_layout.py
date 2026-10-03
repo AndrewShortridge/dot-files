@@ -24,8 +24,8 @@ sys.path.insert(
 
 from kittens.chord_trie import build, entries  # noqa: E402
 from kittens.which_key_layout import (  # noqa: E402
-    layout, str_width, char_width, truncate, sort_entries, format_cells,
-    SEP, SPACING,
+    layout, layout_sections, str_width, char_width, truncate, sort_entries,
+    format_cells, SEP, COL_SEP, SPACING,
 )
 
 # Same fixture shape as test_nav.py: plain leaves c / | / - in a deliberately
@@ -341,6 +341,115 @@ class FormatCells(unittest.TestCase):
         ])
         self.assertEqual(cells[0][0], "|")     # display_key(bar) -> |
         self.assertEqual(cells[1][0], "+w")    # group gets '+' prefix
+
+
+def _rows(prefix, n, desc="d"):
+    return [("%s%d" % (prefix, i), desc, False) for i in range(n)]
+
+
+class LayoutSections(unittest.TestCase):
+    # Three labeled sections of unequal height. Every key cell is 2 columns
+    # ("a0"), every desc 1, so one box is 2 + 2 + SEP + 2 + 1 = 8 columns.
+    SECS = [("A", _rows("a", 3)), ("B", _rows("b", 2)), ("C", _rows("c", 4))]
+    BW = 2 + 2 + str_width(SEP) + 2 + 1
+
+    def _cols(self, line):
+        return [c.strip() for c in line.split(COL_SEP)]
+
+    def test_flat_layout_is_the_headerless_special_case(self):
+        ents = [("k%d" % i, "desc %d" % i, i % 3 == 0) for i in range(9)]
+        for width in (5, 12, 20, 33, 40, 80, 200):
+            with self.subTest(width=width):
+                self.assertEqual(
+                    layout(ents, width), layout_sections([(None, ents)], width),
+                )
+
+    def test_each_section_gets_its_own_column_when_room(self):
+        lines = layout_sections(self.SECS, 200)
+        # Height = tallest section (header + 4 rows), one column per section.
+        self.assertEqual(len(lines), 5)
+        self.assertEqual(self._cols(lines[0]), ["A", "B", "C"])
+        self.assertEqual(self._cols(lines[1])[:3][0].split()[0], "a0")
+        # Gutter rule continues past the short columns: B ends after row 2,
+        # A after row 3, yet rows 3 and 4 still carry the rules before C.
+        self.assertEqual(lines[3].count(COL_SEP), 2)
+        self.assertEqual(lines[4].count(COL_SEP), 2)
+        self.assertTrue(self._cols(lines[4])[2].startswith("c3"))
+
+    def test_labeled_section_never_splits_across_columns(self):
+        # Exactly two boxes fit. 12 lines / 2 = 6 would split C (5 lines)
+        # or B; the height grows until A+blank+B stack in column 1 (8 lines)
+        # and C sits whole in column 2.
+        width = self.BW * 2 + SPACING
+        lines = layout_sections(self.SECS, width)
+        self.assertEqual(len(lines), 8)
+        self.assertEqual(self._cols(lines[0]), ["A", "C"])
+        # Row 4 is the blank separator in column 1: only the gutter remains.
+        self.assertTrue(lines[4].lstrip().startswith(COL_SEP.strip()))
+        self.assertEqual(self._cols(lines[5])[0], "B")
+        # Every header is immediately followed by its own rows.
+        col1 = [self._cols(ln)[0] for ln in lines]
+        self.assertEqual([c.split()[0] if c else "" for c in col1],
+                         ["A", "a0", "a1", "a2", "", "B", "b0", "b1"])
+        for ln in lines:
+            self.assertLessEqual(str_width(ln), width)
+
+    def test_unlabeled_rows_flow_column_first_beside_sections(self):
+        # Filler rows (label None) may split; a labeled section may not.
+        secs = [(None, _rows("f", 5)), ("A", _rows("a", 3))]
+        width = self.BW * 2 + SPACING
+        lines = layout_sections(secs, width)
+        # 9 lines over 2 columns -> height 5: column 1 = f0..f4, column 2 =
+        # A header + a0..a2 (no blank: A opens a fresh column).
+        self.assertEqual(len(lines), 5)
+        self.assertEqual([self._cols(ln)[0].split()[0] for ln in lines],
+                         ["f0", "f1", "f2", "f3", "f4"])
+        self.assertEqual(self._cols(lines[0])[1], "A")
+        self.assertTrue(self._cols(lines[1])[1].startswith("a0"))
+
+    def test_columns_are_only_as_wide_as_their_own_rows(self):
+        secs = [("A", _rows("a", 2, "a much longer description")),
+                ("B", _rows("b", 2))]
+        lines = layout_sections(secs, 200)
+        # Column 2 starts right after column 1's widest box, not after a
+        # global box width that would include B's own (short) rows.
+        a_box = str_width("a0") + 2 + str_width(SEP) + 2 + str_width(
+            "a much longer description")
+        self.assertEqual(str_width(lines[1].split(COL_SEP)[0]), a_box)
+        # B's rows are packed tight: the line ends right after "d".
+        self.assertTrue(lines[1].endswith("b0  %s  d" % SEP))
+
+    def test_header_wider_than_rows_sets_column_width_and_truncates(self):
+        secs = [("A header longer than any row", _rows("a", 2)), ("B", _rows("b", 1))]
+        wide = layout_sections(secs, 200)
+        self.assertTrue(wide[0].startswith("A header longer than any row"))
+        # The gutter follows the header width, so the key column of B lines up
+        # under the B header.
+        self.assertEqual(str_width(wide[0].split(COL_SEP)[0]),
+                         str_width(wide[1].split(COL_SEP)[0]))
+        narrow = layout_sections(secs, 14)
+        for ln in narrow:
+            self.assertLessEqual(str_width(ln), 14)
+        self.assertTrue(narrow[0].endswith("…"))
+
+    def test_header_sgr_wraps_labels_only_and_is_width_neutral(self):
+        on, off = "\x1b[1;4m", "\x1b[22;24m"
+        plain = layout_sections(self.SECS, 200)
+        styled = layout_sections(self.SECS, 200, header_sgr=(on, off))
+        self.assertEqual(
+            [ln.replace(on, "").replace(off, "") for ln in styled], plain,
+        )
+        self.assertEqual(styled[0].count(on), 3)
+        for ln in styled[1:]:
+            self.assertNotIn(on, ln)
+        for chunk in styled[0].split(on)[1:]:
+            self.assertIn(chunk.split(off, 1)[0], ("A", "B", "C"))
+
+    def test_empty_sections_dropped(self):
+        self.assertEqual(layout_sections([], 80), [])
+        self.assertEqual(layout_sections([("A", []), (None, [])], 80), [])
+        lines = layout_sections([("A", []), ("B", _rows("b", 1))], 80)
+        self.assertEqual(lines, ["B", "b0  %s  d" % SEP])
 
 
 if __name__ == "__main__":

@@ -7,23 +7,27 @@
 # plain python3 and the unit tests run with zero third-party deps. (No wcwidth
 # here — width measurement is the layout module, issue 06.)
 #
-# Public interface (the three behaviors issue 02 mandates):
+# Public interface (the three behaviors issue 02 mandates, plus sections):
 #   build(spec)      -> root Node      (malformed entries skipped, not raised)
 #   navigate(node, key) -> Prefix | Leaf | NO_MATCH   (one O(1) descent step)
 #   entries(node)    -> [(key, desc, is_group)]       (declared order)
+#   sections(node)   -> [(label, [rows])]  (entries() grouped by "section")
 
 
 class Node:
     """A trie node. Internal struct — tests assert via entries()/navigate(),
     never by poking these fields directly (per PRD testing decisions)."""
-    __slots__ = ("children", "order", "group", "action", "desc", "warnings")
+    __slots__ = (
+        "children", "order", "group", "action", "desc", "section", "warnings",
+    )
 
-    def __init__(self, group=None, action=None, desc=None):
+    def __init__(self, group=None, action=None, desc=None, section=None):
         self.children = {}      # dict[str, Node]: key -> child node
         self.order = []         # list[str]: declared key order at this level
         self.group = group      # str | None: group label if this is a prefix
         self.action = action    # str | None: kitty action if this is a leaf
         self.desc = desc        # str | None: human description / row label
+        self.section = section  # str | None: popup section header (display only)
         self.warnings = []      # list[str]: malformed entries skipped at build
 
 
@@ -104,12 +108,19 @@ def _populate(node, spec, warnings, path):
 
         has_children = "children" in entry
         has_action = "action" in entry
+        # Optional display-only section label. Never affects keystrokes or
+        # dispatch; sections() groups the popup rows by it. Anything that is
+        # not a non-empty string is treated as "unsectioned".
+        section = entry.get("section")
+        if not isinstance(section, str) or not section:
+            section = None
 
         if has_children:
             # Prefix node. Recurse; skip the whole prefix if it yields nothing.
             child = Node(
                 group=entry.get("group"),
                 desc=entry.get("group", key),
+                section=section,
             )
             _populate(child, entry.get("children"), warnings, keypath)
             if not child.order:
@@ -127,7 +138,9 @@ def _populate(node, spec, warnings, path):
                     % keypath
                 )
                 continue
-            child = Node(action=action, desc=entry.get("desc", key))
+            child = Node(
+                action=action, desc=entry.get("desc", key), section=section,
+            )
             _attach(node, key, child)
         else:
             warnings.append(
@@ -176,3 +189,19 @@ def entries(node):
         is_group = bool(child.children)
         rows.append((key, child.desc, is_group))
     return rows
+
+
+def sections(node):
+    """entries() rows grouped by their section label, for the headed popup:
+        [(label, [(key, desc, is_group), ...]), ...]
+    Rows sharing a label are merged into one section (even when declared
+    apart); sections are ordered by the first appearance of their label; rows
+    keep declared order within a section. `label` is None for rows declared
+    without a "section" -- the layout renders those with no header, so a spec
+    with no sections at all yields exactly [(None, entries(node))]."""
+    by_label = {}
+    for key in node.order:
+        child = node.children[key]
+        row = (key, child.desc, bool(child.children))
+        by_label.setdefault(child.section, []).append(row)
+    return list(by_label.items())

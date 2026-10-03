@@ -27,7 +27,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "..")
 )
 
-from kittens.chord_trie import build, navigate, Leaf  # noqa: E402
+from kittens.chord_trie import build, navigate, sections, Leaf  # noqa: E402
 from kittens.which_key_nav import resolve_key  # noqa: E402
 from kittens import which_key_spec as spec_mod  # noqa: E402
 
@@ -202,10 +202,25 @@ class SpecIntegrity(unittest.TestCase):
         # leaf, so navigate(root, key) yields a Leaf for every spec key (never
         # a Prefix). This encodes the "matching today's keystrokes exactly"
         # decision — no synthetic w/t group that would change keystrokes.
+        # Popup grouping is the display-only "section" label instead.
         root = build(spec_mod.SPEC)
         for key in root.order:
             with self.subTest(key=key):
                 self.assertIsInstance(navigate(root, key), Leaf)
+
+    def test_every_chord_has_a_popup_section(self):
+        # Every row renders under a header: no unsectioned (None) run, and
+        # the headers come out in the declared reading order.
+        secs = sections(build(spec_mod.SPEC))
+        self.assertEqual(
+            [label for label, _ in secs],
+            ["Windows", "Navigate", "Tabs", "Go to tab", "Sessions", "Tools"],
+        )
+        self.assertEqual(sum(len(rows) for _, rows in secs), len(CONF_CHORDS))
+        # The numbered-tab rows live together so filter_tab_entries trims one
+        # section, never leaving a header over an empty block.
+        goto = dict(secs)["Go to tab"]
+        self.assertEqual([k for k, _, _ in goto], list("1234567890"))
 
 
 if __name__ == "__main__":

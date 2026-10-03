@@ -65,7 +65,7 @@ import sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 
 try:
-    from chord_trie import build, entries
+    from chord_trie import build, sections
     import which_key_spec as _spec_mod
     from which_key_cache import load_or_build
     from which_key_nav import (
@@ -73,10 +73,10 @@ try:
         Descend, Dispatch, Pop, CANCEL, STAY, KEY_ESC, KEY_BACKSPACE,
         buffered_key_decision, HONOR, SOFT_BELL, BEL,
     )
-    from which_key_layout import layout
+    from which_key_layout import layout_sections
     from which_key_timing import DELAY_S, remaining_delay
 except ImportError:  # imported as kittens.* under the test sys.path
-    from kittens.chord_trie import build, entries
+    from kittens.chord_trie import build, sections
     from kittens import which_key_spec as _spec_mod
     from kittens.which_key_cache import load_or_build
     from kittens.which_key_nav import (
@@ -84,7 +84,7 @@ except ImportError:  # imported as kittens.* under the test sys.path
         Descend, Dispatch, Pop, CANCEL, STAY, KEY_ESC, KEY_BACKSPACE,
         buffered_key_decision, HONOR, SOFT_BELL, BEL,
     )
-    from kittens.which_key_layout import layout
+    from kittens.which_key_layout import layout_sections
     from kittens.which_key_timing import DELAY_S, remaining_delay
 
 # Build the trie once at import time, via the mtime-keyed disk cache (issue 05):
@@ -102,6 +102,11 @@ _TRIE = load_or_build(_spec_mod.__file__, _spec_mod.SPEC, build)
 # lookup here. Passed to layout() as a width-neutral (on, off) pair so the
 # grid math never sees the escapes; off = bold off (22) + default fg (39).
 _KEY_SGR = ("\x1b[1;35m", "\x1b[22;39m")
+# Section headers: bold + underline in bright white (ANSI palette slot 15 via
+# SGR 97), a step brighter than the default foreground the descriptions use,
+# so they read as labels over the magenta key cells. off = bold off (22) +
+# underline off (24) + default fg (39).
+_HEADER_SGR = ("\x1b[1;4;97m", "\x1b[22;24;39m")
 
 
 # --- interactive main (runs in the overlay subprocess, has a tty) ----------
@@ -325,10 +330,11 @@ def main(args):
 
         def draw(self):
             """Paint a snapshot of the underlying window as the background, then
-            draw the which-key band anchored at the bottom over it: a breadcrumb
+            overlay the bottom-anchored band: a full-width rule, the breadcrumb
             header (if descended) followed by the wcwidth-aware multi-column grid
-            block, last line on the bottom row. The band rows are cleared first
-            so the snapshot never bleeds through them."""
+            block (rows grouped under their section headers), last line on the
+            bottom row. The band rows are cleared first so the snapshot never
+            bleeds through them."""
             node = self.stack[-1]
             total_rows, total_cols = self._dimensions()
             # The capture thread also fills _tab_count; wait for it (bounded)
@@ -336,18 +342,23 @@ def main(args):
             # The same wait covers the snapshot painted further down.
             if self._bg_ready is not None:
                 self._bg_ready.wait(0.3)
-            rows = filter_tab_entries(entries(node), self._tab_count)
-            # Keys bold (SGR 1 / 22 = bold off), descriptions in normal weight.
-            block = layout(rows, total_cols, key_sgr=_KEY_SGR)
+            secs = [
+                (label, filter_tab_entries(rows, self._tab_count))
+                for label, rows in sections(node)
+            ]
+            # Keys bold magenta, headers bold underline, descriptions plain.
+            block = layout_sections(
+                secs, total_cols, key_sgr=_KEY_SGR, header_sgr=_HEADER_SGR,
+            )
 
-            # Band: a full-width rule separates the snapshot from the header +
-            # entries, so the popup reads as a distinct panel at the bottom.
+            # Band: a full-width rule separates the snapshot from the entries,
+            # so the popup reads as a distinct panel at the bottom. At the root
+            # the section headers label the block; a breadcrumb line is added
+            # only once descended into a prefix (trail of keys so far).
             band = ["─" * total_cols]
             if self.breadcrumb:
                 trail = " ".join(display_key(k) for k in self.breadcrumb)
                 band.append("which-key: %s" % trail)
-            else:
-                band.append("which-key")
             band.extend(block)
 
             self.write(clear_screen())
