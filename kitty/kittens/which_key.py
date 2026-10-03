@@ -352,10 +352,12 @@ def main(args):
             )
 
             # Band: a full-width rule separates the snapshot from the entries,
-            # so the popup reads as a distinct panel at the bottom. At the root
-            # the section headers label the block; a breadcrumb line is added
-            # only once descended into a prefix (trail of keys so far).
-            band = ["─" * total_cols]
+            # so the popup reads as a distinct panel at the bottom. Heavy box
+            # glyph in bold bright white (same SGR family as the headers) so
+            # the edge stands out against the dimmed snapshot. At the root the
+            # section headers label the block; a breadcrumb line is added only
+            # once descended into a prefix (trail of keys so far).
+            band = ["\x1b[1;97m%s\x1b[22;39m" % ("━" * total_cols)]
             if self.breadcrumb:
                 trail = " ".join(display_key(k) for k in self.breadcrumb)
                 band.append("which-key: %s" % trail)
