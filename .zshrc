@@ -1,11 +1,3 @@
-# Needed to run starship, MUST be at the end of the file
-eval "$(starship init zsh)"
-
-# Set up the prompt
-autoload -Uz promptinit
-promptinit
-prompt adam1
-
 setopt histignorealldups sharehistory
 
 # Use emacs keybindings even if our EDITOR is set to vi
@@ -20,17 +12,28 @@ HISTFILE=~/.zsh_history
 autoload -Uz compinit
 compinit
 
+# kitty shell integration + `kitty`/`kitten` completions. kitty.conf has
+# `shell zsh`, so kitty-spawned shells already have this (no-op there); this
+# covers nested shells: `exec zsh`, `sudo -E zsh`, tmux, etc.
+if [[ -n "$KITTY_INSTALLATION_DIR" ]]; then
+  export KITTY_SHELL_INTEGRATION="enabled"
+  autoload -Uz -- "$KITTY_INSTALLATION_DIR"/shell-integration/zsh/kitty-integration
+  kitty-integration
+  unfunction kitty-integration
+fi
+
 zstyle ':completion:*' auto-description 'specify: %d'
 zstyle ':completion:*' completer _expand _complete _correct _approximate
 zstyle ':completion:*' format 'Completing %d'
 zstyle ':completion:*' group-name ''
-zstyle ':completion:*' menu select=2
+# Interactive menu selection: Tab cycles, arrows move, highlighted current item.
+zmodload zsh/complist
+zstyle ':completion:*' menu select
 eval "$(dircolors -b)"
-zstyle ':completion:*:default' list-colors ${(s.:.)LS_COLORS}
-zstyle ':completion:*' list-colors ''
+# ma= is the selected-item style (One Dark blue bg, dark fg, to match kitty).
+zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS} 'ma=48;2;97;175;239;38;2;40;44;52'
 zstyle ':completion:*' list-prompt %SAt %p: Hit TAB for more, or the character to insert%s
 zstyle ':completion:*' matcher-list '' 'm:{a-z}={A-Z}' 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=* l:|=*'
-zstyle ':completion:*' menu select=long
 zstyle ':completion:*' select-prompt %SScrolling active: current selection at %p%s
 zstyle ':completion:*' use-compctl false
 zstyle ':completion:*' verbose true
@@ -93,20 +96,17 @@ export PATH="/bin/pyton3:$PATH"
 # export COLORTERM=truecolor
 
 
-# >>> conda initialize >>>
-# !! Contents within this block are managed by 'conda init' !!
-__conda_setup="$('/home/andrew/miniconda3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
-if [ $? -eq 0 ]; then
-    eval "$__conda_setup"
-else
-    if [ -f "/home/andrew/miniconda3/etc/profile.d/conda.sh" ]; then
-        . "/home/andrew/miniconda3/etc/profile.d/conda.sh"
-    else
-        export PATH="/home/andrew/miniconda3/bin:$PATH"
-    fi
-fi
-unset __conda_setup
-# <<< conda initialize <<<
+# conda: lazy-loaded. The `conda shell.zsh hook` subprocess costs ~0.9s per
+# shell; defer it until `conda` is first invoked. auto_activate is off in
+# ~/.condarc (base's gcc/gfortran activation scripts cost ~4s).
+conda() {
+    unfunction conda
+    eval "$('/home/andrew/miniconda3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+    conda "$@"
+}
+# base's bin dir holds fzf/fd/bat/eza/rg/nvim; put it on PATH without the
+# cost of `conda activate base`.
+export PATH="$HOME/miniconda3/bin:$PATH"
 
 
 . "$HOME/.cargo/env"
@@ -133,7 +133,13 @@ export FZF_DEFAULT_COMMAND="fd --hidden --strip-cwd-prefix --exclude .git"
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
 export FZF_ALT_C_COMMAND="fd --type=d --hidden --strip-cwd-prefix --exclude .git"
 
-export FZF_DEFAULT_OPTS="--height 50% --layout=default --border --color=hl:#2dd4bf"
+# fzf colors: One Dark, mirrors ~/.config/kitty/current-theme.conf
+export FZF_DEFAULT_OPTS="--height 50% --layout=default --border \
+--color=fg:#979eab,bg:#282c34,hl:#61afef \
+--color=fg+:#abb2bf,bg+:#393e48,hl+:#61afef:bold \
+--color=info:#e5c07b,prompt:#c678dd,pointer:#e06c75 \
+--color=marker:#98c379,spinner:#56b6c2,header:#56b6c2 \
+--color=border:#393e48,gutter:#282c34"
 
 export FZF_CTRL_T_OPTS="--preview 'bat --color=always -n --line-range :500 {}'"
 export FZF_ALT_C_OPTS="--preview 'eza --tree --color=always {} | head -200'"
@@ -150,11 +156,21 @@ alias ls="eza --color=always --icons=always --grid --group-directories-first"
 # Wezterm alias
 alias wezterm='wezterm --config-file ~/.config/wezterm/wezterm.lua'
 
+# Claude code alias
+alias cc='claude --dagnerously-skip-permissions'
+
 # Adding zsh autosuggestions, MUST have this to work
 source ~/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
 
 # Setting the ledger file location through an export varialbe
 export LEDGER_FILE="~/finance-ledger/2026.ledger"
+export MINIMAX_TOKEN_PLAN_KEY="***REMOVED***"
 
 # Flatpak .desktop files for rofi
 export XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/var/lib/flatpak/exports/share:$HOME/.local/share/flatpak/exports/share"
+
+alias j="just"
+
+# Starship prompt (powerline, config in ~/.config/starship.toml).
+# MUST be last: promptinit's `prompt <theme>` would remove starship's hook.
+eval "$(starship init zsh)"

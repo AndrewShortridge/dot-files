@@ -122,7 +122,7 @@ if ! shopt -oq posix; then
 fi
 
 alias aptup='sudo apt update && sudo apt upgrade -y && sudo apt full-upgrade -y && sudo apt autoremove -y && flatpak update -y'
-alias vpn-connect='/opt/cisco/anyconnect/bin/vpnui'
+alias vpn-connect='/opt/cisco/anyconnect/bin/vpnui &'
 alias ovito='/home/andrew/Software/ovito-basic-3.7.12-x86_64/bin/ovito'
 alias python='python3'
 alias uconn-login='ssh ans18010@hpc2.storrs.hpc.uconn.edu'
@@ -165,8 +165,8 @@ export PATH="/bin/pyton3:$PATH"
 export TERM=xterm-256color
 export COLORTERM=truecolor
 
-redshift -x
-redshift -O 2500 -m randr
+# redshift -x
+# redshift -O 2500 -m randr
 
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
@@ -206,7 +206,13 @@ export FZF_DEFAULT_COMMAND="fd --hidden --strip-cwd-prefix --exclude .git"
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
 export FZF_ALT_C_COMMAND="fd --type=d --hidden --strip-cwd-prefix --exclude .git"
 
-export FZF_DEFAULT_OPTS="--height 50% --layout=default --border --color=hl:#2dd4bf"
+# fzf colors: One Dark, mirrors ~/.config/kitty/current-theme.conf
+export FZF_DEFAULT_OPTS="--height 50% --layout=default --border \
+--color=fg:#979eab,bg:#282c34,hl:#61afef \
+--color=fg+:#abb2bf,bg+:#393e48,hl+:#61afef:bold \
+--color=info:#e5c07b,prompt:#c678dd,pointer:#e06c75 \
+--color=marker:#98c379,spinner:#56b6c2,header:#56b6c2 \
+--color=border:#393e48,gutter:#282c34"
 
 export FZF_CTRL_T_OPTS="--preview 'bat --color=always -n --line-range :500 {}'"
 export FZF_ALT_C_OPTS="--preview 'eza --tree --color=always {} | head -200'"
@@ -219,5 +225,14 @@ alias ls="eza --color=always --icons=always --no-user"
 # Wezterm alias
 alias wezterm='wezterm --config-file ~/.config/wezterm/wezterm.lua'
 
+# Claude code alias
+alias cc='claude --dangerously-skip-permissions'
+
 # Needed to run starship, MUST be at the end of the file
 eval "$(starship init bash)"
+
+# Setting the ledger file location through an export varialbe
+export LEDGER_FILE="~/finance-ledger/2026.journal"
+export MINIMAX_TOKEN_PLAN_KEY="***REMOVED***"
+
+alias j="just"
