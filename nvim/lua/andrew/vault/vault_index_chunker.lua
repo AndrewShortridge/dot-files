@@ -5,6 +5,7 @@
 local M = {}
 
 local pat = require("andrew.vault.patterns")
+local crc32 = require("andrew.vault.vault_crc32")
 
 --- Split file lines into chunks at heading boundaries.
 --- Frontmatter is always its own chunk. Each heading starts a new chunk.
@@ -67,12 +68,14 @@ function M.chunk_by_headings(lines)
   return chunks, has_fm
 end
 
---- Compute SHA256 digest of a chunk's content.
+--- Compute CRC32 digest of a chunk's content.
+--- CRC32 (8 hex chars) is used instead of SHA-256: a digest mismatch only
+--- triggers a chunk re-parse (never corruption), so a fast hash is sufficient.
 ---@param chunk_lines string[] Lines in the chunk
----@return string digest Hex-encoded SHA256 hash
+---@return string digest Hex-encoded CRC32 hash
 function M.chunk_digest(chunk_lines)
   local content = table.concat(chunk_lines, "\n")
-  return vim.fn.sha256(content)
+  return crc32.crc32(content)
 end
 
 --- Compare new chunks against cached chunks, return indices of changed chunks.

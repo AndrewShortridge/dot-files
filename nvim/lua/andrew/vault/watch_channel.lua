@@ -43,7 +43,6 @@ function M.new(initial)
   --- Notify all subscribers with the current value and reset dirty flag.
   local function notify()
     state._dirty = false
-    state._timer = nil
     if state._closed then return end
 
     local val = state._value
@@ -51,6 +50,11 @@ function M.new(initial)
       cb(val)
     end
   end
+
+  -- One persistent timer per channel, re-armed via stop()/start() per batch.
+  -- vim.uv may refuse to allocate, in which case _timer stays nil.
+  local wrapped_notify = vim.schedule_wrap(notify)
+  state._timer = vim.uv.new_timer()
 
   --- Send a new value into the channel.
   --- If already dirty (a notification is pending), the value is updated
@@ -67,18 +71,11 @@ function M.new(initial)
       -- Schedule notification on the next event loop tick.
       -- vim.uv timer with 0ms delay fires after the current Lua call stack
       -- unwinds back to the event loop, coalescing all sends in this tick.
+      -- Reuse the persistent handle: stop() re-arms a one-shot timer that may
+      -- already have fired in a prior batch (safe even if already stopped).
       if state._timer then
-        pcall(function()
-          state._timer:stop()
-          if not state._timer:is_closing() then
-            state._timer:close()
-          end
-        end)
-      end
-      local t = vim.uv.new_timer()
-      if t then
-        state._timer = t
-        t:start(0, 0, vim.schedule_wrap(notify))
+        state._timer:stop()
+        state._timer:start(0, 0, wrapped_notify)
       end
     end
   end

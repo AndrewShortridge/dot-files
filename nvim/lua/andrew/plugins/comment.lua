@@ -9,8 +9,9 @@ return {
   -- Repository: https://github.com/numToStr/Comment.nvim
   "numToStr/Comment.nvim",
 
-  -- Load when reading or creating files
-  event = { "BufReadPre", "BufNewFile" },
+  -- Load only for code filetypes (shared list). Its dep
+  -- nvim-ts-context-commentstring is private to Comment, so it gates cleanly.
+  ft = require("andrew.lsp_filetypes"),
 
   -- Dependencies
   dependencies = {

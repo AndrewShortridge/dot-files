@@ -13,7 +13,8 @@
 3. [LSP](#lsp)
 4. [Completion (blink.cmp)](#completion-blinkcmp)
 5. [Diagnostics & Trouble](#diagnostics--trouble)
-6. [Git (Gitsigns)](#git-gitsigns)
+6. [Git Commands (`<leader>g`)](#git-commands-leaderg)
+7. [Git Hunks (Gitsigns)](#git-hunks-gitsigns)
 7. [Debugging (DAP)](#debugging-dap)
 8. [File Explorer (Yazi)](#file-explorer-yazi)
 9. [Terminal](#terminal)
@@ -57,8 +58,8 @@
 
 | Key | Action | Description |
 |-----|--------|-------------|
-| `<leader>+` | `<C-a>` | Increment number under cursor |
-| `<leader>-` | `<C-x>` | Decrement number under cursor |
+| `<leader>na` | `<C-a>` | Increment number under cursor |
+| `<leader>nx` | `<C-x>` | Decrement number under cursor |
 
 ### Normal Mode — Window Splits
 
@@ -78,6 +79,20 @@
 | `<leader>tn` | `:tabn<CR>` | Next tab |
 | `<leader>tp` | `:tabp<CR>` | Previous tab |
 | `<leader>tf` | `:tabnew %<CR>` | Open current buffer in new tab |
+
+### Normal Mode -- Tabs (LazyVim `<leader><Tab>` group)
+
+The `<leader><Tab>` group is LazyVim's, ported whole. It overlaps the older `<leader>t` keys above -- both work. `<leader><Tab>o` (close every other tab) and the first/last jumps have no `<leader>t` equivalent. Careful: `<leader><Tab>f` is *First Tab*, while `<leader>tf` opens the current buffer in a new tab.
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| `<leader><Tab><Tab>` | `:tabnew<CR>` | New Tab |
+| `<leader><Tab>d` | `:tabclose<CR>` | Close Tab |
+| `<leader><Tab>o` | `:tabonly<CR>` | Close Other Tabs |
+| `<leader><Tab>]` | `:tabnext<CR>` | Next Tab |
+| `<leader><Tab>[` | `:tabprevious<CR>` | Previous Tab |
+| `<leader><Tab>f` | `:tabfirst<CR>` | First Tab |
+| `<leader><Tab>l` | `:tablast<CR>` | Last Tab |
 
 ---
 
@@ -122,35 +137,63 @@
 
 | Mode | Key | Action | Description |
 |------|-----|--------|-------------|
-| n | `gR` | `fzf-lua.lsp_references()` | Show LSP references |
-| n | `gD` | `vim.lsp.buf.declaration()` | Go to declaration (with definition fallback) |
+| n | `gr` | `fzf-lua.lsp_references()` | Show LSP references |
+| n | `gD` | `vim.lsp.buf.declaration()` | Go to declaration (with definition fallback, ungated) |
 | n | `gd` | `fzf-lua.lsp_definitions()` | Go to definitions |
-| n | `gi` | `fzf-lua.lsp_implementations()` | Show implementations |
-| n | `gt` | `fzf-lua.lsp_typedefs()` | Show type definitions |
+| n | `gI` | `fzf-lua.lsp_implementations()` | Show implementations |
+| n | `gy` | `fzf-lua.lsp_typedefs()` | Show type definitions |
+| n | `gai` | `fzf-lua.lsp_incoming_calls()` | Incoming calls |
+| n | `gao` | `fzf-lua.lsp_outgoing_calls()` | Outgoing calls |
+| n | `]]` / `[[` | `Snacks.words.jump()` | Next / prev reference |
+| n | `<A-n>` / `<A-p>` | `Snacks.words.jump(_, true)` | Next / prev reference (wrapping) |
+| n | `<leader>ss` | `fzf-lua.lsp_document_symbols()` | Document symbols |
+| n | `<leader>sS` | `fzf-lua.lsp_live_workspace_symbols()` | Workspace symbols |
+All LSP keys except `gD` and `<leader>cl` are **capability-gated** (`lua/andrew/lsp_keymaps.lua`):
+bound only when an attached server advertises the method. nvim 0.12's built-in
+`grn`/`gra`/`grx`/`grr`/`gri`/`grt` are deleted at startup so `gr` does not stall
+behind `timeoutlen`.
+
 
 ### Code Actions
 
 | Mode | Key | Action | Description |
 |------|-----|--------|-------------|
-| n, v | `<leader>ca` | `vim.lsp.buf.code_action()` | See available code actions |
-| n | `<leader>rn` | `vim.lsp.buf.rename()` | Smart rename symbol |
+| n, x | `<leader>ca` | `fzf-lua.lsp_code_actions()` | See available code actions (with diff preview) |
+| n | `<leader>cA` | `code_action({apply, only="source"})` | Source Action |
+| n | `<leader>co` | `code_action({only="source.organizeImports"})` | Organize Imports |
+| n, x | `<leader>cc` | `vim.lsp.codelens.run()` | Run Codelens |
+| n | `<leader>cC` | `vim.lsp.codelens.enable(true)` | Refresh & Display Codelens |
+| n | `<leader>cr` | `vim.lsp.buf.rename()` | Smart rename symbol |
+| n | `<leader>cR` | `Snacks.rename.rename_file()` | Rename file (LSP-aware) |
+| n, x | `<leader>cf` | `conform.format()` | Format now (ignores auto-format toggle) |
+| n, x | `<leader>cF` | `conform.format({formatters={"injected"}})` | Format injected languages |
+| n | `<leader>cs` | `fzf-lua.lsp_document_symbols()` | Document symbols (alias of `<leader>ss`) |
+| n | `<leader>cS` | `fzf-lua.lsp_live_workspace_symbols()` | Workspace symbols (alias of `<leader>sS`) |
+| n | `<leader>cl` | fzf picker of attached clients | LSP info |
+| n | `<leader>cm` | `:Mason` | Mason |
 
 ### Diagnostics
 
 | Mode | Key | Action | Description |
 |------|-----|--------|-------------|
 | n | `<leader>D` | `fzf-lua.diagnostics_document()` | Show buffer diagnostics |
-| n | `<leader>d` | `vim.diagnostic.open_float()` | Show line diagnostics (float) |
-| n | `[d` | `vim.diagnostic.jump({count=-1})` | Previous diagnostic |
-| n | `]d` | `vim.diagnostic.jump({count=1})` | Next diagnostic |
+| n | `<leader>cd` | `vim.diagnostic.open_float()` | Show line diagnostics (float) |
+| n | `[d` / `]d` | `vim.diagnostic.jump()` | Previous / next diagnostic |
+| n | `[e` / `]e` | `vim.diagnostic.jump({severity=ERROR})` | Previous / next error (shadowed in `.tex`) |
+| n | `[w` / `]w` | `vim.diagnostic.jump({severity=WARN})` | Previous / next warning |
+
+These four pairs and `<leader>cd` are GLOBAL, not LspAttach-bound -- they work
+for linter diagnostics with no language server attached.
 
 ### Documentation
 
 | Mode | Key | Action | Description |
 |------|-----|--------|-------------|
-| n | `K` | `vim.lsp.buf.hover()` | Show hover docs (Fortran: custom docs fallback) |
+| n | `K` | `vim.lsp.buf.hover()` | Show hover docs (Fortran MPI/OpenMP docs come from fortran-extras) |
 | n, i | `<C-k>` | `vim.lsp.buf.signature_help()` | Show signature help |
-| n | `<leader>rs` | `:LspRestart<CR>` | Restart LSP server |
+| n | `gK` | `vim.lsp.buf.signature_help()` | Show signature help (LazyVim spelling) |
+| n | `<leader>lr` | `:lsp restart<CR>` | Restart LSP server |
+| n | `<leader>lh` | `vim.lsp.inlay_hint.enable()` | Toggle inlay hints |
 
 ---
 
@@ -175,7 +218,7 @@
 | Filetype | Sources |
 |----------|---------|
 | Markdown | Wikilinks, vault tags, frontmatter, inline fields, LSP, snippets, path, buffer, spell |
-| Fortran | LSP, Fortran docs (custom), snippets, path, buffer |
+| Fortran | LSP (fortls + fortran-extras), snippets, path, buffer |
 | All others | LSP, path, snippets, buffer |
 
 ---
@@ -198,38 +241,71 @@
 
 ---
 
-## Git (Gitsigns)
+## Git Commands (`<leader>g`)
 
-**Source:** `lua/andrew/plugins/gitsigns.lua` (set on `on_attach`)
+**Source:** `lua/andrew/plugins/git.lua` (snacks.nvim spec fragment, ported from LazyVim)
+
+| Key | Action |
+|-----|--------|
+| `<leader>gg` | Lazygit (root dir) |
+| `<leader>gG` | Lazygit (cwd) |
+| `<leader>gl` | Git log |
+| `<leader>gL` | Git log (cwd) |
+| `<leader>gc` | Commits (fzf-lua) |
+| `<leader>gf` | Current file history |
+| `<leader>gb` | Blame line |
+| `<leader>gs` | Git status |
+| `<leader>gS` | Git stash |
+| `<leader>gd` | Git diff (hunks) |
+| `<leader>gD` | Git diff (origin) |
+| `<leader>gB` | Git browse — open on the remote host |
+| `<leader>gY` | Git browse — copy the URL |
+
+**Conditional:** `<leader>gg` / `<leader>gG` need the `lazygit` binary (present). `<leader>gi` `<leader>gI` (issues) and `<leader>gp` `<leader>gP` (pull requests) need the `gh` binary, which is **not installed**, so they are inactive.
+
+---
+
+## Git Hunks (Gitsigns)
+
+**Source:** `lua/andrew/plugins/gitsigns.lua` (set on `on_attach`, buffer-local)
 
 ### Navigation
 
 | Key | Action |
 |-----|--------|
-| `]g` | Next hunk |
-| `[g` | Previous hunk |
+| `]g` / `[g` | Next / previous hunk — works in every filetype |
+| `]h` / `[h` | Next / previous hunk — **not bound in markdown** |
+| `]H` / `[H` | Last / first hunk |
+> `]h` / `[h` are LazyVim's hunk keys but are **not bound in markdown**, where headings (`ftplugin/markdown.lua`) and `==highlights==` (`vault/highlights.lua`) already own them. `]g` / `[g` is the alias that works in every filetype.
+
 
 ### Hunk Operations
 
 | Mode | Key | Action | Description |
 |------|-----|--------|-------------|
-| n | `<leader>hs` | `gs.stage_hunk()` | Stage hunk |
-| v | `<leader>hs` | `gs.stage_hunk(range)` | Stage hunk (visual selection) |
-| n | `<leader>hr` | `gs.reset_hunk()` | Reset hunk |
-| v | `<leader>hr` | `gs.reset_hunk(range)` | Reset hunk (visual selection) |
-| n | `<leader>hS` | `gs.stage_buffer()` | Stage entire buffer |
-| n | `<leader>hR` | `gs.reset_buffer()` | Reset entire buffer |
-| n | `<leader>hu` | `gs.undo_stage_hunk()` | Undo stage hunk |
-| n | `<leader>hp` | `gs.preview_hunk()` | Preview hunk |
+| n | `<leader>ghs` | `gs.stage_hunk()` | Stage hunk |
+| v | `<leader>ghs` | `gs.stage_hunk(range)` | Stage hunk (visual selection) |
+| n | `<leader>ghr` | `gs.reset_hunk()` | Reset hunk |
+| v | `<leader>ghr` | `gs.reset_hunk(range)` | Reset hunk (visual selection) |
+| n | `<leader>ghS` | `gs.stage_buffer()` | Stage entire buffer |
+| n | `<leader>ghR` | `gs.reset_buffer()` | Reset entire buffer |
+| n | `<leader>ghu` | `gs.undo_stage_hunk()` | Undo stage hunk |
+| n | `<leader>ghp` | `gs.preview_hunk_inline()` | Preview hunk |
 
 ### Blame & Diff
 
 | Key | Action | Description |
 |-----|--------|-------------|
-| `<leader>hb` | `gs.blame_line({full=true})` | Blame current line (full) |
-| `<leader>hB` | `gs.toggle_current_line_blame()` | Toggle inline blame |
-| `<leader>hd` | `gs.diffthis()` | Diff this file |
-| `<leader>hD` | `gs.diffthis("~")` | Diff this against parent |
+| `<leader>ghb` | `gs.blame_line({full=true})` | Blame current line (full) |
+| `<leader>ghB` | `gs.blame()` | Blame the whole buffer |
+| `<leader>ght` | `gs.toggle_current_line_blame()` | Toggle inline blame |
+| `<leader>ghd` | `gs.diffthis()` | Diff this file |
+| `<leader>ghD` | `gs.diffthis("~")` | Diff this against parent |
+
+> `<leader>ghd`/`ghD` leave the cursor in the DIFF window, so `:q` closes the diff and returns you to
+> your file. Upstream gitsigns restores focus to your file instead, which makes `:q` close your own
+> window and strand you in the unlisted `gitsigns://…` index buffer.
+
 
 ### Text Object
 
@@ -238,6 +314,34 @@
 | o, x | `ih` | Select hunk |
 
 ---
+
+---
+
+## Diff Overlay (mini.diff)
+
+**Source:** `lua/andrew/plugins/mini-diff.lua`
+
+| Key | Action |
+|-----|--------|
+| `<leader>go` | Toggle the diff overlay (old content shown inline) |
+| `gh + motion` | Apply (stage) the range |
+| `gH + motion` | Reset the range |
+| `gh (o, x)` | Hunk range text object |
+
+| Command | Action |
+|---------|--------|
+| `:MiniDiffOverlay` | Toggle the overlay |
+| `:MiniDiffToggle` | Enable/disable mini.diff for this buffer |
+| `:MiniDiffQuickfix` | Send every hunk to the quickfix list |
+
+> Runs **alongside** gitsigns, which keeps the sign column, `<leader>gh` staging, blame and all
+> hunk motions. mini.diff's own `]h`/`[h`/`]H`/`[H` are disabled (gitsigns owns them; in markdown
+> headings and `==highlights==` do), and hunk marks go in the **number** column to avoid drawing
+> the same hunks twice. `gh`/`gH` shadow the built-in Select-mode starters.
+> On a buffer with no diff (picker previews, diff scratch buffers, terminals) all four keys report
+> `mini.diff: no diff for this buffer` rather than raising `E5108`.
+> The overlay choice is remembered per file and re-applied after a buffer reload (mini.diff drops it
+> from its per-buffer cache on any reload, `:edit` included).
 
 ## Debugging (DAP)
 
@@ -325,10 +429,10 @@
 
 | Mode | Key | Action | Description |
 |------|-----|--------|-------------|
-| n | `s` | `substitute.operator()` | Substitute with motion (e.g. `siw` = inner word) |
-| n | `ss` | `substitute.line()` | Substitute entire line |
-| n | `S` | `substitute.eol()` | Substitute to end of line |
-| x | `s` | `substitute.visual()` | Substitute selection |
+| n | `gs` | `substitute.operator()` | Substitute with motion (e.g. `gsiw` = inner word) |
+| n | `gss` | `substitute.line()` | Substitute entire line |
+| n | `gS` | `substitute.eol()` | Substitute to end of line |
+| x | `gs` | `substitute.visual()` | Substitute selection |
 
 ---
 
@@ -430,12 +534,15 @@
 
 | Key | Action | Description |
 |-----|--------|-------------|
-| `<leader>ll` | `require("lint").try_lint()` | Lint current buffer |
-| `<leader>lm` | `require("lint").try_lint("ruff")` | Run ruff (Python) |
-| `<leader>lf` | `toggle_fortran_linter()` | Toggle Fortran linter |
-| `<leader>lF` | `debug_fortran_linter()` | Fortran linter (debug) |
-| `<leader>lw` | `lint_workspace_fortran()` | Lint entire Fortran workspace |
-| `<leader>lW` | `clear_workspace_diagnostics()` | Clear workspace diagnostics |
+| `<leader>Ll` | `require("lint").try_lint()` | Lint current buffer |
+| `<leader>Lm` | `require("lint").try_lint("ruff")` | Run ruff (Python) |
+| `<leader>Lf` | `toggle_fortran_linter()` | Toggle Fortran linter |
+| `<leader>LF` | `debug_fortran_linter()` | Fortran linter (debug) |
+| `<leader>Lw` | `lint_workspace_fortran()` | Lint entire Fortran workspace |
+| `<leader>LW` | `clear_workspace_diagnostics()` | Clear workspace diagnostics |
+| `<leader>Lc` | `fortran.case.check(0)` | Check Fortran capitalization |
+| `<leader>LC` | `fortran.case.fix(0)` | Fix Fortran capitalization (buffer) |
+| `<leader>Lt` | `:FortranCaseToggle` | Toggle the capitalization check |
 
 ---
 
@@ -460,22 +567,30 @@
 
 ---
 
+## Quit / Session
+
+**Source:** `lua/andrew/plugins/persistence.lua`, `lua/andrew/core/keymaps.lua`
+
+Sessions save on quit and restore only on request -- one per working directory, plus a separate one per git branch when it is not `main`/`master`. Terminals are deliberately not restored.
+
+| Mode | Key | Action | Description |
+|------|-----|--------|-------------|
+| n | `<leader>qq` | Quit All | Close every window and exit (`:qa`) |
+| n | `<leader>qs` | Restore Session | Reopen the session for the current directory |
+| n | `<leader>qS` | Select Session | Pick any saved session; changes directory into it |
+| n | `<leader>ql` | Restore Last Session | Reopen the most recently saved session |
+| n | `<leader>qd` | Don't Save Current Session | Leave the stored session untouched on quit |
+
 ## OpenCode AI
 
 **Source:** `lua/andrew/plugins/opencode.lua`
 
-| Mode | Key | Action | Description |
-|------|-----|--------|-------------|
-| n | `<leader>ot` | `opencode.toggle()` | Toggle OpenCode panel |
-| n | `<leader>oa` | `opencode.ask("@cursor: ")` | Ask about code at cursor |
-| v | `<leader>oa` | `opencode.ask("@selection: ")` | Ask about selected code |
-| n | `<leader>o+` | `opencode.prompt("@buffer", {append=true})` | Add buffer to prompt |
-| v | `<leader>o+` | `opencode.prompt("@selection", {append=true})` | Add selection to prompt |
-| n | `<leader>oe` | `opencode.prompt("Explain @cursor...")` | Explain code at cursor |
-| n | `<leader>on` | `opencode.command("session_new")` | New OpenCode session |
-| n | `<S-C-u>` | scroll up | Scroll OpenCode messages up |
-| n | `<S-C-d>` | scroll down | Scroll OpenCode messages down |
-| n, v | `<leader>os` | `opencode.select()` | Select OpenCode prompt |
+**Keymaps removed 2026-09-06.** opencode.nvim is still installed and its
+`init()` side effects still run, but the spec no longer declares any `keys`, so
+nothing under `<leader>o` (or `<S-C-u>` / `<S-C-d>`) is bound and the plugin
+never loads. The ten original bindings are preserved verbatim as a commented
+block in `lua/andrew/plugins/opencode.lua`; uncomment it and delete the
+`lazy = true` line to restore them.
 
 ---
 
@@ -985,12 +1100,13 @@ These are the top-level leader key groups registered for the which-key popup:
 | `<leader>e` | Explorer |
 | `<leader>f` | Find / Files |
 | `<leader>g` | Git |
-| `<leader>h` | Git Hunks |
+| `<leader>gh` | Hunks |
 | `<leader>l` | Lint |
 | `<leader>m` | Make/Build (Markdown in `.md` buffers) |
-| `<leader>o` | OpenCode |
+| `<leader>o` | _(unused — OpenCode keymaps removed)_ |
 | `<leader>r` | Rust / Refactor |
 | `<leader>s` | Split / Window |
+| `<leader><Tab>` | Tabs |
 | `<leader>t` | Tab / Terminal |
 | `<leader>v` | Vault |
 | `<leader>x` | Trouble / Diagnostics |
@@ -1032,7 +1148,7 @@ All keymap definitions are spread across these files (relative to `~/.config/nvi
 | `lua/andrew/plugins/dap/dap-ui.lua` | Debug UI |
 | `lua/andrew/plugins/rustaceanvim.lua` | Rust |
 | `lua/andrew/plugins/yazi.lua` | File explorer |
-| `lua/andrew/plugins/opencode.lua` | AI assistant |
+| `lua/andrew/plugins/opencode.lua` | AI assistant (no keymaps) |
 | `lua/andrew/plugins/type-checker.lua` | Type checking |
 | `lua/andrew/plugins/fortran-build.lua` | Make/Build |
 | `lua/andrew/plugins/linting.lua` | Linting |
@@ -1045,7 +1161,7 @@ All keymap definitions are spread across these files (relative to `~/.config/nvi
 | `lua/andrew/plugins/which-key.lua` | Key group registrations |
 | `lua/andrew/plugins/treesitter-context.lua` | Context jump |
 | `lua/andrew/custom/plugins/terminal.lua` | Floating terminal |
-| `lua/andrew/themes/toggle.lua` | Theme cycling |
+| `lua/andrew/themes/toggle.lua` | Light/dark theme switching |
 | `lua/andrew/vault/init.lua` | Vault main (templates, meta, tasks, etc.) |
 | `lua/andrew/vault/navigate.lua` | Daily/weekly navigation |
 | `lua/andrew/vault/search.lua` | Vault search |

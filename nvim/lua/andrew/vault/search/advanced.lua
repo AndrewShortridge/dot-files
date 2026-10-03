@@ -176,7 +176,20 @@ end
 local function resolve_query(split, idx, vault_path, graph_sets, group_mode, restrict_to, on_done)
   -- When iterating the full index (no restrict_to), take a snapshot for
   -- consistent reads. This matches the pattern in search_filter.prepare_evaluate().
-  local snap_files = restrict_to or idx:snapshot_files()
+  -- Lazy + memoized: metadata-only / metadata_then_text branches derive their
+  -- file list from matches and never touch this, so the O(N) snapshot copy is
+  -- only paid by the text_only / mixed_or branches that actually iterate all files.
+  local _snap_files = nil
+  local function get_snap()
+    if _snap_files == nil then
+      -- Drop .obsidian/ and template notes before they reach ripgrep. Applied
+      -- to restrict_to as well, so a graph->search bridge cannot smuggle them
+      -- back in.
+      _snap_files = require("andrew.vault.search_exclude")
+        .filter_files(restrict_to or idx:snapshot_files())
+    end
+    return _snap_files
+  end
 
   if split.mode == "metadata_only" then
     if on_done then
@@ -202,7 +215,7 @@ local function resolve_query(split, idx, vault_path, graph_sets, group_mode, res
   end
 
   if split.mode == "text_only" then
-    local file_paths = collect_abs_paths(snap_files)
+    local file_paths = collect_abs_paths(get_snap())
     local op_id = nil
     if on_done then
       -- Start a new operation so a superseding search discards these results
@@ -246,7 +259,7 @@ local function resolve_query(split, idx, vault_path, graph_sets, group_mode, res
   if on_done and split.metadata_ast then
     local op_id = eval_async_cancellable(split.metadata_ast, idx, graph_sets, restrict_to,
       function(meta_matches, limit_reached_meta)
-        local file_paths_inner = collect_abs_paths(snap_files)
+        local file_paths_inner = collect_abs_paths(get_snap())
         dispatch_ripgrep(split.text_ast, file_paths_inner, vault_path, on_done, function(rg_results, rg_limit)
           return finish_mixed_or(rg_results, rg_limit, meta_matches, limit_reached_meta, group_mode, idx), nil
         end, op_id)
@@ -259,7 +272,7 @@ local function resolve_query(split, idx, vault_path, graph_sets, group_mode, res
   if split.metadata_ast then
     meta_matches, limit_reached_meta = search_filter.evaluate(split.metadata_ast, idx, graph_sets, restrict_to)
   end
-  local file_paths = collect_abs_paths(snap_files)
+  local file_paths = collect_abs_paths(get_snap())
   local op_id = nil
   if on_done then
     op_id = search_ops:start()
@@ -363,7 +376,7 @@ function M.execute_advanced_query(query_string, opts)
       if not opts.silent then
         notify.index_not_ready("falling back to text search")
       end
-      fzf.grep(engine.vault_fzf_opts("Vault advanced", {
+      fzf.grep(engine.vault_search_fzf_opts("Vault advanced", {
         search = query_string,
         rg_opts = engine.rg_base_opts(),
       }))
@@ -454,7 +467,7 @@ function M.execute_advanced_query(query_string, opts)
       end
 
       local fzf_opts = vim.tbl_extend("force",
-        engine.vault_fzf_opts("Vault: advanced search"),
+        engine.vault_search_fzf_opts("Vault: advanced search"),
         {
           actions = actions,
           fzf_opts = fzf_inner_opts,

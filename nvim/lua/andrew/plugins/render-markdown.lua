@@ -36,6 +36,36 @@ return {
 
     require("render-markdown").setup(opts)
 
+    -- render-markdown swallows a missing converter: handler/latex.lua logs
+    -- ConverterNotFound at DEBUG level and renders nothing, so math silently
+    -- stays raw `$...$` source. Say so once instead.
+    if opts.latex and opts.latex.enabled then
+      local conv = opts.latex.converter
+      local list = type(conv) == "table" and conv or { conv or "latex2text" }
+      local found = false
+      for _, c in ipairs(list) do
+        if vim.fn.executable(c) == 1 then
+          found = true
+          break
+        end
+      end
+      if not found then
+        vim.schedule(function()
+          vim.notify_once(
+            ("render-markdown: latex.enabled but none of %s is on PATH (pip install pylatexenc); math will not render")
+              :format(vim.inspect(list)),
+            vim.log.levels.WARN
+          )
+        end)
+      end
+    end
+
+    -- Async pre-warm of the latex2text cache so the first scroll into a
+    -- math-heavy note doesn't block the main thread on synchronous conversion.
+    pcall(function()
+      require("andrew.vault.latex_warm").setup(opts.latex)
+    end)
+
     -- =========================================================================
     -- Callout collapsing support (Obsidian [!TYPE]- / [!TYPE]+ syntax)
     -- =========================================================================
@@ -48,23 +78,24 @@ return {
     --- then closes/opens suffixed callouts per their default state.
     --- Uses Ex commands with explicit line ranges (no cursor movement needed).
     ---@param bufnr number
-    local function apply_callout_folds(bufnr)
-      local ok_cf, callout_folds = pcall(require, "andrew.vault.callout_folds")
-      if not ok_cf then return end
-
-      local all_blocks = callout_folds.get_all_blocks(bufnr)
-      for _, block in ipairs(all_blocks) do
-        if block.end_line > block.start_line then
-          local cs = block.start_line + 1
-          local ce = block.end_line
-          -- :N,Mfold creates a CLOSED manual fold covering the content range
-          vim.cmd("silent! " .. cs .. "," .. ce .. "fold")
-          -- Collapsed callouts (-) stay closed; others need to be opened
-          if block.suffix ~= "-" then
-            vim.cmd("silent! " .. cs .. "," .. ce .. "foldopen")
+    ---@param all_blocks table[]  pre-fetched (changedtick-memoized) callout block list
+    local function apply_callout_folds(bufnr, all_blocks)
+      -- Batch all range-fold Ex commands in a single buffer context (mirrors
+      -- callout_folds.restore) instead of one vim.cmd round-trip per block.
+      vim.api.nvim_buf_call(bufnr, function()
+        for _, block in ipairs(all_blocks) do
+          if block.end_line > block.start_line then
+            local cs = block.start_line + 1
+            local ce = block.end_line
+            -- :N,Mfold creates a CLOSED manual fold covering the content range
+            vim.cmd("silent! " .. cs .. "," .. ce .. "fold")
+            -- Collapsed callouts (-) stay closed; others need to be opened
+            if block.suffix ~= "-" then
+              vim.cmd("silent! " .. cs .. "," .. ce .. "foldopen")
+            end
           end
         end
-      end
+      end)
     end
 
     --- Toggle the callout fold under the cursor.
@@ -139,6 +170,15 @@ return {
       callback = function(ev)
         local bufnr = ev.buf
 
+        -- FileType=markdown fires on every :edit / ft-reset for the same buffer;
+        -- the keymap and inner {BufWinEnter,BufRead} autocmd below only need to be
+        -- registered ONCE per buffer (the augroup is cleared at config() time, so
+        -- without this guard they accumulate +2 autocmds per edit). The buffer-scoped
+        -- inner autocmd persists across :edit and re-applies folds via the changedtick
+        -- guard, so suppressing duplicate registration does not affect fold behavior.
+        if vim.b[bufnr].vault_callout_autocmd_set then return end
+        vim.b[bufnr].vault_callout_autocmd_set = true
+
         -- Buffer-local keymap to toggle callout fold
         vim.keymap.set("n", "<leader>mz", function()
           toggle_callout_fold(bufnr)
@@ -153,14 +193,32 @@ return {
             vim.defer_fn(function()
               if not vim.api.nvim_buf_is_valid(bufnr) then return end
               if vim.api.nvim_get_current_buf() ~= bufnr then return end
+              -- Re-entry guard: manual folds are WINDOW-local, so key the "already
+              -- applied" marker on the window (vim.w) + buffer changedtick. Re-entering
+              -- an unchanged buffer in the same window is then a no-op; a new split or an
+              -- edit (new changedtick) still re-applies folds correctly.
+              local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+              if vim.w.vault_callout_folds_tick == tick then return end
+              -- Cheap short-circuit: most notes have ZERO callouts. Fetch the
+              -- (changedtick-memoized) block list FIRST and bail before touching
+              -- foldmethod or running zE when there's nothing to fold. We still
+              -- mark this tick handled so the guard holds and we don't re-scan on
+              -- every BufWinEnter/BufRead.
+              local ok_cf, cf = pcall(require, "andrew.vault.callout_folds")
+              if not ok_cf then return end
+              local blocks = cf.get_all_blocks(bufnr)
+              if #blocks == 0 then
+                vim.w.vault_callout_folds_tick = tick
+                return
+              end
               -- Switch to manual foldmethod and clear all treesitter folds,
               -- then create clean callout folds without nested fold interference
               vim.wo.foldmethod = "manual"
               pcall(vim.cmd, "normal! zE")
-              apply_callout_folds(bufnr)
-              -- Restore user overrides from cache (callout_folds already loaded by apply_callout_folds)
-              local ok_cf, cf = pcall(require, "andrew.vault.callout_folds")
-              if ok_cf then cf.restore(bufnr) end
+              apply_callout_folds(bufnr, blocks)
+              -- Restore user overrides from cache (callout_folds already loaded above)
+              cf.restore(bufnr)
+              vim.w.vault_callout_folds_tick = tick
             end, 50)
           end,
         })
@@ -254,6 +312,19 @@ return {
       literature = { raw = "[!LITERATURE]", rendered = "󰂺 Literature", highlight = "RenderMarkdownInfo",    quote_icon = "┃" },
       concept    = { raw = "[!CONCEPT]",    rendered = "󰛕 Concept",    highlight = "RenderMarkdownHint",    quote_icon = "┃" },
 
+      -- ── Collapsed / expanded variants ─────────────────────────────────────
+      -- INERT as of render-markdown 8.13.1 (verified 2026-09, nvim 0.12.5):
+      -- every entry below whose `raw` carries a `-`/`+` suffix is never matched.
+      -- resolved.lua:47 looks the callout up by EXACT text of the
+      -- `shortcut_link` treesitter node, which is only the bracketed part
+      -- (`[!NOTE]`); Obsidian's fold suffix sits outside that node, in the
+      -- surrounding inline text. So `> [!NOTE]-` matches the plain `note` entry
+      -- above and quote.lua:70 then treats everything after `[!NOTE]` as the
+      -- title, rendering `󰋽 -` (or `󰋽 - My title`) instead of `󰋽 Note ▸`.
+      -- The FOLDING itself is unaffected -- it comes from callout_folds.lua /
+      -- the <leader>mz keymap below, which parse the suffix themselves.
+      -- Keep these here so they start working if upstream ever matches the
+      -- suffix; do not expect ▸/▾ on screen until then.
       -- Collapsed variants (> [!TYPE]- — folded by default)
       note_collapsed      = { raw = "[!NOTE]-",      rendered = "󰋽 Note ▸",      highlight = "RenderMarkdownInfo",    quote_icon = "┃" },
       tip_collapsed       = { raw = "[!TIP]-",       rendered = "󰌶 Tip ▸",       highlight = "RenderMarkdownSuccess", quote_icon = "┃" },
@@ -314,9 +385,14 @@ return {
       },
     },
 
-    -- LaTeX equation rendering via latex2text (pip install pylatexenc)
+    -- LaTeX equations are rendered by snacks.image (`image.math.enabled` in
+    -- snacks.lua) as real typeset inline images. Enabling this block as well
+    -- draws every equation twice: snacks conceals the source and overlays an
+    -- image, while this adds latex2text unicode virt text on the same rows.
+    -- Flip this to true (and snacks math off) for the text-only fallback;
+    -- latex2text (pip install pylatexenc) is installed for that case.
     latex = {
-      enabled = true,
+      enabled = false,
       converter = "latex2text",
       highlight = "RenderMarkdownMath",
     },

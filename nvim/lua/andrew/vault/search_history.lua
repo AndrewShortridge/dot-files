@@ -129,7 +129,7 @@ function M.pick()
             -- Re-execute as live grep with the query pre-filled
             local fzf2 = require("fzf-lua")
             fzf2.live_grep(
-              engine.vault_fzf_opts("Vault search", {
+              engine.vault_search_fzf_opts("Vault search", {
                 search = item.query,
               })
             )

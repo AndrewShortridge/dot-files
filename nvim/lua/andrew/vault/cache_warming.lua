@@ -6,7 +6,7 @@
 ---   A. Completion cache pre-build — already handled by completion_base.lua (DEFERRED)
 ---   B. Adjacent file pre-read — pre-reads wikilink/embed targets into file_cache
 ---   C. Connection score pre-compute — pre-computes connection scores for current file
----   D. Code exclusion zone pre-parse — already memoized by link_scan.lua (memo.changedtick)
+---   D. Code exclusion zone pre-parse — already cached by link_scan.lua (incremental per-buffer)
 ---   E. Search date context — already cached by search_filter.lua (_date_memo)
 
 local config = require("andrew.vault.config")
@@ -249,20 +249,31 @@ end
 -- Cache Registry Integration
 -- -----------------------------------------------------------------------
 
-local engine = require("andrew.vault.engine")
-engine.register_cache({
-  name = "warming",
-  module = "andrew.vault.cache_warming",
-  invalidate = function()
-    M.cancel_warming()
-    warm_stats = { scheduled = 0, completed = 0, failed = 0 }
-  end,
-  stats = function()
-    return {
-      entries = 0, -- warming has no persistent cache; it populates file_cache and connections._cache
-    }
-  end,
-})
+-- engine.lua requires THIS module from its own top-level chunk, so a top-level
+-- require("andrew.vault.engine") here closes a require CYCLE: Lua raises
+-- "loop or previous error loading module 'andrew.vault.engine'", engine's
+-- `pcall(require, ...)` swallows it, and the whole warming feature silently
+-- never loads — setup() is never called, no warming autocmd is ever created and
+-- :VaultWarmDebug never exists. Register on the next tick instead, once engine
+-- has finished loading. (The two in-function requires of engine above are
+-- already lazy for the same reason.)
+vim.schedule(function()
+  local ok, engine = pcall(require, "andrew.vault.engine")
+  if not ok then return end
+  engine.register_cache({
+    name = "warming",
+    module = "andrew.vault.cache_warming",
+    invalidate = function()
+      M.cancel_warming()
+      warm_stats = { scheduled = 0, completed = 0, failed = 0 }
+    end,
+    stats = function()
+      return {
+        entries = 0, -- warming has no persistent cache; it populates file_cache and connections._cache
+      }
+    end,
+  })
+end)
 
 -- -----------------------------------------------------------------------
 -- Debug

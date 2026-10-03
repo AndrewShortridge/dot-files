@@ -1,4 +1,5 @@
 local config = require("andrew.vault.config")
+local hl_util = require("andrew.vault.hl_util")
 local notify = require("andrew.vault.notify")
 local ui = require("andrew.vault.ui")
 local log = require("andrew.vault.vault_log").scope("graph")
@@ -109,7 +110,7 @@ function M.search_result_graph(file_set, query_label)
   for _, hl in ipairs(highlights) do
     local row, col_start, col_end, group = hl[1], hl[2], hl[3], hl[4]
     if row < #lines then
-      local ok, err = pcall(vim.api.nvim_buf_add_highlight, float.buf, ns, group, row, col_start, col_end)
+      local ok, err = hl_util.add_safe(float.buf, ns, group, row, col_start, col_end)
       if not ok then log.debug("highlight failed at row %d: %s", row, err) end
     end
   end

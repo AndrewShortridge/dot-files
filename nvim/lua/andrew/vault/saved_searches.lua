@@ -91,19 +91,19 @@ local function execute_search(entry)
 
   if entry.type == "type" then
     -- Search by frontmatter note type (same pattern as search.search_by_type)
-    fzf.grep(engine.vault_fzf_opts("Saved [" .. entry.name .. "]", {
+    fzf.grep(engine.vault_search_fzf_opts("Saved [" .. entry.name .. "]", {
       search = "^type:\\s+" .. entry.query,
       no_esc = true,
       rg_opts = engine.rg_base_opts(glob),
     }))
   elseif entry.query == "" then
     -- Empty query -> live grep so the user can type interactively
-    fzf.live_grep(engine.vault_fzf_opts("Saved [" .. entry.name .. " | " .. label .. "]", {
+    fzf.live_grep(engine.vault_search_fzf_opts("Saved [" .. entry.name .. " | " .. label .. "]", {
       rg_opts = engine.rg_base_opts(glob),
     }))
   else
     -- Fixed query grep
-    fzf.grep(engine.vault_fzf_opts("Saved [" .. entry.name .. "]", {
+    fzf.grep(engine.vault_search_fzf_opts("Saved [" .. entry.name .. "]", {
       search = entry.query,
       no_esc = true,
       rg_opts = engine.rg_base_opts(glob),

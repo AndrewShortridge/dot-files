@@ -325,13 +325,25 @@ function M.cache_debug()
 end
 
 -- Available vaults (name -> path)
+-- NOTE: "Main" previously pointed at ~/Documents/Obsidian-Vault/Obsidian-Vault,
+-- which exists but holds ZERO notes; the real note collection lives in
+-- ~/Documents/Personal-Vault-Copy-02. The old ~/Desktop/Personal Vault entry
+-- did not exist at all and has been dropped.
 M.vaults = {
-  ["Main"] = vim.fn.expand("~/Documents/Obsidian-Vault/Obsidian-Vault"),
-  ["Personal"] = vim.fn.expand("~/Desktop/Personal Vault"),
+  ["Main"] = vim.fn.expand("~/Documents/Personal-Vault-Copy-02"),
+  ["Obsidian"] = vim.fn.expand("~/Documents/Obsidian-Vault/Obsidian-Vault"),
 }
 
 -- Active vault (default to Main)
 M.vault_path = M.vaults["Main"]
+
+-- Override hook: tests/audits can point the plugin at a scratch vault by setting
+-- vim.g.vault_path before this module is first required (e.g. via
+-- `--cmd "lua vim.g.vault_path = '/tmp/scratch-vault'"`), without editing source.
+if type(vim.g.vault_path) == "string" and vim.g.vault_path ~= "" then
+  M.vaults["Override"] = vim.g.vault_path
+  M.vault_path = vim.g.vault_path
+end
 
 --- Switch to a different vault by name.
 ---@param name string vault name from M.vaults
@@ -385,7 +397,7 @@ end
 --- Create a coroutine-aware wrapper around a vim.ui.* function.
 --- The wrapper must be called from within M.run().
 --- Uses late binding (looks up the function at call time) so that lazy-loaded
---- overrides like dressing.nvim are picked up even if they load after engine.lua.
+--- overrides like snacks.nvim are picked up even if they load after engine.lua.
 ---@param ui_field string  field name on vim.ui (e.g. "input" or "select")
 ---@return function
 local function wrap_ui(ui_field)
@@ -486,11 +498,20 @@ M.write_file = file_io.write_file
 M.append_file = file_io.append_file
 M.write_note = file_io.write_note
 
--- Idle-time proactive cache warming (cache_warming.lua)
-local ok_warming, cache_warming = pcall(require, "andrew.vault.cache_warming")
-if ok_warming then
-  cache_warming.setup()
-end
+-- Idle-time proactive cache warming (cache_warming.lua).
+-- Deferred: cache_warming requires engine back, so requiring it from engine's
+-- own top-level chunk closes a require CYCLE. Whether that cycle bites depends
+-- on which module is loaded first -- under some load orders Lua raised "loop or
+-- previous error loading module", the pcall below swallowed it, and the whole
+-- warming feature (including :VaultWarmDebug) silently never existed. Doing it
+-- on the next tick means engine is fully loaded before cache_warming asks for
+-- it, in every load order.
+vim.schedule(function()
+  local ok_warming, cache_warming = pcall(require, "andrew.vault.cache_warming")
+  if ok_warming then
+    cache_warming.setup()
+  end
+end)
 
 -- Template substitution (engine_templates.lua)
 local templates = require("andrew.vault.engine_templates")
@@ -512,6 +533,7 @@ end
 M.start_fs_watcher = function(...) return get_watcher().start_fs_watcher(...) end
 M.stop_fs_watcher = function(...) return get_watcher().stop_fs_watcher(...) end
 M.watcher_status = function(...) return get_watcher().watcher_status(...) end
+M.note_self_write = function(...) return get_watcher().note_self_write(...) end
 
 -- =============================================================================
 -- Utility Functions
@@ -543,9 +565,11 @@ end
 local memo = require("andrew.vault.memoize")
 local _is_vault_check = memo.new(
   function(bufnr)
-    -- Version: buffer name + vault_path (both effectively immutable per buffer)
-    local name = vim.api.nvim_buf_get_name(bufnr)
-    return name .. "|" .. (M.vault_path or "")
+    -- Version: buffer name only. vault_path changes are handled by clearing
+    -- the whole cache (switch_vault -> invalidate_caches{scope="all"} runs this
+    -- cache's registered invalidate AND memoize.clear_all()). Returning the
+    -- bare name avoids a per-keystroke string concat (GC pressure on TextChangedI).
+    return vim.api.nvim_buf_get_name(bufnr)
   end,
   function(bufnr)
     local name = vim.api.nvim_buf_get_name(bufnr)
@@ -595,7 +619,14 @@ end
 --- @return string
 function M.rg_base_opts(glob)
   glob = glob or "*.md"
-  return '--column --line-number --no-heading --color=always --smart-case --glob "' .. glob .. '"'
+  local opts = '--column --line-number --no-heading --color=always --smart-case --glob "' .. glob .. '"'
+  -- Keep .obsidian/ and the templates folder out of every vault grep. See
+  -- search_exclude.lua for why this is search-only and not index.skip_dirs.
+  local excl = require("andrew.vault.search_exclude").rg_opts()
+  if excl ~= "" then
+    opts = opts .. " " .. excl
+  end
+  return opts
 end
 
 --- Escape special regex/PCRE2 characters for use in ripgrep patterns.
@@ -620,6 +651,36 @@ function M.vault_fzf_opts(prompt, extra)
     for k, v in pairs(extra) do
       opts[k] = v
     end
+  end
+  return opts
+end
+
+--- Common fzf-lua options for vault SEARCH pickers.
+---
+--- vault_fzf_opts() with the configured search exclusions applied. Use this for
+--- anything the user thinks of as "searching the vault", and plain
+--- vault_fzf_opts() for everything else.
+---
+--- The split matters: vault_fzf_opts() also backs backlinks, orphan and
+--- broken-link reports, pinned notes and the daily-log picker. Excluding
+--- templates there would hide real broken links that live inside a template --
+--- a correctness hole, not a preference.
+---
+--- `file_ignore_patterns` is the right hook because it is the one fzf-lua option
+--- that APPENDS across the call-site/provider/global layers instead of replacing
+--- (fzf-lua config.lua:415-425), so a caller passing its own patterns keeps them.
+--- @param prompt string  The prompt text (without trailing "> ")
+--- @param extra? table   Additional options to merge
+--- @return table
+function M.vault_search_fzf_opts(prompt, extra)
+  local opts = M.vault_fzf_opts(prompt, extra)
+  local patterns = require("andrew.vault.search_exclude").fzf_patterns()
+  if #patterns > 0 then
+    local merged = vim.deepcopy(patterns)
+    for _, p in ipairs(opts.file_ignore_patterns or {}) do
+      merged[#merged + 1] = p
+    end
+    opts.file_ignore_patterns = merged
   end
   return opts
 end
@@ -696,6 +757,33 @@ do
           end, { domain = "url-validate", label = "load-cache" })
         end
       end
+    end,
+  })
+end
+
+-- Warm each opened vault file's per-chunk parsed_data in the background so its
+-- first save re-parses only the touched chunk(s) (loaded-from-disk chunks carry
+-- no parsed_data — see warm_chunk_cache). Per-buffer debounced, runs at IDLE so
+-- it never competes with render/highlight on open, and reads from disk so it is
+-- safe regardless of buffer state.
+if config.index.warm_chunk_cache_on_open then
+  vim.api.nvim_create_autocmd("BufReadPost", {
+    pattern = "*.md",
+    callback = function(ev)
+      if not M.is_vault_buf(ev.buf) then return end
+      local name = vim.api.nvim_buf_get_name(ev.buf)
+      if name == "" then return end
+      local sched = require("andrew.vault.work_scheduler")
+      local domain = "chunk-warm:" .. ev.buf
+      -- Coalesce rapid re-triggers for the same buffer (natural debounce).
+      sched.cancel_domain(domain)
+      sched.schedule(sched.IDLE, function()
+        local idx = get_vault_index().current()
+        -- Skip while a full build runs — it populates parsed_data anyway.
+        if idx and not idx:is_building() then
+          idx:warm_chunk_cache(name)
+        end
+      end, { domain = domain, label = "warm" })
     end,
   })
 end

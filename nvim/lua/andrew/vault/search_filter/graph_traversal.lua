@@ -57,6 +57,27 @@ local function prepare_bfs_opts(index, center_abs, depth, direction)
   }), reachable
 end
 
+-- Reachable-set cache. BFS is pure given (resolved center, depth, direction)
+-- and the index generation, but live search re-runs precompute on every
+-- keystroke. Key on the RESOLVED center_abs (not the AST spec, since "current"
+-- depends on the active buffer). Invalidated wholesale on generation change.
+local _reachable_cache = {}
+local _reachable_cache_gen = nil
+
+local function reachable_cache_get(index, center_abs, depth, direction)
+  local gen = index._generation
+  if gen ~= _reachable_cache_gen then
+    _reachable_cache = {}
+    _reachable_cache_gen = gen
+  end
+  return _reachable_cache[center_abs .. "\0" .. depth .. "\0" .. direction]
+end
+
+local function reachable_cache_put(center_abs, depth, direction, reachable, truncated)
+  _reachable_cache[center_abs .. "\0" .. depth .. "\0" .. direction] =
+    { reachable = reachable, truncated = truncated }
+end
+
 --- Collect all notes reachable within N hops from a center note.
 ---@param index table VaultIndex
 ---@param center_abs string absolute path of center note
@@ -65,10 +86,14 @@ end
 ---@return table<string, boolean> reachable rel_paths (including center)
 ---@return boolean truncated
 local function collect_reachable(index, center_abs, depth, direction)
+  local cached = reachable_cache_get(index, center_abs, depth, direction)
+  if cached then return cached.reachable, cached.truncated end
+
   local opts, reachable = prepare_bfs_opts(index, center_abs, depth, direction)
   if not opts then return {}, false end
 
   local result = bfs.traverse(opts)
+  reachable_cache_put(center_abs, depth, direction, reachable, result.truncated)
   return reachable, result.truncated
 end
 
@@ -148,6 +173,12 @@ end
 ---@param callback fun(reachable: table<string, boolean>, truncated: boolean)
 ---@return function cancel
 local function collect_reachable_async(index, center_abs, depth, direction, callback, cancelled)
+  local cached = reachable_cache_get(index, center_abs, depth, direction)
+  if cached then
+    callback(cached.reachable, cached.truncated)
+    return function() end
+  end
+
   local opts, reachable = prepare_bfs_opts(index, center_abs, depth, direction)
   if not opts then
     callback({}, false)
@@ -157,6 +188,7 @@ local function collect_reachable_async(index, center_abs, depth, direction, call
   return bfs.traverse_async(opts, {
     cancelled = cancelled,
     callback = function(result)
+      reachable_cache_put(center_abs, depth, direction, reachable, result.truncated)
       callback(reachable, result.truncated)
     end,
   })

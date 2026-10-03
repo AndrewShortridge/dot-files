@@ -32,7 +32,15 @@ return {
         find = "\\begin%b{}.-\\end%b{}",
         delete = "^(\\begin%b{})().-(\\end%b{})()$",
         change = {
-          target = "^\\begin{(.-)}().+\\end{(.-)}()$",
+          -- nvim-surround's `change.target` uses FOUR captures, read as
+          -- (text)(pos)(text)(pos) -- see nvim-surround/patterns.lua
+          -- get_selections(), which derives each replaced region as "the
+          -- #text characters ending immediately BEFORE pos". The empty
+          -- position capture must therefore sit DIRECTLY after the text it
+          -- belongs to; with a literal `}` in between, both regions slid one
+          -- character right and `cs?e` rewrote "temize}" instead of
+          -- "itemize", corrupting the buffer (e.g. `\begin{ialign`).
+          target = "^\\begin{(.-)()}.+\\end{(.-)()}$",
           replacement = function()
             local env = require("nvim-surround.config").get_input("Environment: ")
             if env then
@@ -56,7 +64,13 @@ return {
         find = "\\%a+%b{}",
         delete = "^(\\%a+{)().-(})()$",
         change = {
-          target = "^\\(%a+){().-(})()$",
+          -- Same four-capture convention as `e` above. Only the command NAME
+          -- is rewritten, so the right-hand region is deliberately empty --
+          -- exactly how nvim-surround's own `f` (function call) surround is
+          -- written, and what `replacement` below already returns ({cmd},{""}).
+          -- The old pattern put `()` after the `{`, so `cscc` replaced
+          -- "extbf{" rather than "textbf".
+          target = "^\\(%a+)(){.-}()()$",
           replacement = function()
             local cmd = require("nvim-surround.config").get_input("Command: ")
             if cmd then

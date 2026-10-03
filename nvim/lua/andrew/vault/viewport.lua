@@ -19,6 +19,18 @@ local _ranges = {}
 --- @type table<number, ViewportRange> previous range (for diff detection)
 local _prev_ranges = {}
 
+--- @type table<number, { changedtick: number, topline: number, botline: number, line_count: number, range: ViewportRange }>
+--- Per-tick refresh memo keyed on (changedtick, topline, botline) so coordinator
+--- + embed share one computed range/line-count per WinScrolled tick (WinScrolled
+--- fires many times per frame on continuous scroll). botline (line "w$") is part
+--- of the key because WinScrolled ALSO fires on window resize (height/width
+--- change) with topline AND changedtick unchanged — a resize moves "w$"/the
+--- viewport height, so without botline the memo would return a stale pre-resize
+--- range and newly-grown lines would not render until the next scroll/edit.
+--- Self-invalidates on clear_state via the `_ranges[winid] == memo.range`
+--- identity guard in refresh().
+local _refresh_memo = {}
+
 --- Get the current viewport range for a window.
 --- @param winid? number window ID (default: current)
 --- @return ViewportRange
@@ -35,11 +47,24 @@ end
 function M.refresh(winid)
   winid = winid or vim.api.nvim_get_current_win()
   local bufnr = vim.api.nvim_win_get_buf(winid)
-  local line_count = vim.api.nvim_buf_line_count(bufnr)
-  local padding = config.viewport.padding_lines
-
   local first = vim.fn.line("w0", winid)
   local last = vim.fn.line("w$", winid)
+  local changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
+
+  -- Per-tick memo: if changedtick, topline AND botline are unchanged and the
+  -- cached range is still the live one, the viewport math (and line count) is
+  -- identical to the last refresh this tick — return it without re-querying.
+  -- botline is required because a window resize fires WinScrolled with topline
+  -- and changedtick unchanged but a different "w$"; keying on it makes a resize
+  -- invalidate the memo while still deduping refreshes within a settled position.
+  local memo = _refresh_memo[winid]
+  if memo and memo.changedtick == changedtick and memo.topline == first
+    and memo.botline == last and _ranges[winid] == memo.range then
+    return memo.range
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(bufnr)
+  local padding = config.viewport.padding_lines
 
   -- Only update _prev_ranges when the viewport actually moved.
   -- Multiple callers (coordinator + embed WinScrolled) may call refresh()
@@ -60,6 +85,13 @@ function M.refresh(winid)
   }
 
   _ranges[winid] = range
+  _refresh_memo[winid] = {
+    changedtick = changedtick,
+    topline = first,
+    botline = last,
+    line_count = line_count,
+    range = range,
+  }
   return range
 end
 
@@ -118,8 +150,10 @@ end
 function M.get_zones(winid)
   local range = M.refresh(winid)
   winid = winid or vim.api.nvim_get_current_win()
-  local bufnr = vim.api.nvim_win_get_buf(winid)
-  local buf_line_count = vim.api.nvim_buf_line_count(bufnr)
+  -- refresh() guarantees _refresh_memo[winid] is populated for this winid; reuse
+  -- the line count it already read (avoids a second nvim_buf_line_count call and
+  -- keeps the zone math byte-identical to the line count refresh() saw).
+  local buf_line_count = _refresh_memo[winid].line_count
   local multiplier = config.viewport.prefetch_multiplier
   local prefetch_size = math.floor(range.height * multiplier)
 
@@ -239,6 +273,7 @@ function M.clear_state(bufnr, winid)
     _prefetched_zones[key] = nil
     _ranges[winid] = nil
     _prev_ranges[winid] = nil
+    _refresh_memo[winid] = nil
   else
     for k, _ in pairs(_prefetched_zones) do
       if k:match("^" .. bufnr .. ":") then

@@ -184,7 +184,16 @@ local function build_descriptors(lines, bufnr, range_start, range_end)
   -- Pipeline path: use cached token positions (cold cache → empty descriptors)
   if bufnr then
     local lpc = require("andrew.vault.line_parse_cache")
-    local iter = lpc.pipeline_token_iter(bufnr, "embed")
+    -- Warm-cache gate: skip the token iteration (and its lazy sorted
+    -- line-number build) when the parse cache reports zero embed tokens.
+    -- Only short-circuit when the cache IS warm; a cold cache falls through
+    -- to pipeline_token_iter, which returns nil and yields empty descriptors.
+    -- Mirrors footnotes.lua's has_token gate; output is byte-identical.
+    local cache_warm, has_embed = lpc.has_token(bufnr, "embed")
+    local iter
+    if not (cache_warm and not has_embed) then
+      iter = lpc.pipeline_token_iter(bufnr, "embed")
+    end
     if iter then
       for line_nr, token in iter do
         -- If range is specified, skip tokens outside it (0-indexed)
@@ -200,6 +209,28 @@ local function build_descriptors(lines, bufnr, range_start, range_end)
         descs[#descs + 1] = d
         ::continue::
       end
+    else
+      -- Cold parse cache: pipeline_token_iter returns nil, so the token path
+      -- yields no descriptors at all.  The caller marks the scanned ranges
+      -- valid regardless, so without this fallback a buffer whose cache is
+      -- still cold at first render (every buffer opened after the first one)
+      -- would never render its embeds.  Scan the buffer text directly; the
+      -- spans produced by state.iterate_embeds use the same 1-indexed
+      -- inclusive convention as the token path above.
+      local scan_lines = lines or vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      state.iterate_embeds(scan_lines, function(i, inner, s, e)
+        local line_nr = i - 1
+        if range_start and (line_nr < range_start or line_nr >= range_end) then
+          return
+        end
+        local d = acquire_desc()
+        d.lnum = i
+        d.col_s = s
+        d.col_e = e
+        d.inner = inner
+        d.is_image = images.is_image_embed(inner)
+        descs[#descs + 1] = d
+      end)
     end
   end
 
@@ -248,6 +279,10 @@ local function cancel_async_render(bufnr)
   if bst and bst.scroll_timer then
     bst.scroll_timer:close()
     bst.scroll_timer = nil
+  end
+  if bst and bst.gc_timer then
+    bst.gc_timer:close()
+    bst.gc_timer = nil
   end
 end
 
@@ -414,9 +449,31 @@ local function check_generation(bufnr, generation)
   return ds
 end
 
---- Close image placements that have scrolled far off-screen.
---- Uses viewport.should_cleanup() to determine threshold.
---- Marks associated descriptors as unrendered for re-render on scroll-back.
+--- Mark the image descriptor at a given line as unrendered so it re-renders
+--- (recreating the placement) on scroll-back. Used only on the eviction tail.
+---@param ds table|nil descriptor state ({ generation, list })
+---@param lnum number 1-indexed line number
+local function mark_image_desc_unrendered(ds, lnum)
+  if not ds then return end
+  for _, desc in ipairs(ds.list) do
+    if desc.lnum == lnum and desc.is_image then
+      desc.rendered = false
+      break
+    end
+  end
+end
+
+--- Reconcile image placements with the current viewport.
+--- Placements now back inside the (non-cleanup) viewport are shown; those that
+--- have scrolled into the cleanup zone are HIDDEN (detached from the terminal
+--- but kept alive) so scroll-back reuses them without recreate/retransmit.
+--- The descriptor stays rendered for hidden placements, so render_single_embed
+--- does not re-run them on scroll-back.
+---
+--- To bound terminal/memory use, at most config.embed.max_hidden_placements
+--- placements are kept hidden per buffer. The most-distant excess placements
+--- fall back to the legacy path: closed AND descriptor marked unrendered (so
+--- they recreate on scroll-back).
 ---@param bufnr number
 local function gc_distant_placements(bufnr)
   local gc_bst = state.try_get_buf_state(bufnr)
@@ -424,27 +481,50 @@ local function gc_distant_placements(bufnr)
   if not handles or #handles == 0 then return end
 
   local ds = gc_bst.descriptors
-  local kept = {}
 
+  -- First pass: show in-view placements, collect off-screen ones for hiding.
+  local kept = {}
+  local hidden = {} -- { handle, lnum } for placements in the cleanup zone
   for _, handle in ipairs(handles) do
     local entry = images.get_placement(handle)
     if not entry then goto continue end
     local lnum = entry.lnum
     if lnum and viewport.should_cleanup(lnum) then
-      images.remove_placement(handle)
-      -- Mark matching descriptor as unrendered for re-render on scroll-back
-      if ds then
-        for _, desc in ipairs(ds.list) do
-          if desc.lnum == lnum and desc.is_image then
-            desc.rendered = false
-            break
-          end
-        end
-      end
+      images.hide_placement(handle)
+      hidden[#hidden + 1] = { handle = handle, lnum = lnum }
     else
-      kept[#kept + 1] = handle
+      -- Back in (or never left) the viewport: ensure it is shown.
+      if lnum then images.show_placement(handle) end
     end
+    kept[#kept + 1] = handle
     ::continue::
+  end
+
+  -- Eviction tail: if more placements are hidden than the cap allows, fully
+  -- close the most-distant ones (legacy recreate path). Distance is measured
+  -- from the current viewport center.
+  local cap = config.embed.max_hidden_placements
+  if cap and cap >= 0 and #hidden > cap then
+    local vp = viewport.get_range()
+    local center = vp and (vp.first + vp.last) / 2 or 0
+    table.sort(hidden, function(a, b)
+      return math.abs(a.lnum - center) > math.abs(b.lnum - center)
+    end)
+    local evict = {}
+    for i = 1, #hidden - cap do
+      evict[hidden[i].handle] = hidden[i].lnum
+    end
+    local survivors = {}
+    for _, handle in ipairs(kept) do
+      local lnum = evict[handle]
+      if lnum then
+        images.remove_placement(handle)
+        mark_image_desc_unrendered(ds, lnum)
+      else
+        survivors[#survivors + 1] = handle
+      end
+    end
+    kept = survivors
   end
 
   gc_bst.placements = kept
@@ -466,10 +546,20 @@ function M.render_embeds(opts)
 
   -- Quick prefilter: if buffer has never had embeds rendered and doesn't
   -- contain any embed syntax, skip the expensive render path entirely.
+  -- Warm-gate (mirrors footnotes.lua's has_token gate): when the pipeline parse
+  -- cache is warm it answers "any embed token?" in O(1) from an incrementally
+  -- maintained counter; fall back to state.has_embeds (full-buffer scan,
+  -- changedtick-memoized) only when the cache is cold. Both report the same
+  -- presence answer, so the gate decision is byte-identical.
   local pre_bst = state.try_get_buf_state(bufnr)
-  if not (pre_bst and pre_bst.visible) and not state.has_embeds(bufnr) then
-    stop()
-    return
+  if not (pre_bst and pre_bst.visible) then
+    local lpc = require("andrew.vault.line_parse_cache")
+    local cache_warm, has_embed = lpc.has_token(bufnr, "embed")
+    local present = cache_warm and has_embed or (not cache_warm and state.has_embeds(bufnr))
+    if not present then
+      stop()
+      return
+    end
   end
 
   -- Cancel any stale scheduled embed work for this buffer
@@ -644,6 +734,37 @@ function M.render_embeds(opts)
   end, function() end) -- waiter callback is a no-op
 end
 
+--- Current vault-index generation (0 if no index). Embed name->path resolution
+--- can change only when the index generation advances, so it is the correct
+--- invalidation key for a cross-pass resolve memo.
+---@return number
+local function current_index_gen()
+  local ok, vault_index = pcall(require, "andrew.vault.vault_index")
+  if not ok then return 0 end
+  local idx = vault_index.current()
+  return idx and idx._generation or 0
+end
+
+--- Get (or rebuild) the per-buffer cross-pass embed resolve memo.
+--- The OTHER render entry (M.render_embeds) builds a fresh arena-scoped memo per
+--- full render; the scroll/prefetch passes call this so consecutive ticks reuse
+--- resolutions instead of allocating a fresh empty memo every WinScrolled.
+--- Invalidated when the index generation advances (resolution may change) OR the
+--- buffer's path changes (rename: same name could resolve differently).
+---@param bufnr number
+---@param bufpath string
+---@return fun(name: string): string|nil
+local function get_buf_resolve_memo(bufnr, bufpath)
+  local bst = state.get_buf_state(bufnr)
+  local gen = current_index_gen()
+  local rm = bst._resolve_memo
+  if not rm or rm.gen ~= gen or rm.bufpath ~= bufpath then
+    rm = { gen = gen, bufpath = bufpath, fn = create_resolve_memo(bufpath, {}) }
+    bst._resolve_memo = rm
+  end
+  return rm.fn
+end
+
 --- Build render context, render in range, and update deps.
 --- Shared between on_prefetch and WinScrolled scroll callback.
 ---@param bufnr number
@@ -655,13 +776,61 @@ end
 local function do_render_pass(bufnr, descs, start_line, end_line, deps, buf_lines)
   local bufpath = vim.api.nvim_buf_get_name(bufnr)
   local PlacementMod, snacks_doc_cfg, merge = init_render_deps()
+  local resolve_memo = get_buf_resolve_memo(bufnr, bufpath)
   local ctx = build_render_ctx(
     bufnr, bufpath, { silent = true }, descs,
     PlacementMod, snacks_doc_cfg, merge,
-    deps, buf_lines
+    deps, buf_lines, resolve_memo
   )
   render_in_range(descs, ctx, start_line, end_line)
   update_deps(bufnr, ctx.deps)
+end
+
+--- Called by event_dispatch.lua on WinScrolled for vault markdown buffers.
+--- Must run AFTER highlight_coordinator.on_win_scrolled on the same tick:
+--- newly_visible() compares _ranges vs _prev_ranges, which the coordinator
+--- refreshes this tick — deferring it into the debounce would lose the
+--- transition. We only use it as a cheap "viewport actually moved" gate; the
+--- render scope is the full visible zone, so coalescing across ticks is safe.
+--- @param ctx { bufnr: number, winid: number }
+function M.on_win_scrolled(ctx)
+  if not config.embed.lazy then return end
+  local bufnr = ctx.bufnr
+  local scroll_bst = state.try_get_buf_state(bufnr)
+  if not scroll_bst or not scroll_bst.visible then return end
+  local ds = scroll_bst.descriptors
+  if not ds then return end
+
+  local new_ranges = viewport.newly_visible()
+  if not new_ranges then
+    -- Off-path (viewport did not expand): gc_distant_placements loops every
+    -- placement handle, so throttle it to the render settle cadence instead of
+    -- running unthrottled every WinScrolled tick. GC is idempotent on a stable
+    -- viewport, so coalescing to the settled tick yields the same final state.
+    scroll_bst.gc_timer = cleanup.debounce(scroll_bst.gc_timer, config.embed.lazy_scroll_debounce_ms, function()
+      if not state.is_embed_active(bufnr) then return end
+      gc_distant_placements(bufnr)
+    end)
+    return
+  end
+
+  -- Debounced render of the current visible zone. do_render_pass renders the
+  -- full visible zone and skips already-rendered descriptors, so it is the
+  -- sole gate — no per-tick need_render scan (which would only ever see the
+  -- LAST coalesced tick's delta and drop intermediate transitions).
+  -- Prefetch zones are handled by highlight_coordinator's Phase 2 dispatch.
+  scroll_bst.scroll_timer = cleanup.debounce(scroll_bst.scroll_timer, config.embed.lazy_scroll_debounce_ms, function()
+    if not state.is_embed_active(bufnr) then return end
+    -- Note: is_embed_active already validates buf, so check_generation's
+    -- buf_is_valid check is redundant but harmless (kept for safety in
+    -- other call sites where is_embed_active is not checked first).
+    local cur_ds = check_generation(bufnr, ds.generation)
+    if not cur_ds then return end
+
+    local cur_zones = viewport.get_zones()
+    do_render_pass(bufnr, cur_ds.list, cur_zones.visible.start_line, cur_zones.visible.end_line, (state.try_get_buf_state(bufnr) or {}).deps or {})
+    gc_distant_placements(bufnr)
+  end)
 end
 
 --- Prefetch callback for the coordinator's Phase 2 dispatch.
@@ -682,17 +851,32 @@ function M.on_prefetch(bufnr, start_line, end_line)
   local coalesce_key = "embed_render:" .. bufnr
   if embed_pool:is_pending(coalesce_key) then return end
 
-  -- Check if any unrendered embeds exist in the prefetch range
+  -- Check if any unrendered embeds exist in the prefetch range, and whether
+  -- any of them are same-file embeds (![[#Heading]] / ![[^blockid]]) — only
+  -- those need the full buffer to resolve. Cross-file and image embeds don't.
   local has_work = false
+  local has_self_embed = false
   for _, d in ipairs(ds.list) do
     if not d.rendered and d.lnum >= start_line and d.lnum <= end_line then
       has_work = true
-      break
+      if not d.is_image and d.inner then
+        local first_char = d.inner:sub(1, 1)
+        if first_char == "#" or first_char == "^" then
+          has_self_embed = true
+          break
+        end
+      end
     end
   end
   if not has_work then return end
 
-  local buf_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  -- Only read the full buffer when a same-file embed in range needs it.
+  -- Otherwise render_single_embed's per-embed fallback reads lazily (and only
+  -- for the specific embed that requires it), avoiding a full-buffer read on
+  -- every prefetch of large files with only cross-file/image embeds.
+  local buf_lines = has_self_embed
+    and vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    or nil
   do_render_pass(bufnr, ds.list, start_line, end_line, pf_bst.deps or {}, buf_lines)
 end
 
@@ -700,6 +884,14 @@ end
 function M.clear_embeds()
   local bufnr = vim.api.nvim_get_current_buf()
   state.clear_buffer_state(bufnr, { clear_namespace = true })
+  -- Drop the "embed" scope's validity too. Without this the region tracker still
+  -- considers every line valid, so the next non-forced render_embeds() short-
+  -- circuits with "embeds up to date" and :VaultEmbedToggle can never turn
+  -- embeds back on.
+  local ok, err = pcall(function()
+    require("andrew.vault.region_tracker").get(bufnr, "embed"):invalidate_all()
+  end)
+  if not ok then log.debug("clear_embeds: region tracker reset failed: %s", err) end
 end
 
 --- Toggle embed rendering on/off in the current buffer.
@@ -796,11 +988,13 @@ function M.debug_info()
       local failed = p.img and p.img:failed() or false
       local sent = p.img and p.img.sent or false
       local closed = p.closed or false
+      local hidden = p.hidden or false
       pinfo = pinfo .. src_name
         .. " lnum=" .. tostring(pair.entry.lnum)
         .. " ready=" .. tostring(ready)
         .. " failed=" .. tostring(failed)
         .. " sent=" .. tostring(sent)
+        .. " hidden=" .. tostring(hidden)
         .. " closed=" .. tostring(closed)
       if failed and p.img._convert then
         for _, step in ipairs(p.img._convert.steps or {}) do
@@ -930,6 +1124,16 @@ function M.render_embeds_buf(bufnr, opts)
   local reb_bst = state.get_buf_state(bufnr)
   reb_bst.descriptors = nil
   reb_bst.visible = false
+  -- Drop the region tracker's "valid" bookkeeping too: descriptors are gone,
+  -- so the next render for this buffer must rebuild (and repaint) everything.
+  if opts and opts.force and vim.api.nvim_buf_is_valid(bufnr) then
+    require("andrew.vault.region_tracker")
+      .get(bufnr, "embed"):invalidate_range(0, vim.api.nvim_buf_line_count(bufnr))
+  end
+end
+
+local function is_valid_current_buf(bufnr)
+  return vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_get_current_buf() == bufnr
 end
 
 function M.setup()
@@ -1022,10 +1226,6 @@ function M.setup()
     end
   end)
 
-  local function is_valid_current_buf(bufnr)
-    return vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_get_current_buf() == bufnr
-  end
-
   local augroup = vim.api.nvim_create_augroup("VaultEmbed", { clear = true })
 
   vim.api.nvim_create_autocmd("BufReadPost", {
@@ -1050,58 +1250,7 @@ function M.setup()
     end,
   })
 
-  -- BufEnter and TextChanged autocmds removed: now dispatched via event_dispatch.lua
-
-  vim.api.nvim_create_autocmd("WinScrolled", {
-    group = augroup,
-    callback = function()
-      if not config.embed.lazy then return end
-      local bufnr = vim.api.nvim_get_current_buf()
-      local scroll_bst = state.try_get_buf_state(bufnr)
-      if not scroll_bst or not scroll_bst.visible then return end
-      local ds = scroll_bst.descriptors
-      if not ds then return end
-
-      local zones = viewport.get_zones()
-      local new_ranges = viewport.newly_visible()
-      if not new_ranges then
-        gc_distant_placements(bufnr)
-        return
-      end
-
-      -- Check if any unrendered embeds fall in the visible zone's newly visible lines
-      local need_render = false
-      for _, range in ipairs(new_ranges) do
-        for _, d in ipairs(ds.list) do
-          if not d.rendered and d.lnum >= range.first and d.lnum <= range.last then
-            need_render = true
-            break
-          end
-        end
-        if need_render then break end
-      end
-
-      if not need_render then
-        gc_distant_placements(bufnr)
-        return
-      end
-
-      -- Debounced render of newly visible embeds (visible zone only)
-      -- Prefetch zones are handled by highlight_coordinator's Phase 2 dispatch
-      scroll_bst.scroll_timer = cleanup.debounce(scroll_bst.scroll_timer, config.embed.lazy_scroll_debounce_ms, function()
-        if not state.is_embed_active(bufnr) then return end
-        -- Note: is_embed_active already validates buf, so check_generation's
-        -- buf_is_valid check is redundant but harmless (kept for safety in
-        -- other call sites where is_embed_active is not checked first).
-        local cur_ds = check_generation(bufnr, ds.generation)
-        if not cur_ds then return end
-
-        local cur_zones = viewport.get_zones()
-        do_render_pass(bufnr, cur_ds.list, cur_zones.visible.start_line, cur_zones.visible.end_line, (state.try_get_buf_state(bufnr) or {}).deps or {})
-        gc_distant_placements(bufnr)
-      end)
-    end,
-  })
+  -- BufEnter, TextChanged and WinScrolled autocmds removed: now dispatched via event_dispatch.lua
 
   cleanup.on_buf_delete(augroup, function(bufnr)
     state.clear_buffer_state(bufnr)
@@ -1153,12 +1302,12 @@ end
 
 --- Called by event_dispatch.lua on TextChanged/InsertLeave for vault markdown buffers.
 --- @param bufnr number
---- @param file string
-function M.on_text_changed(bufnr, file)
+function M.on_text_changed(bufnr)
   if not config.embed.sync or not config.embed.sync.enabled then return end
   local tc_bst = state.try_get_buf_state(bufnr)
   if not (tc_bst and tc_bst.visible) then return end
 
+  local file = vim.api.nvim_buf_get_name(bufnr)
   local deps = tc_bst.deps
   if deps and deps[file] then
     sync.schedule_rerender(bufnr)

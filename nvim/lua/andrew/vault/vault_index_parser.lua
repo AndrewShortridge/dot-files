@@ -59,6 +59,13 @@ end
 ---@param line string
 ---@return string line with code spans replaced by spaces
 local function strip_inline_code(line)
+  -- Fast path: a line with no backtick has no inline-code span to strip, so it
+  -- is returned verbatim. This skips the per-character scan below for the ~60%
+  -- of lines that contain no backtick (byte-identical result — the char loop
+  -- would copy each char unchanged anyway). find(..., plain) is a single C-side
+  -- memchr; far cheaper than building a result table char-by-char.
+  if not line:find("`", 1, true) then return line end
+
   local result = {}
   local pos = 1
   local len = #line
@@ -96,11 +103,25 @@ local function strip_inline_code(line)
   return table.concat(result)
 end
 
---- Strip fenced code blocks (multi-line) and inline code spans (single-line).
-local function strip_code_blocks(text)
+--- Strip fenced code blocks (multi-line) and inline code spans (single-line),
+--- returning the canonical one-entry-per-line stripped representation.
+--- Fenced lines (and the fence delimiters themselves) become "".
+--- This is the single shared primitive: callers compute it ONCE per parse and
+--- pass the array to extract_tags/extract_links (and the task-tag sub-scan) so
+--- they iterate pre-stripped lines instead of re-stripping the whole content.
+--- (extract_inline_fields is intentionally NOT fence-aware and strips per-line
+--- itself, so it does not consume this array.)
+--- Takes the already-split raw line array (callers split content/body once for
+--- the line-based extractors anyway, so reusing it avoids a redundant
+--- vim.split). The result is one stripped entry per source line, fence lines
+--- (and fence delimiters) emptied — byte-identical to splitting the joined
+--- stripped string but without re-emitting a trailing empty match.
+---@param raw_lines string[] Raw source lines (one entry per source line)
+---@return string[] stripped lines (one entry per source line)
+local function strip_code_blocks_lines(raw_lines)
   local lines = {}
   local in_fence = false
-  for line in text:gmatch(pat.LINE) do
+  for _, line in ipairs(raw_lines) do
     if pat.is_code_fence(line) then
       in_fence = not in_fence
       lines[#lines + 1] = ""
@@ -110,7 +131,7 @@ local function strip_code_blocks(text)
       lines[#lines + 1] = strip_inline_code(line)
     end
   end
-  return table.concat(lines, "\n")
+  return lines
 end
 
 --- Split content into frontmatter and body.
@@ -197,7 +218,9 @@ local function add_tag_with_parents(set, tag)
 end
 
 --- Extract tags from frontmatter and body.
-local function extract_tags(fm_fields, body)
+---@param fm_fields table
+---@param stripped_body_lines string[] Body lines, code-stripped once by caller.
+local function extract_tags(fm_fields, stripped_body_lines)
   local tag_set = {}
 
   local fm_tags = fm_fields.tags
@@ -211,10 +234,15 @@ local function extract_tags(fm_fields, body)
     add_tag_with_parents(tag_set, tag)
   end
 
-  local clean_body = strip_code_blocks(body)
-  for tag in clean_body:gmatch(pat.TAG) do
-    if not tag:match("^%d+$") then
-      add_tag_with_parents(tag_set, tag)
+  -- Tags are line-local (never span lines), so scanning each pre-stripped line
+  -- is byte-identical to scanning the joined stripped string.
+  for _, line in ipairs(stripped_body_lines) do
+    for pos, tag in line:gmatch(pat.TAG) do
+      -- Left-boundary check: rejects the '#' inside [[Note#Heading]],
+      -- ![[Note#Details]] and https://x.com#frag (phantom tags).
+      if pat.tag_boundary_ok(line, pos) and not tag:match("^%d+$") then
+        add_tag_with_parents(tag_set, tag)
+      end
     end
   end
 
@@ -275,22 +303,26 @@ local function make_link_entry(path, display, is_embed)
 end
 
 --- Extract wikilinks and embeds from content.
-local function extract_links(content)
+---@param stripped_content_lines string[] Content lines, code-stripped once by caller.
+local function extract_links(stripped_content_lines)
   local links = {}
-  local clean = strip_code_blocks(content)
 
-  for line in clean:gmatch(pat.LINE_NONEMPTY) do
-    pat.scan_all_links(line, function(inner, _, _, is_embed)
-      inner = inner:gsub("\\|", "|")
-      -- Skip inline fields (e.g. [[key:: value]]) for non-embeds
-      if not is_embed and inner:match("^[%w_%-]+::") then return end
-      local path, display = inner:match("^(.-)%|(.+)$")
-      if not path then
-        path = inner
-        display = inner:match(pat.BASENAME) or inner
-      end
-      links[#links + 1] = make_link_entry(path, display, is_embed)
-    end)
+  -- Skip empty stripped lines to exactly mirror the prior gmatch(LINE_NONEMPTY)
+  -- behavior. Wikilinks/embeds are line-local, so per-line scanning matches.
+  for _, line in ipairs(stripped_content_lines) do
+    if line ~= "" then
+      pat.scan_all_links(line, function(inner, _, _, is_embed)
+        inner = inner:gsub("\\|", "|")
+        -- Skip inline fields (e.g. [[key:: value]]) for non-embeds
+        if not is_embed and inner:match("^[%w_%-]+::") then return end
+        local path, display = inner:match("^(.-)%|(.+)$")
+        if not path then
+          path = inner
+          display = inner:match(pat.BASENAME) or inner
+        end
+        links[#links + 1] = make_link_entry(path, display, is_embed)
+      end)
+    end
   end
 
   return links
@@ -369,8 +401,9 @@ P.parse_task_fields = parse_task_fields
 
 --- Extract tasks from body text.
 ---@param body string Body content (used when lines not provided)
----@param lines? string[] Pre-split lines (avoids redundant vim.split)
-local function extract_tasks(body, lines)
+---@param lines? string[] Pre-split RAW lines (avoids redundant vim.split)
+---@param stripped_lines? string[] Body lines, code-stripped once by caller (for tag sub-scan)
+local function extract_tasks(body, lines, stripped_lines)
   local tasks = {}
   lines = lines or vim.split(body, "\n", { plain = true })
   local in_code_fence = false
@@ -389,9 +422,15 @@ local function extract_tasks(body, lines)
         local indent = #(line:match("^(%s*)") or "")
         local indent_level = math.floor(indent / 2)
         local task_tags = {}
-        local clean_text = strip_inline_code(text)
-        for tag in clean_text:gmatch(pat.TAG) do
-          if not tag:match("^%d+$") then
+        -- Tag sub-scan: reuse the pre-stripped body line (the "- [x] " prefix
+        -- contains no #tags, so a stripped full-line yields the same tags as the
+        -- prior strip_inline_code(text)). Fall back to stripping text if the
+        -- caller did not supply stripped lines.
+        local clean_text = stripped_lines and stripped_lines[line_num]
+          or strip_inline_code(text)
+        for pos, tag in clean_text:gmatch(pat.TAG) do
+          -- Same left-boundary check as the body-tag scan above.
+          if pat.tag_boundary_ok(clean_text, pos) and not tag:match("^%d+$") then
             task_tags[#task_tags + 1] = intern_tag(tag)
           end
         end
@@ -427,23 +466,58 @@ local function extract_tasks(body, lines)
   return tasks
 end
 
+--- Accumulate a page-level inline field value under a key.
+--- Scalar-or-list shape (mirrors frontmatter): first occurrence stores the
+--- trimmed string scalar; second+ occurrence promotes to an array (document
+--- order, duplicates kept). Keys are case-preserved.
+---@param fields table
+---@param key string
+---@param value string raw (untrimmed) value
+local function add_field(fields, key, value)
+  local v = vim.trim(value)
+  local existing = fields[key]
+  if existing == nil then
+    fields[key] = v
+  elseif type(existing) == "table" then
+    existing[#existing + 1] = v
+  else
+    -- Promote scalar -> list, preserving the first value's position.
+    fields[key] = { existing, v }
+  end
+end
+
 --- Extract inline fields from body text.
-local function extract_inline_fields(body)
+--- NOTE: this extractor is deliberately NOT fence-aware. It strips only inline
+--- code spans per line (via strip_inline_code), so a `key:: value` written
+--- inside a fenced ``` / ~~~ code block IS still extracted — matching the
+--- historical behavior. It therefore does NOT consume the shared fence-aware
+--- stripped_body_lines (which blanks whole fenced regions).
+---@param raw_body_lines string[] Raw body lines
+local function extract_inline_fields(raw_body_lines)
   local fields = {}
-  for line in body:gmatch(pat.LINE_NONEMPTY) do
-    if line:match(pat.TASK_DETECT) then goto continue end
-    -- Strip inline code spans so fields inside backticks are ignored
-    local clean = strip_inline_code(line)
-    for key, value in clean:gmatch(pat.INLINE_FIELD_STANDALONE_GMATCH) do
-      if not key:match("^https?$") then
-        fields[key] = vim.trim(value)
-      end
+  for i = 1, #raw_body_lines do
+    local raw = raw_body_lines[i]
+    -- Mirror the prior gmatch(LINE_NONEMPTY): empty lines yield nothing.
+    if raw == "" then goto continue end
+    -- TASK_DETECT runs on the RAW line (the "- [ ]" prefix is never inside
+    -- backticks, but matching raw preserves today's semantics exactly).
+    if raw:match(pat.TASK_DETECT) then goto continue end
+    -- Strip inline code spans so fields inside backticks are ignored (per-line,
+    -- NOT fence-aware — see function note).
+    local clean = strip_inline_code(raw)
+    -- Standalone (whole-line) field: `key:: value` at the start of the line
+    -- (after optional list marker / indentation), at most one per line. Anchored
+    -- so prose containing bracket/paren fields (e.g. "see [genre:: rock]") is not
+    -- mis-captured as a standalone value swallowing the rest of the line.
+    local skey, sval = clean:match("^%s*[-*]?%s*([%w_%-]+)::%s*(.-)%s*$")
+    if skey and not skey:match("^https?$") then
+      add_field(fields, skey, sval)
     end
     for key, value in clean:gmatch(pat.INLINE_FIELD_BRACKET) do
-      fields[key] = vim.trim(value)
+      add_field(fields, key, value)
     end
     for key, value in clean:gmatch(pat.INLINE_FIELD_PAREN) do
-      fields[key] = vim.trim(value)
+      add_field(fields, key, value)
     end
     ::continue::
   end
@@ -493,30 +567,43 @@ end
 
 --- Construct a VaultIndexEntry from components.
 --- Single source of truth for the entry table shape.
+--- When old_entry is supplied, each named field falls back to old_entry[k]
+--- when fields[k] is nil (explicit nil check, NOT `or`, to respect a caller
+--- that intentionally sets a value). This lets entry_from_old pass only its
+--- stat updates + overrides without first shallow-copying old_entry, and — by
+--- enumerating only these stored keys — never forwards the lazy metatable-
+--- derived keys (abs_path, tag_set, basename, …) that _apply_entry_mt
+--- recomputes. Single-arg calls (parse_content) read fields[k] verbatim.
 ---@param fields table Entry field values (rel_path, stat fields, parsed data, etc.)
+---@param old_entry table|nil Prior entry to inherit unset named fields from
 ---@return VaultIndexEntry
-function P.make_entry(fields)
+function P.make_entry(fields, old_entry)
+  local function pick(k)
+    local v = fields[k]
+    if v ~= nil then return v end
+    return old_entry and old_entry[k] or nil
+  end
   return {
-    rel_path = fields.rel_path,
-    rel_stem = fields.rel_stem,
-    rel_stem_lower = fields.rel_stem_lower,
-    mtime = fields.mtime,
-    size = fields.size,
-    ctime = fields.ctime,
-    frontmatter = fields.frontmatter,
-    aliases = fields.aliases,
-    tags = fields.tags,
-    headings = fields.headings,
-    block_ids = fields.block_ids,
-    outlinks = fields.outlinks,
-    tasks = fields.tasks,
-    inline_fields = fields.inline_fields,
-    day = fields.day,
-    created_ts = fields.created_ts,
-    modified_ts = fields.modified_ts,
-    day_ts = fields.day_ts,
-    content_hash = fields.content_hash,
-    _chunks = fields._chunks,
+    rel_path = pick("rel_path"),
+    rel_stem = pick("rel_stem"),
+    rel_stem_lower = pick("rel_stem_lower"),
+    mtime = pick("mtime"),
+    size = pick("size"),
+    ctime = pick("ctime"),
+    frontmatter = pick("frontmatter"),
+    aliases = pick("aliases"),
+    tags = pick("tags"),
+    headings = pick("headings"),
+    block_ids = pick("block_ids"),
+    outlinks = pick("outlinks"),
+    tasks = pick("tasks"),
+    inline_fields = pick("inline_fields"),
+    day = pick("day"),
+    created_ts = pick("created_ts"),
+    modified_ts = pick("modified_ts"),
+    day_ts = pick("day_ts"),
+    content_hash = pick("content_hash"),
+    _chunks = pick("_chunks"),
   }
 end
 
@@ -543,12 +630,61 @@ function P.parse_content(content, rel_path, stat)
   local fm_fields = parse_frontmatter(fm_text)
   local aliases = extract_aliases(fm_fields)
 
-  local tags = extract_tags(fm_fields, body)
-  local headings = extract_headings(content)
-  local block_ids = extract_block_ids(content)
-  local outlinks = extract_links(content)
-  local tasks = extract_tasks(body)
-  local inline_fields = extract_inline_fields(body)
+  -- Split once per slice and share the arrays across the line-based extractors,
+  -- instead of each extractor splitting internally (content was split twice
+  -- today — once for headings, once for block_ids). The boundary is load-
+  -- bearing: heading/block_id line numbers are 1-indexed into FULL content
+  -- (frontmatter included), while extract_tasks() numbers relative to the body
+  -- (normalised to file-absolute just below). So content_lines and body_lines
+  -- must NOT be swapped between extractors.
+  local content_lines = vim.split(content, "\n", { plain = true })
+  local body_lines = vim.split(body, "\n", { plain = true })
+
+  -- Compute the code-stripped, line-split representation ONCE per parse, then
+  -- share it with the fence-aware line-based extractors instead of each
+  -- re-stripping. The content-vs-body boundary is load-bearing: stripped
+  -- CONTENT lines feed links, stripped BODY lines feed tags/task-tags. Never
+  -- swap them. (Inline fields are NOT fence-aware and strip per-line on their
+  -- own — they do not consume the shared array.)
+  --
+  -- body is a strict line-suffix of content (split_frontmatter slices on a
+  -- \n---\n boundary), so the stripped body is just the tail of the stripped
+  -- content. Alias when there is no frontmatter (body == content, parse_chunk's
+  -- non-FM trick), otherwise slice off the leading offset frontmatter lines.
+  -- This is byte-identical to a separate strip(body_lines) for all real
+  -- frontmatter: the YAML delimiter `---` is not a code fence, so the FM region
+  -- never toggles fence state.
+  local stripped_content_lines = strip_code_blocks_lines(content_lines)
+  local offset = #content_lines - #body_lines
+  local stripped_body_lines
+  if offset == 0 then
+    stripped_body_lines = stripped_content_lines
+  else
+    stripped_body_lines = {}
+    for i = offset + 1, #stripped_content_lines do
+      stripped_body_lines[#stripped_body_lines + 1] = stripped_content_lines[i]
+    end
+  end
+
+  local tags = extract_tags(fm_fields, stripped_body_lines)
+  local headings = extract_headings(content, content_lines)
+  local block_ids = extract_block_ids(content, content_lines)
+  local outlinks = extract_links(stripped_content_lines)
+  local tasks = extract_tasks(body, body_lines, stripped_body_lines)
+  -- extract_tasks() numbers lines relative to `body`, but every other entry
+  -- field is file-absolute (headings, block_ids) and so are the task lines
+  -- produced by parse_chunk() below -- one index must not carry two
+  -- conventions. Normalise here so every consumer gets a real file line: task
+  -- pickers/previews (tasks.lua, task_notify.lua), :VaultOverdue, kanban
+  -- <CR>/m/M (set_task_status silently no-ops on the wrong line), timeline
+  -- <CR>, task-tree <CR> and its [n/m %] virtual text, calendar.lua's jump
+  -- sites and DQL TASK results.
+  if offset > 0 then
+    for _, t in ipairs(tasks) do
+      t.line = t.line + offset
+    end
+  end
+  local inline_fields = extract_inline_fields(body_lines)
 
   local rel_stem, rel_stem_lower, day, day_ts = compute_file_identity(rel_path)
   local created_ts, modified_ts = extract_timestamps(fm_fields)
@@ -642,18 +778,25 @@ function P.parse_chunk(chunk_lines, start_line, fm_fields)
     end
   end
 
-  -- gmatch-based extractors: use content string
-  local outlinks = extract_links(content)
+  -- Compute the code-stripped representation ONCE for this chunk. chunk_lines is
+  -- already the per-line array (content == table.concat(chunk_lines, "\n")), so
+  -- reuse it directly. Links scan stripped content lines; tags/task-tags scan
+  -- stripped body lines (body == content for non-FM chunks, "" for the FM
+  -- chunk). Inline fields strip per-line themselves (NOT fence-aware).
+  local stripped_content_lines = strip_code_blocks_lines(chunk_lines)
+  local outlinks = extract_links(stripped_content_lines)
 
   -- Determine body: frontmatter chunks have no body
   local body = fm_fields and "" or content
   local body_lines = fm_fields and nil or chunk_lines
+  -- For non-FM chunks body == content, so the stripped arrays coincide.
+  local stripped_body_lines = fm_fields and {} or stripped_content_lines
 
-  local tags = extract_tags(fm_fields or {}, body)
+  local tags = extract_tags(fm_fields or {}, stripped_body_lines)
 
   local tasks = {}
   if body ~= "" then
-    tasks = extract_tasks(body, body_lines)
+    tasks = extract_tasks(body, body_lines, stripped_body_lines)
     if line_offset > 0 then
       for _, t in ipairs(tasks) do
         t.line = t.line + line_offset
@@ -661,7 +804,8 @@ function P.parse_chunk(chunk_lines, start_line, fm_fields)
     end
   end
 
-  local inline_fields = body ~= "" and extract_inline_fields(body) or {}
+  local inline_fields = body ~= ""
+    and extract_inline_fields(body_lines) or {}
 
   return {
     headings = headings,

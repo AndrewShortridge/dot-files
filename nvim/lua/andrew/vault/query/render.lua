@@ -11,12 +11,45 @@ local ns = vim.api.nvim_create_namespace("vault_query")
 -- Helpers
 -- =============================================================================
 
+--- True when v carries a __tostring metamethod (typed value like Link/Date/Duration).
+---@param v any
+---@return boolean
+local function has_tostring(v)
+  local mt = getmetatable(v)
+  return mt ~= nil and mt.__tostring ~= nil
+end
+
+--- True when t is an array-like table with consecutive 1..n integer keys.
+--- An empty table is treated as an array.
+---@param t table
+---@return boolean
+local function is_array(t)
+  local n = 0
+  for k in pairs(t) do
+    if type(k) ~= "number" then
+      return false
+    end
+    n = n + 1
+  end
+  return n == #t
+end
+
 --- Convert any value to a display string.
+--- Array-like tables (e.g. multi-value inline fields) are joined ", ",
+--- recursing so typed elements (Link/Date/Duration) format via __tostring.
 ---@param val any
 ---@return string
-local function to_str(val)
+local to_str
+to_str = function(val)
   if val == nil then
     return "\u{2014}" -- em dash
+  end
+  if type(val) == "table" and not has_tostring(val) and is_array(val) then
+    local parts = {}
+    for _, e in ipairs(val) do
+      parts[#parts + 1] = to_str(e)
+    end
+    return table.concat(parts, ", ")
   end
   return tostring(val)
 end
@@ -267,8 +300,12 @@ end
 ---@param item table { type="error", message=string }
 ---@return table[] virt_lines
 local function render_error(item)
+  -- Parse/compile errors arrive multi-line ("...block:\n[string ...]: msg").
+  -- A newline inside a virt_line chunk renders as a NUL glyph and inflates the
+  -- box width, so flatten any newline run to a single space.
+  local msg = tostring(item.message or "unknown"):gsub("%s*[\r\n]+%s*", " ")
   return {
-    { { "  \u{2717} Error: " .. (item.message or "unknown"), "VaultQueryError" } },
+    { { "  \u{2717} Error: " .. msg, "VaultQueryError" } },
   }
 end
 
@@ -479,6 +516,13 @@ end
 ---@param buf number buffer handle
 function M.clear_all_inline(buf)
   vim.api.nvim_buf_clear_namespace(buf, inline_ns, 0, -1)
+end
+
+--- Clear inline rendered output on a single line.
+---@param buf number buffer handle
+---@param line number 0-indexed line
+function M.clear_inline_line(buf, line)
+  vim.api.nvim_buf_clear_namespace(buf, inline_ns, line, line + 1)
 end
 
 return M

@@ -104,6 +104,31 @@ local opts = function(desc)
   return { desc = desc, silent = true }
 end
 
+-- Readable width toggle. readable_width.setup() re-registers this same lhs
+-- once Tier 2 loads, but until the first markdown buffer opens the map would
+-- not exist at all, and <leader>uW would fall through to `u` (undo) + `W`.
+keymap("n", "<leader>uW", function()
+  require("andrew.vault.readable_width").notify_toggle()
+end, opts("Toggle readable width (full window <-> centred column)"))
+
+-- AUDIT(vault-a): same rationale as <leader>uW above. Quick capture and the
+-- command palette were registered only by capture.setup() / palette.setup(),
+-- i.e. Tier 2, so from a non-markdown buffer (startup screen, a Lua file, a
+-- terminal) these lhs did not exist at all -- which defeats the point of a
+-- "quick capture from anywhere" and of a global command palette. Tier 2
+-- re-registers the identical lhs with the identical action, so this only
+-- closes the pre-markdown window. `palette.open` is reached through the lazy
+-- proxy above so the queued register_* calls are replayed first.
+keymap("n", "<leader>vQ", function()
+  require("andrew.vault.capture").capture_to_daily()
+end, opts("Vault: quick capture to daily log"))
+keymap("n", "<leader>vi", function()
+  require("andrew.vault.capture").capture_to_inbox()
+end, opts("Vault: capture to inbox"))
+keymap("n", "<leader>v?", function()
+  palette.open()
+end, opts("Vault: command palette"))
+
 -- Template group: <leader>vt
 keymap("n", "<leader>vtn", function()
   M.new_note()
@@ -194,69 +219,93 @@ vim.api.nvim_create_autocmd("FileType", {
   pattern = "markdown",
   once = true,
   callback = function(ev)
-    -- Highlight infrastructure (must load before highlight modules)
+    -- Phase A (synchronous): highlight-critical modules only, so highlights
+    -- paint immediately on the first markdown buffer.
     require("andrew.vault.colors").setup()
     require("andrew.vault.highlight_coordinator").setup()
-
-    -- Core navigation & editing
-    require("andrew.vault.wikilinks").setup()
-    require("andrew.vault.backlinks").setup()
-    require("andrew.vault.navigate").setup()
-    require("andrew.vault.search").setup()
-    require("andrew.vault.tags").setup()
-    require("andrew.vault.frontmatter").setup()
-    -- footnotes moved to Tier 3 (lazy commands)
-
-    -- Highlight modules (depend on coordinator)
     require("andrew.vault.wikilink_highlights").setup()
     require("andrew.vault.tag_highlights").setup()
     require("andrew.vault.inline_fields").setup()
     require("andrew.vault.highlights").setup()
 
-    -- Persistent autocmd features (BufReadPost, BufWritePre, BufEnter, etc.)
-    require("andrew.vault.frecency").setup()
-    require("andrew.vault.pickers").setup()
-    require("andrew.vault.embed").setup()
-    require("andrew.vault.autolink").setup()
-    require("andrew.vault.blockid").setup()
-    require("andrew.vault.callout_folds").setup()
-    require("andrew.vault.autosave").setup()
-    require("andrew.vault.linkdiag").setup()
-    require("andrew.vault.breadcrumbs").setup()
-    require("andrew.vault.autofile").setup()
-    require("andrew.vault.task_hierarchy").setup()
-    require("andrew.vault.task_notify").setup()
-    -- calendar moved to Tier 3 (lazy commands, loaded via navigate.lua)
-
-    -- Editing features
-    require("andrew.vault.outline").setup()
-    -- linkcheck, extract, rename moved to Tier 3 (lazy commands)
-    require("andrew.vault.recent").setup()
-    require("andrew.vault.preview").setup()
-    require("andrew.vault.images").setup()
-    -- pins moved to Tier 3 (lazy commands)
-    require("andrew.vault.capture").setup()
-    require("andrew.vault.quicktask").setup()
-    -- export, graph, connections, frontmatter_editor, unlinked moved to Tier 3 (lazy commands)
-
-    -- Consolidated event dispatcher (after all modules with BufEnter/TextChanged are loaded)
-    require("andrew.vault.event_dispatch").setup()
-
-    -- Prioritized work scheduler (after event_dispatch so IDLE autocmd fires after dispatches)
-    require("andrew.vault.work_scheduler").setup()
-
-    -- Request coalescer (deduplicates concurrent identical operations)
-    require("andrew.vault.request_coalescer").configure(config.coalescer)
-
-    -- Command palette (after all keymaps/commands are registered)
-    -- Accessing palette.setup triggers the lazy proxy to require + replay queued registrations
-    palette.setup()
-
-    -- Re-trigger autocmds so modules catch the first markdown buffer
+    -- Phase B (deferred): every other module's require+setup is moved off the
+    -- blocking first-open path into a scheduled tick.  event_dispatch.setup()
+    -- re-pulls most of these requires anyway, so the win is timing (not fewer
+    -- loads): the ~15ms of require self-time runs after the first paint.
     vim.schedule(function()
+      -- Core navigation & editing
+      require("andrew.vault.wikilinks").setup()
+      require("andrew.vault.backlinks").setup()
+      require("andrew.vault.navigate").setup()
+      require("andrew.vault.search").setup()
+      require("andrew.vault.tags").setup()
+      require("andrew.vault.frontmatter").setup()
+      -- footnotes moved to Tier 3 (lazy commands)
+
+      -- Persistent autocmd features (BufReadPost, BufWritePre, BufEnter, etc.)
+      require("andrew.vault.frecency").setup()
+      require("andrew.vault.pickers").setup()
+      require("andrew.vault.embed").setup()
+      require("andrew.vault.autolink").setup()
+      require("andrew.vault.blockid").setup()
+      require("andrew.vault.callout_folds").setup()
+      require("andrew.vault.autosave").setup()
+      require("andrew.vault.linkdiag").setup()
+      require("andrew.vault.breadcrumbs").setup()
+      require("andrew.vault.autofile").setup()
+      require("andrew.vault.task_hierarchy").setup()
+      require("andrew.vault.task_notify").setup()
+      -- calendar moved to Tier 3 (lazy commands, loaded via navigate.lua)
+
+      -- Editing features
+      require("andrew.vault.outline").setup()
+      -- query moved to Tier 3 (lazy commands)
+      -- linkcheck, extract, rename moved to Tier 3 (lazy commands)
+      require("andrew.vault.recent").setup()
+      require("andrew.vault.preview").setup()
+      require("andrew.vault.images").setup()
+      -- pins moved to Tier 3 (lazy commands)
+      require("andrew.vault.capture").setup()
+      require("andrew.vault.quicktask").setup()
+      require("andrew.vault.readable_width").setup()
+      -- export, graph, connections, frontmatter_editor, unlinked moved to Tier 3 (lazy commands)
+
+      -- Consolidated event dispatcher (after all modules with BufEnter/TextChanged are loaded)
+      require("andrew.vault.event_dispatch").setup()
+
+      -- Prioritized work scheduler (after event_dispatch so IDLE autocmd fires after dispatches)
+      require("andrew.vault.work_scheduler").setup()
+
+      -- Request coalescer (deduplicates concurrent identical operations)
+      require("andrew.vault.request_coalescer").configure(config.coalescer)
+
+      -- Command palette (after all keymaps/commands are registered)
+      -- Accessing palette.setup triggers the lazy proxy to require + replay queued registrations
+      palette.setup()
+
+      -- Re-trigger autocmds so deferred modules catch the first markdown buffer.
+      -- Runs AFTER event_dispatch.setup() so its FileType/BufEnter autocmds exist.
+      -- BufEnter is included because highlight_coordinator renders on BufEnter
+      -- (not FileType/BufReadPost), so the already-open first buffer gets its
+      -- highlight render scheduled.
+      --
+      -- Inside nvim_buf_call, NOT bare. `buffer = ev.buf` only sets <abuf>;
+      -- it does not make ev.buf current, and everything downstream reads
+      -- the CURRENT buffer/window -- ftplugin/markdown.lua's `vim.wo.wrap`,
+      -- `vim.wo.spell`, `vim.wo.conceallevel`, its ~140 buffer-local maps.
+      -- The first markdown buffer of a session is frequently not the current
+      -- one: an LSP hover float is a markdown buffer, and a tick later the
+      -- cursor is still in the code window. Every hover in a fresh session
+      -- therefore turned wrap, spell and conceallevel=2 on in the Fortran
+      -- window and bound `j`/`k`/`o` markdown motions there. nvim_buf_call
+      -- runs the re-fire with ev.buf current (in its window, or the autocmd
+      -- window when it has none), so the options land where they belong.
       if vim.api.nvim_buf_is_valid(ev.buf) then
-        vim.api.nvim_exec_autocmds("FileType", { buffer = ev.buf, modeline = false })
-        vim.api.nvim_exec_autocmds("BufReadPost", { buffer = ev.buf, modeline = false })
+        vim.api.nvim_buf_call(ev.buf, function()
+          vim.api.nvim_exec_autocmds("FileType", { buffer = ev.buf, modeline = false })
+          vim.api.nvim_exec_autocmds("BufReadPost", { buffer = ev.buf, modeline = false })
+          vim.api.nvim_exec_autocmds("BufEnter", { buffer = ev.buf, modeline = false })
+        end)
       end
     end)
   end,
@@ -270,9 +319,14 @@ local function lazy_mod(mod_path)
   local mod, loaded
   return function()
     if not loaded then
+      -- Latch `loaded` only on success. Setting it before the require meant a
+      -- module that failed to load poisoned the memo: `mod` stayed nil and
+      -- every later call through this stub turned the real error into an
+      -- opaque "attempt to index a nil value" at the command's call site.
+      local m = require(mod_path)
+      if m.setup then m.setup() end
+      mod = m
       loaded = true
-      mod = require(mod_path)
-      if mod.setup then mod.setup() end
     end
     return mod
   end
@@ -341,7 +395,7 @@ vim.api.nvim_create_user_command("VaultTaskToggle", function(a)
 end, { bang = true, desc = "Cycle task checkbox state (! = reverse)" })
 keymap("n", "<leader>vxo", function() _tasks().tasks() end, opts("Tasks: open tasks"))
 keymap("n", "<leader>vxa", function() _tasks().tasks_all() end, opts("Tasks: all tasks"))
-keymap("n", "<leader>vxs", function() _tasks().tasks_by_state() end, opts("Tasks: by state"))
+keymap("n", "<leader>vxs", function() _tasks().tasks_by_state(" ") end, opts("Tasks: by state"))
 keymap("n", "<leader>vxt", function() _tasks().cycle_task("forward") end, opts("Tasks: toggle forward"))
 keymap("n", "<leader>vxT", function() _tasks().cycle_task("backward") end, opts("Tasks: toggle backward"))
 
@@ -365,12 +419,53 @@ vim.api.nvim_create_user_command("VaultTemplateReload", function()
   _utpl().reload()
 end, { desc = "Reload user templates" })
 vim.api.nvim_create_user_command("VaultTemplateEdit", function(a)
-  _utpl() -- setup creates real command
-  vim.cmd("VaultTemplateEdit " .. (a.args or ""))
+  local utpl = _utpl()
+  local templates = utpl.list()
+  if #templates == 0 then
+    notify.warn("no user templates found in " .. utpl.templates_dir())
+    return
+  end
+  local function open_template(tpl)
+    vim.cmd("edit " .. vim.fn.fnameescape(tpl.source_path))
+  end
+  local arg = a.args and vim.trim(a.args) or ""
+  if arg ~= "" then
+    for _, tpl in ipairs(templates) do
+      if tpl.name == arg then
+        open_template(tpl)
+        return
+      end
+    end
+    notify.warn("unknown template '" .. arg .. "'")
+    return
+  end
+  local names = {}
+  for _, tpl in ipairs(templates) do names[#names + 1] = tpl.name end
+  vim.ui.select(names, { prompt = "Edit template" }, function(choice)
+    if not choice then return end
+    for _, tpl in ipairs(templates) do
+      if tpl.name == choice then
+        open_template(tpl)
+        return
+      end
+    end
+  end)
 end, { nargs = "?", desc = "Edit a user template" })
 vim.api.nvim_create_user_command("VaultTemplateList", function()
-  _utpl() -- setup creates real command
-  vim.cmd("VaultTemplateList")
+  local utpl = _utpl()
+  local templates = utpl.list()
+  local lines = {
+    "User Templates (" .. utpl.templates_dir() .. ")",
+    string.rep("=", config.ui.status_separator_width),
+  }
+  if #templates == 0 then
+    lines[#lines + 1] = "(none)"
+  else
+    for _, tpl in ipairs(templates) do
+      lines[#lines + 1] = string.format("%-28s %s", tpl.name, tpl.desc or "")
+    end
+  end
+  notify.info_lines(lines)
 end, { desc = "List user templates" })
 
 -- Linkcheck
@@ -406,7 +501,7 @@ local _extract = lazy_mod("andrew.vault.extract")
 vim.api.nvim_create_user_command("VaultExtract", function()
   _extract().extract()
 end, { desc = "Extract selection to new vault note", range = true })
-keymap("v", "<leader>vex", function()
+keymap("x", "<leader>vex", function()
   local esc = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
   vim.api.nvim_feedkeys(esc, "nx", false)
   vim.schedule(function() _extract().extract() end)
@@ -469,16 +564,30 @@ vim.api.nvim_create_user_command("VaultMetaEdit", function(a)
     notify.info("usage: VaultMetaEdit [field] [value]")
     return
   end
-  _metaedit() -- ensure loaded
-  vim.cmd("VaultMetaEdit " .. a.args)
+  local field = table.remove(args, 1)
+  local raw_value = table.concat(args, " ")
+  _metaedit().set_field(field, require("andrew.vault.frontmatter_parser").parse_value(raw_value))
 end, { nargs = "+", desc = "Set a frontmatter field to a value" })
 vim.api.nvim_create_user_command("VaultMetaCycle", function(a)
-  _metaedit() -- ensure loaded
-  vim.cmd("VaultMetaCycle " .. a.args)
+  local field = vim.trim(a.args)
+  if field == "" then
+    notify.info("usage: VaultMetaCycle [field]")
+    return
+  end
+  local values = config[field .. "_values"]
+  if not values then
+    notify.warn("no known values for field '" .. field .. "'")
+    return
+  end
+  _metaedit().cycle_field(field, values)
 end, { nargs = 1, desc = "Cycle a frontmatter field through its known values" })
 vim.api.nvim_create_user_command("VaultMetaToggle", function(a)
-  _metaedit() -- ensure loaded
-  vim.cmd("VaultMetaToggle " .. a.args)
+  local field = vim.trim(a.args)
+  if field == "" then
+    notify.info("usage: VaultMetaToggle [field]")
+    return
+  end
+  _metaedit().toggle_field(field)
 end, { nargs = 1, desc = "Toggle a boolean frontmatter field" })
 keymap("n", "<leader>vms", function() _metaedit().cycle_field("status", config.status_values) end, opts("Meta: cycle status"))
 keymap("n", "<leader>vmp", function() _metaedit().cycle_field("priority", config.priority_values) end, opts("Meta: cycle priority"))
@@ -634,6 +743,39 @@ palette.register_command("VaultFootnoteOrphans", "Vault: find orphaned footnote 
 palette.register_keymap("<leader>mj", "Footnote: jump ref/def", "Embed", function() _footnotes().jump() end, true)
 palette.register_keymap("<leader>mn", "Footnote: list all", "Embed", function() _footnotes().list() end, true)
 
+-- Query (dataview-style) blocks
+local _query = lazy_mod("andrew.vault.query")
+vim.api.nvim_create_user_command("VaultQuery", function()
+  _query().render_block()
+end, { desc = "Render vault query under cursor" })
+vim.api.nvim_create_user_command("VaultQueryAll", function()
+  _query().render_all()
+end, { desc = "Render all vault queries in buffer" })
+vim.api.nvim_create_user_command("VaultQueryClear", function()
+  _query().clear_block()
+end, { desc = "Clear rendered output under cursor" })
+vim.api.nvim_create_user_command("VaultQueryClearAll", function()
+  _query().clear_all()
+end, { desc = "Clear all rendered output in buffer" })
+vim.api.nvim_create_user_command("VaultQueryToggle", function()
+  _query().toggle_block()
+end, { desc = "Toggle vault query output under cursor" })
+vim.api.nvim_create_user_command("VaultQueryRebuild", function()
+  _query().rebuild_index()
+end, { desc = "Rebuild vault query index" })
+keymap("n", "<leader>vqr", function() _query().render_block() end, opts("Query: render"))
+keymap("n", "<leader>vqa", function() _query().render_all() end, opts("Query: render all"))
+keymap("n", "<leader>vqc", function() _query().clear_block() end, opts("Query: clear output"))
+keymap("n", "<leader>vqx", function() _query().clear_all() end, opts("Query: clear all"))
+keymap("n", "<leader>vqq", function() _query().toggle_block() end, opts("Query: toggle"))
+keymap("n", "<leader>vqi", function() _query().rebuild_index() end, opts("Query: rebuild index"))
+palette.register_command("VaultQuery", "Render vault query under cursor", "Search", function() _query().render_block() end, "<leader>vqr")
+palette.register_command("VaultQueryAll", "Render all vault queries in buffer", "Search", function() _query().render_all() end, "<leader>vqa")
+palette.register_command("VaultQueryClear", "Clear rendered output under cursor", "Search", function() _query().clear_block() end, "<leader>vqc")
+palette.register_command("VaultQueryClearAll", "Clear all rendered output in buffer", "Search", function() _query().clear_all() end, "<leader>vqx")
+palette.register_command("VaultQueryToggle", "Toggle vault query output under cursor", "Search", function() _query().toggle_block() end, "<leader>vqq")
+palette.register_command("VaultQueryRebuild", "Rebuild vault query index", "Search", function() _query().rebuild_index() end, "<leader>vqi")
+
 -- Vault switcher
 vim.api.nvim_create_user_command("VaultSwitch", function()
   engine.pick_vault()
@@ -672,6 +814,14 @@ vim.api.nvim_create_autocmd({ "BufWritePost", "FileChangedShellPost", "BufDelete
   callback = function(ev)
     local bufpath = vim.api.nvim_buf_get_name(ev.buf)
     if engine.is_vault_buf(ev.buf) then
+      -- A real save (BufWritePost) indexes synchronously below AND triggers a
+      -- redundant fs-watcher echo. Register the self-write so the watcher
+      -- coalesces its echo. Do NOT register for external/delete events
+      -- (FileChangedShellPost/BufDelete/BufWipeout) — those must flow through
+      -- the watcher normally.
+      if ev.event == "BufWritePost" then
+        engine.note_self_write(bufpath)
+      end
       engine.invalidate_caches({ scope = "files", paths = { bufpath } })
     end
   end,
@@ -721,14 +871,15 @@ engine.register_cache({
 })
 
 -- Section outlinks cache registration (done here for same reason as file_cache:
--- match_field requires vault_index, so engine cannot require it directly)
-local match_field = require("andrew.vault.search_filter.match_field")
+-- match_field requires vault_index, so engine cannot require it directly).
+-- Closures require match_field lazily so registration does not pull the
+-- vault_index tree into startup (invalidate/stats run only on demand).
 engine.register_cache({
   name = "section_outlinks",
   module = "andrew.vault.search_filter.match_field",
-  invalidate = function() match_field.clear_section_cache() end,
+  invalidate = function() require("andrew.vault.search_filter.match_field").clear_section_cache() end,
   stats = function()
-    return match_field.section_cache_stats()
+    return require("andrew.vault.search_filter.match_field").section_cache_stats()
   end,
 })
 
@@ -806,12 +957,12 @@ end, 200) -- Start 200ms after init, unblocking startup
 -- Vault Index Lifecycle
 -- ---------------------------------------------------------------------------
 
-local vi = require("andrew.vault.vault_index")
-
--- Initialize vault index for the current vault
+-- Initialize vault index for the current vault. The vault_index require is
+-- deferred (inside the defer_fn) so its dependency tree does not load at
+-- startup; later user commands require it lazily (O(1) after first load).
 if engine.vault_path and engine.vault_path ~= "" then
-  local idx = vi.get(engine.vault_path)
   vim.defer_fn(function()
+    local idx = require("andrew.vault.vault_index").get(engine.vault_path)
     idx:load() -- Load persisted index
     idx:build_async() -- Start incremental build
   end, 50) -- Load after initial render
@@ -826,7 +977,7 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
     -- Cancel all scheduled work before shutdown (drain IDLE items would be wasteful)
     require("andrew.vault.work_scheduler").teardown()
     engine.stop_fs_watcher()
-    local idx = vi.current()
+    local idx = require("andrew.vault.vault_index").current()
     if idx then
       idx:persist_now()
     end
@@ -836,7 +987,7 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
 })
 
 vim.api.nvim_create_user_command("VaultIndexRebuild", function()
-  local idx = vi.current()
+  local idx = require("andrew.vault.vault_index").current()
   if idx then
     idx:build_sync()
     notify.info("index rebuilt: " .. idx:file_count() .. " files")
@@ -846,7 +997,7 @@ vim.api.nvim_create_user_command("VaultIndexRebuild", function()
 end, { desc = "Rebuild vault index from scratch" })
 
 vim.api.nvim_create_user_command("VaultIndexStatus", function()
-  local idx = vi.current()
+  local idx = require("andrew.vault.vault_index").current()
   if not idx then
     notify.index_not_ready()
     return
@@ -882,7 +1033,7 @@ vim.api.nvim_create_user_command("VaultIndexStatus", function()
 end, { desc = "Show vault index status" })
 
 vim.api.nvim_create_user_command("VaultIndexWaiters", function()
-  local idx = vi.current()
+  local idx = require("andrew.vault.vault_index").current()
   if not idx then
     notify.warn("No active vault index")
     return
@@ -947,7 +1098,7 @@ vim.api.nvim_create_user_command("VaultWatcherStatus", function()
 end, { desc = "Show filesystem watcher status" })
 
 vim.api.nvim_create_user_command("VaultIndexCollisions", function()
-  local idx = vi.current()
+  local idx = require("andrew.vault.vault_index").current()
   if not idx then
     notify.index_not_ready()
     return
@@ -956,7 +1107,7 @@ vim.api.nvim_create_user_command("VaultIndexCollisions", function()
 end, { desc = "Show alias/name collisions in vault index" })
 
 vim.api.nvim_create_user_command("VaultIndexChunkDebug", function(a)
-  local idx = vi.current()
+  local idx = require("andrew.vault.vault_index").current()
   if not idx then
     notify.index_not_ready()
     return
@@ -1335,6 +1486,12 @@ palette.register_command("VaultMemoryProfile", "Open memory profiler dashboard",
 
 vim.api.nvim_create_user_command("VaultMemorySnapshot", function()
   local profiler = require("andrew.vault.memory_profiler")
+  -- snapshot() is a no-op while the profiler is off; report that instead of
+  -- claiming a snapshot was saved (matches :VaultMemoryProfile/:VaultMemoryDiff).
+  if not profiler.is_enabled() then
+    notify.warn("Vault profiler is disabled. Set config.profiler.enable = true")
+    return
+  end
   profiler.snapshot()
   notify.info("Memory snapshot saved")
 end, { desc = "Save current profiler state to snapshot stack" })
@@ -1348,6 +1505,11 @@ palette.register_command("VaultMemoryDiff", "Show memory profiler diff vs last s
 
 vim.api.nvim_create_user_command("VaultMemoryReset", function()
   local profiler = require("andrew.vault.memory_profiler")
+  -- reset_timings() is a no-op while the profiler is off; see VaultMemorySnapshot.
+  if not profiler.is_enabled() then
+    notify.warn("Vault profiler is disabled. Set config.profiler.enable = true")
+    return
+  end
   profiler.reset_timings()
   notify.info("Profiler timing windows reset")
 end, { desc = "Reset profiler timing windows and GC samples" })

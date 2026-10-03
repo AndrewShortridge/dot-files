@@ -4,6 +4,7 @@
 local config = require("andrew.vault.config")
 local engine = require("andrew.vault.engine")
 local date_utils = require("andrew.vault.date_utils")
+local hl_util = require("andrew.vault.hl_util")
 local filter_utils = require("andrew.vault.filter_utils")
 local task_utils = require("andrew.vault.task_utils")
 local notify = require("andrew.vault.notify")
@@ -100,8 +101,13 @@ local function render_timeline(data, state, width)
   local task_positions = {} ---@type { task: table, row: number }[]
 
   local today = engine.today()
-  local from_date = date_add(today, -state.range_days)
-  local to_date = date_add(today, state.range_days)
+  -- The visible window is centred on state.center_date (moved by h/l/H/L and
+  -- reset by t); `today` stays the reference for the OVERDUE/TODAY markers.
+  -- Using `today` for the window made all four scroll keys no-ops: they changed
+  -- state.center_date, which only ever reached the render CACHE KEY.
+  local center = state.center_date or today
+  local from_date = date_add(center, -state.range_days)
+  local to_date = date_add(center, state.range_days)
 
   -- Collect and sort all dated keys within range
   local overdue_dates = {}
@@ -276,7 +282,7 @@ local active = nil
 local function apply_highlights(buf, hl_list)
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   for _, hl in ipairs(hl_list) do
-    local ok, err = pcall(vim.api.nvim_buf_add_highlight, buf, ns, hl[1], hl[2], hl[3], hl[4])
+    local ok, err = hl_util.add_safe(buf, ns, hl[1], hl[2], hl[3], hl[4])
     if not ok then log.debug("highlight failed at row %d: %s", hl[2], err) end
   end
 end
@@ -487,6 +493,12 @@ end
 -- ---------------------------------------------------------------------------
 -- Setup
 -- ---------------------------------------------------------------------------
+
+--- Internals exposed for specs only (tests/audit_vaultc_tasks_spec.lua).
+--- Not part of the module's public API; do not call from plugin code.
+M._internal = {
+  render_timeline = render_timeline,
+}
 
 function M.setup()
   engine.register_cache({

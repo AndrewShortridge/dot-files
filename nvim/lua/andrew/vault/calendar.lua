@@ -116,6 +116,7 @@ end
 --- config.calendar.indicators. Each item carries a `kind` field for display.
 --- Returns "YYYY-MM-DD" -> { {text, file, abs_file, line, kind}, ... }
 ---@return table<string, table[]>
+local _deadline_cache
 local function scan_dates_from_index()
   local stop = require("andrew.vault.memory_profiler").start_timer("calendar.scan_dates")
   local idx = vault_index.current()
@@ -124,7 +125,7 @@ local function scan_dates_from_index()
     if idx then
       idx:wait_for_ready(function()
         vim.schedule(function()
-          _deadline_cache:invalidate()
+          _deadline_cache.invalidate()
         end)
       end, "calendar.indicators")
     end
@@ -144,7 +145,7 @@ end
 -- Module-level cache so deadline data persists across month navigation and
 -- calendar re-opens without re-scanning the entire vault each time.
 -- Uses gen_cache for automatic generation-based invalidation with partial support.
-local _deadline_cache = gen_cache.gen_cache(function(_idx)
+_deadline_cache = gen_cache.gen_cache(function(_idx)
   return scan_dates_from_index()
 end, {
   key_fn = function() return engine.vault_path end,

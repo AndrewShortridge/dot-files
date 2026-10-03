@@ -65,7 +65,11 @@ local function get_embed_channel(bufnr)
       local embed = require("andrew.vault.embed")
       local fc = embed.get_frame_cache(bufnr)
       if fc then fc:clear() end
-      embed.render_embeds_buf(bufnr, { silent = true })
+      -- force: an embed target changed on disk, so the already-rendered
+      -- ranges are stale.  Without force the region tracker still reports
+      -- them valid and render_embeds short-circuits ("embeds up to date"),
+      -- leaving the old transclusion on screen.
+      embed.render_embeds_buf(bufnr, { silent = true, force = true })
     end)
     st.channel = { send = send, handle = handle }
   end

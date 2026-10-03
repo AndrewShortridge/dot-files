@@ -72,11 +72,14 @@ end
 ---@return table row
 local function build_table_row(ast, page, current_page, eval_expr_fn)
   local row = {}
+  local col = 0
   if not ast.without_id then
-    table.insert(row, page_link(page))
+    col = col + 1
+    row[col] = page_link(page)
   end
   for _, f in ipairs(ast.fields or {}) do
-    table.insert(row, eval_expr_fn(f.expr, page, current_page))
+    col = col + 1
+    row[col] = eval_expr_fn(f.expr, page, current_page)
   end
   return row
 end

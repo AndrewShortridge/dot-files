@@ -78,6 +78,9 @@ Configured in `engine.lua` as `M.vault_path`.
 │       ├── <DomainName>.md   (Map of Content)
 │       └── (concept notes)
 ├── Library/            # Literature notes
+│   └── <PaperTitle>/
+│       ├── <PaperTitle>.md     (the literature note)
+│       └── (the paper PDF, added manually)
 ├── Methods/            # Methodology notes
 ├── People/             # Person notes
 └── Log/                # Daily logs and weekly reviews
@@ -99,7 +102,7 @@ All keybindings are in normal mode under the `<leader>v` prefix.
 | `<leader>vs` | Simulation | Creates a simulation note (LAMMPS or GEMMS) |
 | `<leader>va` | Analysis | Creates an analysis note under a project |
 | `<leader>vf` | Finding | Creates a finding note under a project |
-| `<leader>vl` | Literature | Creates a literature note in `Library/` |
+| `<leader>vl` | Literature | Creates a literature note in `Library/{title}/` |
 | `<leader>vp` | Project | Creates a new project dashboard in `Projects/` |
 | `<leader>vj` | Journal | Creates a journal entry under a project |
 | `<leader>vc` | Concept | Creates a concept note under a domain |
@@ -217,7 +220,46 @@ The index scans all `.md` files in the vault and extracts:
 
 The index is lazily built on first query and cached for 30 seconds before checking for staleness.
 
-**Skipped directories:** `.obsidian`, `.git`, `.trash`, `node_modules`
+**Skipped directories** (`config.index.skip_dirs`) — never walked, so their notes
+are absent from the index entirely: `.obsidian`, `.git`, `.trash`, `.vault-index`,
+`node_modules`.
+
+### Search Exclusions
+
+Separate from the skip list above, `config.search.exclude_dirs` names directories
+whose notes are indexed but never returned by a **search**. It defaults to
+`.obsidian` and `Templates`.
+
+The distinction matters. `skip_dirs` removes a directory from the index, which
+also removes it from wikilink resolution, backlinks, completion, tasks and the
+graph. That is right for `.obsidian` (it holds no `.md` files) but wrong for
+templates: a template is a real note you still want to open, link to with
+`[[Some Template]]`, and have `:VaultLinkCheck` report broken links inside. So
+templates stay indexed and are filtered out of search results only.
+
+Matching is case-insensitive and applies to any directory segment at any depth
+(`Projects/Templates/x.md` is excluded too). Only directory components are
+matched, so a note called `Templates.md` remains searchable. Set the list to `{}`
+to search everything.
+
+Applied at three layers, in `lua/andrew/vault/search_exclude.lua`:
+
+| Layer | Mechanism |
+|-------|-----------|
+| Index-backed search (`search_filter`, `search/advanced`, `search/live`) | `is_excluded()` / `filter_files()` |
+| Vault greps (`engine.rg_base_opts`, `search_filter/ripgrep`) | `--iglob "!**/X/**"` |
+| Vault fzf pickers (`engine.vault_search_fzf_opts`) | `file_ignore_patterns` |
+
+Note the picker split: `vault_search_fzf_opts()` excludes, plain
+`vault_fzf_opts()` does not. The latter backs backlinks, orphan lists and the
+broken-link report, where hiding template notes would hide real problems.
+
+The general (non-vault) pickers `<leader>ff`, `<leader><space>`, `<leader>/`,
+`<leader>fs` and `<leader>fc` apply the same exclusions, but only when the picker
+is running inside a vault — see `lua/andrew/utils/obsidian.lua`, which detects a
+vault by the presence of a `.obsidian` directory. `.obsidian` itself is also
+excluded unconditionally from the file picker's `fd` command, since that folder
+exists nowhere else.
 
 ### Rendering
 
@@ -262,7 +304,7 @@ Query results are displayed as virtual text (extmarks) directly below the code f
 |----------|--------|------|------------|
 | Concept Note | `Domains/{domain}/{name}` | `concept` | domain, maturity (Seed/Developing/Mature/Evergreen) |
 | Domain MOC | `Domains/{domain}/{domain}` | `domain` | domain, dataview queries for projects/methods/lit |
-| Literature Note | `Library/{sanitized_title}` | `literature` | authors, year, journal, doi, rating |
+| Literature Note | `Library/{sanitized_title}/{sanitized_title}` | `literature` | authors, year, journal, doi, rating |
 | Methodology Note | `Methods/{name}` | `methodology` | method_name, status (Experimental/Validated/Deprecated) |
 | Person Note | `People/{name}` | `person` | role, institution, email |
 

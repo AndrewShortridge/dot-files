@@ -90,6 +90,11 @@ M.embed = {
   -- Off-screen embeds render on scroll via WinScrolled handler.
   lazy = true,                -- enable viewport-restricted lazy rendering
   lazy_scroll_debounce_ms = 80, -- debounce for WinScrolled-triggered renders
+  -- Cap on image placements kept hidden (loaded but detached) per buffer when
+  -- scrolled off-screen. Hidden placements avoid recreate/retransmit on
+  -- scroll-back; beyond this cap the most-distant ones are fully closed and
+  -- their descriptors marked unrendered (the legacy recreate path).
+  max_hidden_placements = 24,
   sync = {
     enabled = true,           -- Enable live embed sync
     debounce_ms = 300,        -- Debounce for cross-file changes
@@ -132,6 +137,16 @@ M.footnotes = {
   border_width = 40,
 }
 
+
+-- ---------------------------------------------------------------------------
+-- Template variables (built-in {{date}} / {{time}} substitution formats)
+-- ---------------------------------------------------------------------------
+M.template_vars = {
+  --- Obsidian-style format for the {{date}} template variable.
+  date_format = "YYYY-MM-DD",
+  --- Obsidian-style format for the {{time}} template variable.
+  time_format = "HH:mm",
+}
 
 -- ---------------------------------------------------------------------------
 -- User templates (vault-side .md template files)
@@ -257,7 +272,7 @@ M.temporal_aliases = {
 -- Smart connections
 -- ---------------------------------------------------------------------------
 M.connections = {
-  cache_ttl = 60,       -- seconds before cached scores expire
+  cache_ttl = 60,       -- (legacy) cache validity is generation-based; this TTL is no longer consulted
   max_results = 30,     -- max related notes to show in picker
   score_batch_size = 200,  -- entries per yield in compute_async()
   weights = {
@@ -348,6 +363,13 @@ M.index = {
   -- Batch size for background parsing (files per vim.schedule tick).
   batch_size = 20,
 
+  -- Above this many loaded files, the load() derived rebuild yields cooperatively
+  -- to the event loop in batches of `batch_size` to avoid a startup main-thread
+  -- stall. load() still completes synchronously before returning (so _ready and
+  -- the build_async cold-start contract are preserved); it merely pumps libuv
+  -- between batches so the first paint/keystroke stays responsive on big vaults.
+  load_chunk_threshold = 500,
+
   -- Debounce interval (ms) for persisting index to disk after updates.
   persist_debounce_ms = 5000,
 
@@ -389,6 +411,14 @@ M.index = {
   -- Below this, the overhead of splitting/hashing/merging exceeds savings.
   min_chunk_lines = 20,
 
+  -- On first open of a vault file, warm its per-chunk parsed_data in the
+  -- background (work_scheduler IDLE) so the file's first save re-parses only the
+  -- touched chunk(s) instead of all of them. Post-load chunks carry no
+  -- parsed_data, so without this the first save of every opened file does a full
+  -- re-parse (3.8-7.7ms on large notes). Disk-read + idempotent + alignment-
+  -- guarded, so it never blocks open or corrupts the index.
+  warm_chunk_cache_on_open = true,
+
   -- If more than this fraction of chunks changed, fall back to full re-parse.
   -- Handles heading insertion/deletion cascading digest mismatches.
   fallback_threshold = 0.5,
@@ -417,6 +447,11 @@ M.completion = {
   -- responsive UI during builds. 50 is a good default for most systems.
   batch_size = 50,
 
+  -- Debounce interval (ms) before a completion source (re)builds its item
+  -- cache after a trigger/keystroke or vault-index invalidation. Lower = the
+  -- menu populates sooner after edits; higher = fewer rebuilds while typing.
+  debounce_ms = 100,
+
   -- Maximum seconds to suppress completion rebuilds while the vault index
   -- is building. After this timeout, rebuilds proceed regardless.
   index_build_timeout_secs = 30,
@@ -444,6 +479,27 @@ M.search = {
   -- to full vault ripgrep with post-filtering. This avoids hitting
   -- shell argument limits and is faster for large file sets.
   max_files_from = 500,
+
+  -- Directories whose notes are never returned by a vault SEARCH.
+  --
+  -- Matched case-insensitively against every directory segment of a note's
+  -- vault-relative path, at any depth (same bare-name semantics as
+  -- index.skip_dirs). The filename is never matched, so a note literally called
+  -- "Templates.md" stays searchable.
+  --
+  -- Deliberately distinct from index.skip_dirs above. skip_dirs drops a directory
+  -- from the index entirely -- which also drops it from wikilink resolution,
+  -- backlinks, completion, tasks and the graph. Template notes are real notes:
+  -- you still want to open them, link to them, and have :VaultLinkCheck report
+  -- broken links inside them. So they stay indexed and are filtered out of search
+  -- results only. `.obsidian` appears in BOTH lists: skip_dirs keeps it out of the
+  -- index (it holds no .md files), this keeps its JSON/CSS/JS out of file pickers.
+  --
+  -- Case-insensitivity is load-bearing: user_templates.dir says "templates" while
+  -- the folder on disk is "Templates".
+  --
+  -- Set to {} to search everything.
+  exclude_dirs = { ".obsidian", "Templates" },
 
   -- Known field names shown in completion (auto-extended from vault index).
   -- These are recognized by the tokenizer as field prefixes for field:value
@@ -536,6 +592,10 @@ M.prefilter = {
   precomputed_sets = true,        -- Index-level precomputed sets
   bloom_filter = true,            -- Bloom filter for tag membership pre-checks
   min_query_length = 2,           -- CharBag only useful for queries >= 2 chars
+  -- The blink fuzzy matcher re-filters returned lists when both incomplete
+  -- flags are false, so the Lua CharBag sweep is redundant-for-correctness.
+  -- Only run it once the candidate list is large enough to be worth narrowing.
+  min_candidates_for_charbag = 500,
 }
 
 -- ---------------------------------------------------------------------------
@@ -613,7 +673,9 @@ M.carry_forward = {
   scan_sections = {},
 
   -- Sections to SKIP when scanning for tasks.
-  skip_sections = { "Completed Today", "Tomorrow's Priorities" },
+  -- "Habits" is skipped so the daily habit checklist (which resets every day)
+  -- is not dragged into the next day's "Carried Forward" block.
+  skip_sections = { "Completed Today", "Tomorrow's Priorities", "Habits" },
 }
 
 -- ---------------------------------------------------------------------------
@@ -638,6 +700,31 @@ M.calendar = {
 
   -- Whether to show note creation dates as calendar indicators.
   show_created = false,
+}
+
+-- ---------------------------------------------------------------------------
+-- Readable line length (Obsidian-style centred text column)
+-- ---------------------------------------------------------------------------
+M.readable_width = {
+  -- Cap the markdown TEXT area at this many columns, centring it with scratch
+  -- pad windows. Nvim has no native max-wrap-width ('textwidth' is hard wrap
+  -- only), so this is implemented with real windows -- see readable_width.lua.
+  columns = 100,
+
+  -- Off by default: markdown buffers open at full width and nothing ever
+  -- re-centres them on its own. Press <leader>uW (or :VaultReadableWidth) to
+  -- turn the centred column on for the session.
+  enabled = false,
+
+  -- Filetypes eligible for centring.
+  filetypes = { "markdown" },
+
+  -- Don't bother padding unless each side gets at least this many columns;
+  -- below it, every column goes back to the text.
+  min_pad_width = 6,
+
+  -- Cancel-and-reschedule delay, so a drag-resize collapses into one pass.
+  debounce_ms = 30,
 }
 
 -- ---------------------------------------------------------------------------
@@ -721,6 +808,20 @@ M.url_validation = {
 }
 
 -- ---------------------------------------------------------------------------
+-- LaTeX cache warming (render-markdown latex2text)
+-- ---------------------------------------------------------------------------
+-- Pre-converts $...$ / $$...$$ equations off the main thread on buffer open
+-- so render-markdown.nvim's per-session latex2text cache is hot before the
+-- user scrolls into a math-heavy note (the plugin otherwise blocks the main
+-- thread with a synchronous task:wait() on first render).
+
+M.latex_warm = {
+  enabled = true,         -- async pre-warm of latex2text cache on buffer open
+  max_concurrent = 4,     -- cap simultaneous latex2text processes
+  max_equations = 200,    -- safety cap on equations warmed per buffer
+}
+
+-- ---------------------------------------------------------------------------
 -- Kanban board
 -- ---------------------------------------------------------------------------
 
@@ -759,7 +860,9 @@ M.hierarchy = {
 -- ---------------------------------------------------------------------------
 
 M.task_notify = {
-  enabled = true,
+  -- Pop-up notification of overdue tasks on entering a vault markdown buffer.
+  -- Disabled: the count is still available on demand via :VaultOverdue.
+  enabled = false,
   check_interval = 300,
   snooze_minutes = 60,
   system_notify = false,
@@ -824,6 +927,8 @@ M.cache = {
   image_path_max = 500,
   fold_state_max = 500,
   file_content_max = 100,
+  query_result_max = 64,
+  query_ast_max = 128,   -- Max cached DQL ASTs (content-keyed, generation-independent)
 
   -- Memory-weighted byte budgets (total: 15 MB)
   file_content_bytes = 5 * 1024 * 1024,       -- 5 MB
@@ -900,6 +1005,10 @@ M.pipeline = {
   content_dedup = true,              -- Skip re-tokenizing lines with unchanged text
   use_lpeg = true,                   -- Use LPEG tokenizer (false = fallback to string.find loop)
   batch_extmarks = true,             -- Use nvim_call_atomic for extmark operations
+  bounded_dirty = true,              -- On line-count edits, shift line-keyed caches + reparse a bounded region (false = full reparse)
+  code_excl_backtick_precheck = true, -- Skip the markdown_inline (code_span) reparse on the incremental code-exclusion path when the dirty span has no backtick and no cached span overlaps it (false = always rescan inline)
+  code_excl_fence_precheck = true,   -- Skip the markdown code-BLOCK reparse (a whole-buffer markdown parser:parse() that transitively reparses injected markdown_inline trees, O(file) per keystroke) on the incremental code-exclusion path when no edited line is a fence/indented-code boundary and the edit did not fall inside a cached block (false = always reparse blocks)
+  skip_empty_runs = true,            -- Short-circuit a no-op scroll run (empty dirty list, no shifts, semantic cache current) before the line_parse/semantic/apply_diff walks (false = always run the full pipeline)
 }
 
 -- ---------------------------------------------------------------------------
@@ -912,6 +1021,8 @@ M.viewport = {
   render_margin = 5, -- Extra lines around viewport for lightweight renders (autolink, footnotes)
   prefetch_multiplier = 1.0, -- Prefetch zone size as viewport height multiple (1.0 = one full viewport above/below)
   prefetch_debounce_ms = 400, -- Delay before prefetch zone rendering (ms, matches Zed's invisible range delay)
+  scroll_throttle_ms = 24, -- Throttle visible-zone re-render on continuous scroll (small enough to avoid visible lag)
+  scroll_zone_throttle_ms = 100, -- Throttle Phase-2 prefetch-zone math (zone diff + dispatch) on continuous scroll; actual prefetch is still prefetch_debounce_ms-debounced
 }
 
 -- ---------------------------------------------------------------------------

@@ -1,1 +1,14 @@
 lazy/
+# Compiled spell files (auto-generated from .add files)
+spell/*.spl
+
+# Vault index cache (auto-generated)
+.vault-index/
+**/.vault-index/
+
+# Reference copy of the LazyVim setup shipped by Omarchy 4 (not part of this config)
+Lazy-Nvim-Omarchy/
+
+# Apptainer images: 1.5GB build artifacts, rebuilt via container/build.sh
+container/*.sif
+container/*.sif.*

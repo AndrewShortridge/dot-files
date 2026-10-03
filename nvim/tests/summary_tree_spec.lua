@@ -1,39 +1,9 @@
 -- Unit tests for lua/andrew/vault/summary_tree.lua
 -- Run with: nvim --headless -u NONE -l tests/summary_tree_spec.lua
 
-local passed = 0
-local failed = 0
-local errors = {}
-
-local function test(name, fn)
-  local ok, err = pcall(fn)
-  if ok then
-    passed = passed + 1
-    print("  PASS: " .. name)
-  else
-    failed = failed + 1
-    table.insert(errors, { name = name, err = tostring(err) })
-    print("  FAIL: " .. name .. " -> " .. tostring(err))
-  end
-end
-
-local function assert_eq(got, expected, msg)
-  if got ~= expected then
-    error((msg or "") .. " expected: " .. vim.inspect(expected) .. ", got: " .. vim.inspect(got))
-  end
-end
-
-local function assert_true(val, msg)
-  if not val then
-    error((msg or "assertion failed") .. " (got falsy)")
-  end
-end
-
-local function assert_nil(val, msg)
-  if val ~= nil then
-    error((msg or "expected nil") .. ", got: " .. vim.inspect(val))
-  end
-end
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+local test, assert_eq, assert_true, assert_nil =
+  _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
 local function assert_table_eq(got, expected, msg)
   local g = vim.inspect(got)
@@ -497,15 +467,4 @@ end)
 -- ============================================================================
 -- Summary
 -- ============================================================================
-print("\n=== Results ===")
-print(string.format("  %d passed, %d failed", passed, failed))
-if #errors > 0 then
-  print("\nFailures:")
-  for _, e in ipairs(errors) do
-    print("  " .. e.name .. ": " .. e.err)
-  end
-end
-
-if failed > 0 then
-  os.exit(1)
-end
+_H.finish({ style = "results", exit = "os" })

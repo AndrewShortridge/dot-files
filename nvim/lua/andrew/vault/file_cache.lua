@@ -43,11 +43,19 @@ function M.read(path, max_lines)
 
   local mtime = stat.mtime.sec
 
-  -- Check cache (only use cached result if no max_lines or cached without limit)
+  -- Check cache. A cached UNLIMITED read can also serve a limited read by
+  -- slicing (always returns a FRESH table so downstream truncated-marker
+  -- appends never mutate the cached array).
   local cached = _cache:get(path)
-  if cached and cached.mtime == mtime and not max_lines then
+  if cached and cached.mtime == mtime then
     _hits = _hits + 1
-    return cached.lines, mtime
+    if not max_lines then
+      return cached.lines, mtime
+    end
+    local n = math.min(#cached.lines, max_lines)
+    local capped = {}
+    for i = 1, n do capped[i] = cached.lines[i] end
+    return capped, mtime
   end
 
   -- Cache miss — read from disk

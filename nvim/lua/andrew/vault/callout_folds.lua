@@ -206,20 +206,23 @@ end
 --- Clear all cached fold states for the current file (or all files).
 ---@param all? boolean if true, clear the entire cache
 function M.clear(all)
-  local db = load_db()
-
   if all then
-    db = {}
-    save_db(db, true)
+    save_db({}, true)
     notify.info("cleared all callout fold states")
     return
   end
 
+  -- Guard BEFORE load_db(). load_db() is the cached store loader, so calling it
+  -- from a non-vault buffer primed the cache for the active vault, and the
+  -- VimLeavePre teardown() then wrote that (empty) db back out -- creating a
+  -- .vault-callout-folds.json in a vault the user never edited a note in.
   local bufnr = vim.api.nvim_get_current_buf()
   if not engine.is_vault_buf(bufnr) then
     notify.not_vault_file()
     return
   end
+
+  local db = load_db()
   local fname = vim.api.nvim_buf_get_name(bufnr)
 
   local rel = engine.vault_relative(fname)
@@ -342,7 +345,7 @@ function M.setup()
       get_capacity = function() return nil end,
       get_hits = function() return _all_blocks_check._hits end,
       get_misses = function() return _all_blocks_check._misses end,
-      get_evictions = function() return nil end,
+      get_evictions = function() return 0 end, -- lru-less check cache; never evicts
     })
     profiler.register_cache({
       name = "callout_folds_suffixed",
@@ -350,7 +353,7 @@ function M.setup()
       get_capacity = function() return nil end,
       get_hits = function() return _suffixed_blocks_check._hits end,
       get_misses = function() return _suffixed_blocks_check._misses end,
-      get_evictions = function() return nil end,
+      get_evictions = function() return 0 end, -- lru-less check cache; never evicts
     })
   end
 

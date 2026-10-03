@@ -14,19 +14,26 @@
 - [Navigation & Window Management](#navigation--window-management)
 - [Find / Files (`<leader>f`)](#find--files-leaderf)
 - [Explorer (`<leader>e`)](#explorer-leadere)
-- [Git Hunks (`<leader>h`)](#git-hunks-leaderh)
+- [Git (`<leader>g`)](#git-leaderg)
+- [Git Hunks (`<leader>gh`)](#git-hunks-leadergh)
+- [Diff Overlay (mini.diff)](#diff-overlay-minidiff)
 - [LSP & Code Actions (`<leader>c`, `g*`)](#lsp--code-actions-leaderc-g)
-- [Rust / Refactor (`<leader>r`)](#rust--refactor-leaderr)
+- [Rust (`<leader>r`)](#rust-leaderr)
 - [Debug (`<leader>d`)](#debug-leaderd)
-- [Lint (`<leader>l`)](#lint-leaderl)
+- [Lint (`<leader>L`)](#lint-leaderl)
+  - [Fortran symbols and call sites](#fortran-symbols-and-call-sites)
+  - [Fortran references](#fortran-references)
+  - [Fortran capitalization rule](#fortran-capitalization-rule)
 - [Type Check (`<leader>a`)](#type-check-leadera)
 - [Trouble / Diagnostics (`<leader>x`)](#trouble--diagnostics-leaderx)
 - [Make / Build (`<leader>m`)](#make--build-leaderm)
 - [OpenCode AI (`<leader>o`)](#opencode-ai-leadero)
+- [Quit / Session (`<leader>q`)](#quit--session-leaderq)
 - [Vault (`<leader>v`)](#vault-leaderv)
 - [Markdown Editing (`<leader>m` in .md files)](#markdown-editing-leaderm-in-md-files)
 - [Bracket Navigation (`]`/`[`)](#bracket-navigation)
 - [Text Objects](#text-objects)
+- [Motions / Jumps (flash.nvim)](#motions--jumps-flashnvim)
 - [Substitute / Surround / Comment](#substitute--surround--comment)
 - [Completion (Insert Mode)](#completion-insert-mode)
 - [TeX / LaTeX](#tex--latex)
@@ -41,20 +48,32 @@
 
 Press `<Space>` then a letter to enter a group. Which-Key shows available sub-keys.
 
+**Icons.** Groups and mappings show nerd-font icons. Most come from which-key's own
+built-in rule table (LazyVim defines no which-key icons of its own -- it relies on the
+same built-ins). `lua/andrew/plugins/which-key.lua` closes the two gaps those leave:
+groups whose names match no built-in pattern get an explicit `icon`, and an
+`icons.rules` list maps this config's own vocabulary (template/task/query/meta/check/
+vault/...) onto glyphs, so new mappings pick up an icon automatically from their
+description. Rules are matched top-down, first hit wins, so specific patterns are
+listed before generic ones. Covered by `tests/which_key_icons_spec.lua`.
+
 | Prefix | Group | Description |
 |--------|-------|-------------|
 | `<leader>a` | Type Check | Run type checkers by language |
 | `<leader>c` | Code Actions | LSP code actions |
-| `<leader>d` | Debug | DAP debugger controls |
+| `<leader>c` | Code | Code actions, codelens, rename, format, diagnostics |
+| `<leader>d` | Debug | DAP debugger controls (no longer shadowed by a diagnostic float) |
 | `<leader>e` | Explorer | Yazi file explorer |
 | `<leader>f` | Find/Files | fzf-lua fuzzy finder |
 | `<leader>g` | Git | Git operations |
-| `<leader>h` | Git Hunks | Gitsigns hunk operations |
+| `<leader>gh` | Hunks | Gitsigns hunk operations |
 | `<leader>l` | Lint | Linting commands |
 | `<leader>m` | Make/Build | Makefile build system (overridden to **Markdown** in `.md` files) |
-| `<leader>o` | OpenCode | AI assistant (OpenCode) |
+| `<leader>o` | _(unused)_ | Was OpenCode AI; keymaps removed 2026-09-06 |
+| `<leader>q` | Quit/Session | Quit all, save and restore sessions |
 | `<leader>r` | Rust/Refactor | LSP rename + Rust-specific in `.rs` files |
 | `<leader>s` | Split/Window | Window split management |
+| `<leader><Tab>` | Tabs | LazyVim tab group (new/close/next/prev/first/last/only) |
 | `<leader>t` | Tab/Terminal | Tabs and floating terminal |
 | `<leader>T` | Table Mode | Markdown table editing |
 | `<leader>v` | Vault | Obsidian vault operations (70+ keymaps) |
@@ -85,8 +104,8 @@ Press `<Space>` then a letter to enter a group. Which-Key shows available sub-ke
 |------|-----|-------------|------------|
 | i | `jk` | Exit insert mode | Type `jk` quickly instead of reaching for `Esc` |
 | n | `<leader>nh` | Clear search highlights | After searching with `/`, press `Space nh` to remove yellow highlights |
-| n | `<leader>+` | Increment number under cursor | Place cursor on a number, press `Space +` to increase it |
-| n | `<leader>-` | Decrement number under cursor | Place cursor on a number, press `Space -` to decrease it |
+| n | `<leader>na` | Increment number under cursor | Place cursor on a number, press `Space n a` to increase it |
+| n | `<leader>nx` | Decrement number under cursor | Place cursor on a number, press `Space n x` to decrease it |
 
 **Auto-behavior:** Yanked text is highlighted for 300ms after `y` operations (TextYankPost autocmd).
 
@@ -131,6 +150,22 @@ Seamlessly move between Neovim splits and tmux panes with the same keys:
 | n | `<leader>tp` | Previous tab | Switch to the tab on the left |
 | n | `<leader>tf` | Open current buffer in new tab | Useful for temporarily maximizing a file |
 | n | `<leader>tt` | Toggle floating terminal | Opens/closes a persistent floating terminal window |
+
+### Tabs -- LazyVim group (`<leader><Tab>`)
+
+**Source:** `lua/andrew/core/keymaps.lua`
+
+The `<leader><Tab>` group is LazyVim's, ported whole. It overlaps the older `<leader>t` keys above -- both work. `<leader><Tab>o` (close every other tab) and the first/last jumps have no `<leader>t` equivalent. Careful: `<leader><Tab>f` is *First Tab*, while `<leader>tf` opens the current buffer in a new tab.
+
+| Mode | Key | Description | How to Use |
+|------|-----|-------------|------------|
+| n | `<leader><Tab><Tab>` | New Tab | Opens a blank new tab (same as `<leader>to`) |
+| n | `<leader><Tab>d` | Close Tab | Closes the active tab (same as `<leader>tx`) |
+| n | `<leader><Tab>o` | Close Other Tabs | Closes every tab except this one (`:tabonly`) |
+| n | `<leader><Tab>]` | Next Tab | Switch to the tab on the right (same as `<leader>tn`) |
+| n | `<leader><Tab>[` | Previous Tab | Switch to the tab on the left (same as `<leader>tp`) |
+| n | `<leader><Tab>f` | First Tab | Jump to the leftmost tab (`:tabfirst`) |
+| n | `<leader><Tab>l` | Last Tab | Jump to the rightmost tab (`:tablast`) |
 
 ### Terminal Mode
 
@@ -192,7 +227,39 @@ Inside Yazi: `<f1>` = help, `<C-s>` = grep in directory.
 
 ---
 
-## Git Hunks (`<leader>h`)
+## Git (`<leader>g`)
+
+**Source:** `lua/andrew/plugins/git.lua` (a spec fragment for snacks.nvim)
+
+Ported from LazyVim. Every key is a direct snacks.nvim call, so nothing depends
+on LazyVim's util module. Hunk operations live one level deeper, under
+[`<leader>gh`](#git-hunks-leadergh).
+
+| Mode | Key | Description | How to Use |
+|------|-----|-------------|------------|
+| n | `<leader>gg` | Lazygit (root dir) | Full lazygit TUI, opened at the git root |
+| n | `<leader>gG` | Lazygit (cwd) | Same, but rooted at the current working directory |
+| n | `<leader>gl` | Git log | Commit picker for the repo |
+| n | `<leader>gL` | Git log (cwd) | Commits touching the current working directory |
+| n | `<leader>gc` | Commits (fzf-lua) | Same idea as `gl`, through the fzf-lua UI |
+| n | `<leader>gf` | Current file history | Every commit that touched this file |
+| n | `<leader>gb` | Blame line | Commits behind the line under the cursor |
+| n | `<leader>gs` | Git status | Changed files, with a diff preview |
+| n | `<leader>gS` | Git stash | Browse stashes; `<CR>` applies one |
+| n | `<leader>gd` | Git diff (hunks) | Every unstaged hunk in the repo |
+| n | `<leader>gD` | Git diff (origin) | Diff against `origin`, grouped by file |
+| n, x | `<leader>gB` | Git browse (open) | Open the current line or selection on the remote host |
+| n, x | `<leader>gY` | Git browse (copy) | Copy that URL to the clipboard instead |
+
+**Conditional keys.** `<leader>gg` / `<leader>gG` appear only when the `lazygit`
+binary is on `$PATH` (it is). The GitHub keys `<leader>gi` `<leader>gI`
+(issues) and `<leader>gp` `<leader>gP` (pull requests) appear only when the
+`gh` binary is installed — it is **not**, so they are currently inactive.
+Install `gh` and restart to get them.
+
+---
+
+## Git Hunks (`<leader>gh`)
 
 **Source:** `lua/andrew/plugins/gitsigns.lua` (buffer-local on attach)
 
@@ -200,23 +267,96 @@ Use these to manage git changes line-by-line without leaving the editor:
 
 | Mode | Key | Description | How to Use |
 |------|-----|-------------|------------|
-| n | `]g` | Next git hunk | Jump to next changed section |
-| n | `[g` | Previous git hunk | Jump to previous changed section |
-| n | `<leader>hs` | Stage hunk | Stage the hunk under cursor for commit |
-| v | `<leader>hs` | Stage hunk (visual) | Stage only the selected lines |
-| n | `<leader>hr` | Reset hunk | Discard changes in hunk under cursor |
-| v | `<leader>hr` | Reset hunk (visual) | Discard only selected changed lines |
-| n | `<leader>hS` | Stage entire buffer | Stage all changes in current file |
-| n | `<leader>hR` | Reset entire buffer | Discard all changes in current file |
-| n | `<leader>hu` | Undo stage hunk | Unstage the last staged hunk |
-| n | `<leader>hp` | Preview hunk inline | Show diff preview of hunk in popup |
-| n | `<leader>hb` | Blame line (full) | Show full git blame for current line |
-| n | `<leader>hB` | Toggle line blame | Show/hide inline blame annotations |
-| n | `<leader>hd` | Diff this file | Open diff view for current file |
-| n | `<leader>hD` | Diff this against `~` | Diff against previous commit |
+| n | `]g` / `[g` | Next / previous hunk | Works in **every** filetype, markdown included |
+| n | `]h` / `[h` | Next / previous hunk | LazyVim's keys. **Not bound in markdown** — see the note below |
+| n | `]H` / `[H` | Last / first hunk | Jump straight to either end of the file |
+| n | `<leader>ghs` | Stage hunk | Stage the hunk under cursor for commit |
+| v | `<leader>ghs` | Stage hunk (visual) | Stage only the selected lines |
+| n | `<leader>ghr` | Reset hunk | Discard changes in hunk under cursor |
+| v | `<leader>ghr` | Reset hunk (visual) | Discard only selected changed lines |
+| n | `<leader>ghS` | Stage entire buffer | Stage all changes in current file |
+| n | `<leader>ghR` | Reset entire buffer | Discard all changes in current file |
+| n | `<leader>ghu` | Undo stage hunk | Unstage the last staged hunk |
+| n | `<leader>ghp` | Preview hunk inline | Show diff preview of hunk in popup |
+| n | `<leader>ghb` | Blame line (full) | Show full git blame for current line |
+| n | `<leader>ghB` | Blame buffer | Open a full blame view for the whole file |
+| n | `<leader>ght` | Toggle line blame | Show/hide inline blame annotations |
+| n | `<leader>ghd` | Diff this file | Open diff view for current file |
+| n | `<leader>ghD` | Diff this against `~` | Diff against previous commit |
 | o, x | `ih` | Select hunk (text object) | Use with operators: `dih` = delete hunk, `vih` = select hunk |
 
+> **Leaving a diff.** `<leader>ghd` / `<leader>ghD` put the cursor in the **diff**
+> window, so `:q` closes the diff and returns you to your file. Upstream gitsigns
+> deliberately does the opposite — it restores focus to your file
+> (`actions/diffthis.lua:161`) — which meant a reflexive `:q` closed *your file's*
+> window and left you stranded in the `gitsigns://…` index buffer. That buffer is
+> unlisted, so `:bnext` will not cycle back to your file, and `bufhidden=wipe`, so
+> it disappears the moment you navigate away. Nothing was ever lost — the file,
+> its signs and any mini.diff overlay are all still there — but it looks alarming.
+> Pressing the key again while already in a diff is a no-op and will not move you.
+
+> **Why `]g` exists as well as `]h`.** In markdown, `]h` / `[h` are already
+> taken twice — `ftplugin/markdown.lua` binds them to next/previous heading and
+> `vault/highlights.lua` rebinds them to next/previous `==highlight==`. Those are
+> buffer-local maps, exactly like gitsigns', so binding `]h` unconditionally
+> would make the winner depend on autocmd ordering. gitsigns therefore skips
+> `]h` / `[h` in markdown buffers, and `]g` / `[g` is the alias that always
+> works. `]H` / `[H` are free in every filetype and are always bound.
+
+> **`<leader>ght` is not a LazyVim key.** It was `<leader>hB` before this port.
+> LazyVim's `<leader>ghB` is "blame buffer", a different feature, so the inline
+> blame toggle moved to `t` rather than being dropped.
+
 ---
+
+---
+
+## Diff Overlay (mini.diff)
+
+**Source:** `lua/andrew/plugins/mini-diff.lua`
+
+Runs **alongside** gitsigns rather than replacing it (LazyVim's `mini-diff`
+extra disables gitsigns; this config does not). The split of work:
+
+- **gitsigns** — sign column, `<leader>gh` staging, blame, and every hunk motion.
+- **mini.diff** — the overlay, plus operator-style apply/reset and a hunk text object.
+
+| Mode | Key | Description | How to Use |
+|------|-----|-------------|------------|
+| n | `<leader>go` | Toggle diff overlay | Show the *old* content inline as virtual lines, above each change |
+| n | `gh` + motion | Apply (stage) a range | `ghip` stages a paragraph, `ghih` the hunk under the cursor |
+| n | `gH` + motion | Reset a range | `gHih` discards the hunk under the cursor |
+| o, x | `gh` | Hunk range text object | Combine with any operator, or use it to extend a selection |
+
+| Command | Description |
+|---------|-------------|
+| `:MiniDiffOverlay` | Same as `<leader>go` |
+| `:MiniDiffToggle` | Enable/disable mini.diff for the current buffer |
+| `:MiniDiffQuickfix` | Send every hunk in the buffer to the quickfix list |
+
+> **Why hunk marks appear on the line number.** Both plugins mark the *same*
+> hunks, so mini.diff uses `view.style = "number"` and tints the line number
+> while gitsigns keeps the sign column. Setting it to `"sign"` would draw
+> every hunk twice.
+
+> **mini.diff's own `]h` / `[h` / `]H` / `[H` are disabled.** All four already
+> belong to gitsigns, and in markdown `]h` / `[h` belong to headings and
+> `==highlights==`. Nothing is lost — mini.diff reads the same git index, so
+> its hunks *are* gitsigns' hunks.
+
+> `gh` / `gH` shadow the built-in Select-mode starters, which nothing else in
+> this config uses. They are unrelated to the `<leader>gh` hunks group.
+> **On a buffer with no diff** — a picker preview, a leftover `<leader>gd` diff
+> buffer, a terminal, help — all four keys report `mini.diff: no diff for this
+> buffer` instead of raising. Upstream's `toggle_overlay()`, `textobject()` and
+> `do_hunks()` each throw `E5108: (mini.diff) Buffer N is not enabled` there, so
+> every upstream mapping is disabled and re-bound behind a guard.
+> **The overlay is remembered per file.** Its state lives in mini.diff's
+> per-buffer cache, which is destroyed on any buffer reload — including `:edit`
+> and the reload that can follow a `<leader>ghd` diff — and re-created with the
+> overlay off. A `User MiniDiffUpdated` hook re-applies your choice whenever
+> mini.diff re-attaches, so it survives reloads. Turning it *off* is remembered
+> just as well; it is never forced back on.
 
 ## LSP & Code Actions (`<leader>c`, `g*`)
 
@@ -228,23 +368,93 @@ Use these to manage git changes line-by-line without leaving the editor:
 |------|-----|-------------|------------|
 | n | `gd` | Go to definition(s) | Jump to where symbol is defined; fzf picker if multiple |
 | n | `gD` | Go to declaration | Jump to declaration (fallback to definition for fortls) |
-| n | `gR` | Show references | List all files/lines that reference the symbol under cursor |
-| n | `gi` | Show implementations | List all implementations of an interface/abstract |
-| n | `gt` | Show type definitions | Jump to the type definition of the symbol |
-| n | `K` | Hover documentation | Show docs for symbol under cursor (Fortran: custom docs) |
+| n | `gr` | Show references | List all files/lines that reference the symbol under cursor (Fortran: falls back to a project scan) |
+| n | `gI` | Show implementations | List all implementations of an interface/abstract |
+| n | `gy` | Show type definitions | Jump to the type definition of the symbol |
+| n | `K` | Hover documentation | Show docs for symbol under cursor (Fortran MPI/OpenMP docs come from fortran-extras) |
+| n | `gK` | Signature help | Same as `<C-k>`, in LazyVim's spelling |
 | n, i | `<C-k>` | Signature help | Show function signature while typing arguments |
+| n | `gai` | Incoming calls | Who calls the function under the cursor |
+| n | `gao` | Outgoing calls | What the function under the cursor calls |
+| n | `]]` / `[[` | Next / prev reference | Cycle references of the symbol under cursor (Snacks.words) |
+| n | `<A-n>` / `<A-p>` | Next / prev reference (wrapping) | Same, but wraps around at the ends |
+
+All of the above except `gD` are **capability-gated**: the key is bound only if
+an attached server advertises the matching LSP method, so it is absent rather
+than answering "not supported". `gD` is ungated because its fallback to
+definitions is the whole point (fortls advertises no `declarationProvider`).
 
 ### Actions & Diagnostics
 
 | Mode | Key | Description | How to Use |
 |------|-----|-------------|------------|
-| n, v | `<leader>ca` | Code actions | Show available quick fixes and refactoring options |
-| n | `<leader>rn` | Rename symbol | Rename a variable/function across the project |
-| n | `<leader>rs` | Restart LSP | Use when LSP seems stuck or after config changes |
+Code actions and friends now live under `<leader>c`, matching LazyVim -- see
+the [Code (`<leader>c`)](#code-leaderc) section below.
+
+| Mode | Key | Description | How to Use |
+|------|-----|-------------|------------|
 | n | `<leader>D` | Buffer diagnostics (fzf picker) | Browse all warnings/errors in current file |
-| n | `<leader>d` | Line diagnostics (float) | Show diagnostic details for current line |
-| n | `[d` | Previous diagnostic | Jump to previous warning/error |
-| n | `]d` | Next diagnostic | Jump to next warning/error |
+| n | `<leader>lr` | Restart LSP | Use when LSP seems stuck or after config changes |
+| n | `<leader>lh` | Toggle inlay hints | Buffer-local; `<leader>uh` does the same thing globally |
+
+Diagnostic navigation is global (it works without a language server, which
+matters for nvim-lint and the Fortran workspace linter):
+
+| Mode | Key | Description | How to Use |
+|------|-----|-------------|------------|
+| n | `<leader>cd` | Line diagnostics (float) | Show diagnostic details for current line |
+| n | `]d` / `[d` | Next / previous diagnostic | Any severity |
+| n | `]e` / `[e` | Next / previous **error** | Skips warnings and hints. Shadowed in `.tex` buffers, where `]e`/`[e` navigate LaTeX environments |
+| n | `]w` / `[w` | Next / previous **warning** | |
+
+## Code (`<leader>c`)
+
+**Source:** `lua/andrew/lsp_keymaps.lua` (LSP-gated), `lua/andrew/plugins/trouble.lua`,
+`lua/andrew/plugins/formatting/conform.lua`, `lua/andrew/plugins/lsp/mason.lua`,
+`lua/andrew/core/keymaps.lua`
+
+LazyVim's `<leader>c` group, ported. Keys marked *gated* appear only when an
+attached LSP server advertises the capability.
+
+| Mode | Key | Description | Gated on |
+|------|-----|-------------|----------|
+| n, x | `<leader>ca` | Code Action (fzf picker with diff preview) | codeAction |
+| n | `<leader>cA` | Source Action (applies a single `source.*` action with no prompt) | codeAction |
+| n | `<leader>co` | Organize Imports | the `source.organizeImports` **kind** specifically |
+| n, x | `<leader>cc` | Run Codelens | codeLens |
+| n | `<leader>cC` | Refresh & Display Codelens | codeLens |
+| n | `<leader>cr` | Rename symbol (was `<leader>rn`) | rename |
+| n | `<leader>cR` | Rename **file**, updating imports via LSP | workspace/willRenameFiles |
+| n | `<leader>cd` | Line diagnostics (was `<leader>d`) | -- |
+| n, x | `<leader>cf` | Format now (ignores the auto-format toggle) | -- |
+| n, x | `<leader>cF` | Format injected languages (fenced code blocks) | -- |
+| n | `<leader>cs` | Document symbols -- **plus call sites in Fortran** | documentSymbol |
+| n | `<leader>cS` | Workspace symbols -- **plus call sites in Fortran** | workspace/symbol |
+| n | `<leader>cl` | LSP info -- fzf picker of attached clients | -- |
+| n | `<leader>cm` | Mason | -- |
+
+`<leader>cd` replaces the old `<leader>d`, which was simultaneously a mapping
+and the prefix for the ten `<leader>d` debug keys -- the DAP menu could only be
+reached by typing the second key inside `timeoutlen`. That collision is gone.
+
+Symbol pickers are on `<leader>cs` / `<leader>cS`, with `<leader>ss` /
+`<leader>sS` as LazyVim-spelled aliases for the same two fzf pickers. Both
+lowercase keys are document symbols, both uppercase are workspace symbols.
+LazyVim points `<leader>cs`/`<leader>cS` at Trouble instead; this config uses
+the fzf pickers for both and leaves Trouble to the `<leader>x` group (which
+still has `xw`/`xd`/`xe`/`xE` diagnostics, `xq`/`xl`, `xt` todo and `xf`/`xF`).
+Auto-format toggles are `<leader>uf` (global) / `<leader>uF` (buffer).
+
+**In Fortran buffers all four keys list call sites and variable declarations
+as well as definitions** -- see
+[Fortran symbols and call sites](#fortran-symbols-and-call-sites). `gr` there
+falls back to a project scan when fortls has never heard of the name, which is
+the normal case for COMMON-block variables -- see
+[Fortran references](#fortran-references).
+
+**Note:** nvim 0.12's built-in `grn`/`gra`/`grx`/`grr`/`gri`/`grt` are deleted
+at startup, because binding `gr` to References would otherwise make every `gr`
+press wait out `timeoutlen`. Each has a replacement above.
 
 ### Treesitter Selection
 
@@ -256,14 +466,40 @@ Use these to manage git changes line-by-line without leaving the editor:
 
 ---
 
-## Rust / Refactor (`<leader>r`)
+## Quit / Session (`<leader>q`)
 
-**Source:** `lua/andrew/plugins/rustaceanvim.lua` (Rust buffers only, except `rn`/`rs`)
+**Source:** `lua/andrew/plugins/persistence.lua` (session keys), `lua/andrew/core/keymaps.lua` (`qq`)
+
+Sessions are saved automatically when you quit, and restored only when you ask.
+One session per working directory, plus a separate one per git branch when the
+branch is not `main`/`master`. Session files live in
+`~/.local/state/nvim/sessions/`.
+
+Nothing is saved unless at least one real file buffer is open, so quitting out of
+an empty editor will not overwrite a good session.
+
+| Mode | Key | Description | How to Use |
+|------|-----|-------------|------------|
+| n | `<leader>qq` | Quit All | Close every window and exit (`:qa`). Not to be confused with `<leader>wq`, which quits one window |
+| n | `<leader>qs` | Restore Session | Reopen the session for the current directory. Run it right after `nvim` in a project |
+| n | `<leader>qS` | Select Session | Pick any saved session from a list; changes directory into it first |
+| n | `<leader>ql` | Restore Last Session | Reopen the most recently saved session, whatever directory it belonged to |
+| n | `<leader>qd` | Don't Save Current Session | Disarm saving for this run only, so quitting leaves the stored session untouched |
+
+What is restored is controlled by `sessionoptions` in `lua/andrew/core/options.lua`:
+open buffers, window layout, tabpages, the working directory and fold state.
+Terminals are deliberately **not** restored -- the floating terminal manages its
+own buffers.
+
+## Rust (`<leader>r`)
+
+**Source:** `lua/andrew/plugins/rustaceanvim.lua` (Rust buffers only)
+
+Rename moved to `<leader>cr` and LSP restart to `<leader>lr`, so this group
+is now purely Rust.
 
 | Mode | Key | Description | Scope | How to Use |
 |------|-----|-------------|-------|------------|
-| n | `<leader>rn` | Smart rename | All LSP buffers | Rename symbol project-wide |
-| n | `<leader>rs` | Restart LSP | All LSP buffers | Restart when LSP is stuck |
 | n | `<leader>rr` | Rust runnables | Rust only | Run a binary/example from picker |
 | n | `<leader>rd` | Rust debuggables | Rust only | Debug a target from picker |
 | n | `<leader>rt` | Rust testables | Rust only | Run a test from picker |
@@ -300,20 +536,306 @@ Use these to manage git changes line-by-line without leaving the editor:
 
 ---
 
-## Lint (`<leader>l`)
+## Lint (`<leader>L`)
 
 **Source:** `lua/andrew/plugins/linting.lua`
 
 | Mode | Key | Description | How to Use |
 |------|-----|-------------|------------|
-| n | `<leader>ll` | Run linters for current buffer | Triggers the configured linter for current filetype |
-| n | `<leader>lm` | Run ruff (Python) | Manually run Python linter |
-| n | `<leader>lf` | Toggle Fortran linter | Cycle through available Fortran compilers for linting |
-| n | `<leader>lF` | Run Fortran linter (debug mode) | Verbose output for troubleshooting lint issues |
-| n | `<leader>lw` | Lint entire Fortran workspace | Lint all `.f90` files in `code/` directory |
-| n | `<leader>lW` | Clear workspace diagnostics | Remove all workspace-level lint diagnostics |
+| n | `<leader>Ll` | Run linters for current buffer | Triggers the configured linter for current filetype |
+| n | `<leader>Lm` | Run ruff (Python) | Manually run Python linter |
+| n | `<leader>Lf` | Toggle Fortran linter | Cycle through available Fortran compilers for linting |
+| n | `<leader>LF` | Run Fortran linter (debug mode) | Verbose output for troubleshooting lint issues |
+| n | `<leader>Lw` | Lint entire Fortran workspace | Lint all `.f90` files in `code/` directory |
+| n | `<leader>LW` | Clear workspace diagnostics | Remove all workspace-level lint diagnostics |
+| n | `<leader>Lc` | Check Fortran capitalization | Flags intrinsics and project procedures that are not ALL CAPS |
+| n | `<leader>LC` | Fix Fortran capitalization (buffer) | Uppercases every flagged name in the current buffer |
+| n | `<leader>Lt` | Toggle the capitalization check | Turns the on-save style check on and off (`vim.g.fortran_case_check`) |
 
 **Linters by filetype:** Python (ruff), Fortran (gfortran/mpiifx/ifort/ifx/nagfor), JS/TS (eslint), C/C++ (cppcheck)
+
+### Fortran symbols and call sites
+
+**Source:** `lua/andrew/fortran/scan.lua`, `lua/andrew/fortran/symbols.lua`
+
+fortls answers `documentSymbol` and `workspace/symbol` with **definitions
+only**, so searching for `Heating` finds the one line that declares it and none
+of the lines that call it. In a Fortran buffer, `<leader>cs` / `<leader>ss`
+(document) and `<leader>cS` / `<leader>sS` (workspace) therefore open a merged
+picker instead. `:FortranSymbols` and `:FortranSymbolsWorkspace` do the same
+thing by name. Every other filetype keeps the plain LSP picker.
+
+Rows are laid out the way fzf-lua lays out LSP document symbols -- location
+first, then the symbol -- so a Fortran picker and a basedpyright picker read
+the same:
+
+```
+   4:18  [F Subroutine] TTMDiffuse
+   9:19    [V Variable] T_e_new
+   9:29    [V Ref] nlc2
+  10:17    [V Variable] ixcell
+```
+
+(`F` and `V` stand in for the glyphs here.) Line and column are right-aligned
+on the left, coloured with fzf-lua's own `FzfLuaPathLineNr` /
+`FzfLuaPathColNr`; then a bracketed, coloured `<glyph> <Kind>` block; then the
+name, indented under its container. The glyph, the colour, the bracket and the
+indent unit all come from your own `lsp.symbols` fzf-lua config -- change it
+once and both pickers change.
+
+The workspace picker leads with the path as well, since its rows span files:
+
+```
+code/AddEnergy.f90:4:18    [F Subroutine] AddEnergy
+code/AddEnergy.f90:4:28    [P Argument] ENT
+```
+
+Under that is one more field the picker never shows -- the machine-readable
+`path:lnum:col:` that fzf-lua's `path.entry_to_file` parses to jump, preview
+and fill the quickfix list. `--with-nth 2..` hides it; fzf still reports the
+whole line on selection, so hiding it costs nothing.
+
+Matching is scoped to the symbol with `--nth 2` (indices count fields of the
+`--with-nth` *view*, so field 2 there is field 3 of the entry). Without it,
+matching runs over the location too and a short query like `dift` fuzzy-matches
+a subsequence spread across a file path -- against this project, 2451 rows
+instead of 31.
+
+The **kind names are Fortran's**, though: `Subroutine`, not `Function`;
+`Common`, not `Object`. Each maps to an LSP `SymbolKind` only to borrow its
+glyph and highlight group, and where your colorscheme leaves that group unset
+(`@method` and `@typeparameter` usually are) a fallback is used, so no row ends
+up grey while its neighbours are coloured.
+
+The kind is ordinary searchable text, so type `call` in the picker to see only
+call sites, `subroutine` to see only definitions:
+
+| Kind | Meaning |
+|------|---------|
+| `Subroutine` `Function` `Module` `Program` `Type` `Interface` `Submodule` | a definition |
+| `Call` | a `call NAME` statement, or `NAME(...)` where NAME is a procedure the project defines |
+| `Variable` | a declared variable, including every COMMON block member |
+| `Argument` | a dummy argument of a procedure header |
+| `Common` | a COMMON block name |
+| `Ref` | a use of a declared variable |
+
+`Call` is restricted to project-defined names deliberately. Fortran spells a
+function call and an array reference identically -- `Heating(t)` and `arr(i)`
+are the same syntax -- so the only sound filter is whether the project actually
+defines a procedure by that name. Without it every array index would be a hit.
+
+**Every variable reference is in the list**, so any of them can be jumped to.
+That is the bulk of it: on the project this was measured against, 19505 `Ref`
+rows against 2085 declarations, 462 call sites and 114 definitions. It only
+works because fzf matches the first field alone -- typing `dift` narrows 20185
+rows to the thirty that name it. If you want one symbol with nothing else in
+the list, that is [`gr`](#fortran-references).
+
+Declarations are found in every spelling the language allows, including the
+legacy ones that carry no `::`:
+
+```fortran
+COMMON /DIFFST/ dift, difx(0:n), &      ! [common] DIFFST, [var] dift, difx,
+                dify(0:n)               ! [var] dify -- across the continuation
+REAL*8 DEPTHZ(nlcz)                     ! [var] DEPTHZ
+CHARACTER (LEN=17) nFile                ! [var] nFile
+INTEGER, PARAMETER :: n = 10            ! [var] n  (and not `10`)
+PARAMETER (ITTM = 9)                    ! [var] ITTM
+SUBROUTINE Diffuse(nnode, dt)           ! [arg] nnode, [arg] dt
+```
+
+`REAL(8) FUNCTION Energy(t)` opens with a type keyword and declares no variable
+at all, only the dummy argument `t`; `TYPE(State) :: s` declares `s`,
+`TYPE :: State` defines a type, and `TYPE IS (t)` declares nothing.
+
+**Include files are scanned too** (`*.h`, `*.inc`, `*.fh`), because that is
+where F77-descended projects keep their entire declaration section. The
+capitalization fixer still writes only to source files.
+
+What the scan handles, none of which a `grep -w call` gets right:
+
+- **Any amount of whitespace** between `call` and the callee. Two spaces, eight
+  spaces and a tab are one call statement.
+- **Case**: `CALL`, `Call` and `call` are one keyword; the name is reported
+  with the spelling that is actually in the file.
+- **Comments and string literals**: `! call Ghost(x)` and `'call Ghost(x)'` are
+  not calls.
+- **Continuations**: `call &` on one line puts the callee on the next.
+
+The document picker reads the **buffer**, so unsaved edits are included, and
+indents rows by program-unit nesting. The workspace picker reads from **disk**
+via ripgrep, like every other grep-backed picker here, and is flat -- the same
+split an LSP client makes between `documentSymbol` and `workspace/symbol`. It
+builds 20185 rows in about 350 ms -- which needs the kind block memoized per
+kind: resolving the glyph and colour per row, or recomputing a cache key from
+`vim.g.colors_name` per row, cost 1.5 s. The cache is dropped on `ColorScheme`
+instead.
+
+Both pickers consult the project even for the current buffer, for two sets one
+file cannot supply: which names are procedures, and which are declared
+variables. The second matters more than it sounds -- in F77-descended code the
+declarations live in `.h` includes, so a buffer that uses fifty variables often
+declares none of them.
+
+### Fortran references
+
+**Source:** `lua/andrew/fortran/scan.lua` (`project_references`)
+
+`gr` on a Fortran name asks fortls first and falls back to the project scanner
+when the server comes back empty. `:FortranReferences` runs the scanner
+directly, on the word under the cursor or on a name you pass it.
+
+The fallback is not a nicety. In F77-descended code a variable is routinely
+declared in the one way no language server looks at: `dift` appears in a COMMON
+block, in a `.h` include, split across continuation lines, and gets its type
+from `IMPLICIT` rather than from any declaration statement. fortls has never
+heard of it, so `gr` used to return nothing. The scanner reads include files,
+ignores comments and string literals, and needs no server running.
+
+It is the **empty answer**, not the absence of a server, that selects the
+scanner -- so `gr` behaves the same whether or not fortls is up, and a name
+fortls *does* understand still gets its scope-aware answer.
+
+Rows carry the same kinds as the symbol picker, so the declaration is labelled
+rather than buried among its uses:
+
+```
+code/commonTTM.h:40:22    [V Variable] dift   COMMON/DIFFST/ dift,difx(0:n), &
+code/TTMDiffuse.f90:99:32 [V Ref] dift        Time_curr=Time_curr+dift
+```
+
+This picker keeps a source-line column, which the symbol pickers drop.
+
+Unlike the symbol picker this one matches on the **whole row**: every row names
+the same symbol, so the useful way to narrow is by file or by surrounding code.
+
+### Fortran capitalization rule
+
+**Source:** `lua/andrew/fortran/case.lua`, `lua/andrew/fortran/intrinsics.lua`, `lua/andrew/fortran/keywords.lua`
+
+House style: every intrinsic procedure, every procedure the project defines,
+and every language keyword is written in FULL CAPITALS:
+
+```fortran
+MODULE SOLVER
+  USE PHYSICS, ONLY: HEATING
+  IMPLICIT NONE
+  PUBLIC :: STEP
+  TYPE :: STATE
+    LOGICAL :: active = .TRUE.
+  END TYPE STATE
+CONTAINS
+  SUBROUTINE STEP(s)
+    TYPE(STATE), INTENT(INOUT) :: s
+    IF (s%active .AND. .NOT. (s%t .LT. 0.0d0)) THEN
+      CALL HEATING(s%t)
+    END IF
+  END SUBROUTINE STEP
+END MODULE SOLVER
+```
+
+Variable names (`s`, `active`), comments, string literals and numeric literals
+are never touched.
+
+Fortran is case-insensitive, so the rewrite can never change what the code
+means.
+
+Findings are published as diagnostics in their own namespace, so they sit
+alongside the compiler diagnostics rather than replacing them. The check runs
+on read and on write, and also as part of `<leader>Ll` (buffer) and
+`<leader>Lw` (workspace).
+
+| Command | Effect |
+|---------|--------|
+| `:FortranCaseCheck` | Check the current buffer |
+| `:FortranCaseCheck workspace` | Check every source file under the project root, and fill the quickfix list |
+| `:FortranCaseFix` | Uppercase every flagged name in the current buffer |
+| `:FortranCaseFix workspace` | Same across the whole project (asks first -- files not open in a buffer are written straight to disk) |
+| `:FortranCaseClear` | Drop this rule's diagnostics |
+| `:FortranCaseToggle` | Turn the on-save check on / off |
+
+**Procedures.** `NAME(` in invocation position, `CALL NAME` with any whitespace
+between the two, and `SUBROUTINE NAME` / `END SUBROUTINE NAME` so a procedure
+and its calls cannot end up half-capitalized. Names the project does not define
+and that are not intrinsics are never touched -- `arr(3)` and `Heating(t)` are
+the same syntax, so an unknown name could be either.
+
+Type specifications are excluded: `real(8) :: x` is a declaration and
+`y = real(i)` is an intrinsic call, and they are the same six characters --
+names that are both a type keyword and an intrinsic (`real`, `logical`, `len`,
+`int`, `char`, `cmplx`, `dble`, `kind`) are skipped in declaration position.
+
+**Language keywords**, in five classes (`lua/andrew/fortran/keywords.lua`):
+
+| Class | Covers |
+|-------|--------|
+| `control` | `if` `then` `else` `do` `while` `select` `case` `default` `end` `cycle` `exit` `goto` `where` `forall` `associate` `block` `return` `stop` `call` |
+| `unit` | `program` `module` `subroutine` `function` `interface` `contains` `use` `only` `result` `recursive` `pure` `elemental` `procedure` |
+| `declaration` | `implicit` `none` `integer` `real` `character` `type` `class` `dimension` `allocatable` `pointer` `parameter` `intent` `public` `private` ... |
+| `io` | `write` `read` `print` `open` `close` `inquire` `rewind` `flush` `format` |
+| `memory` | `allocate` `deallocate` `nullify` |
+| `operator` | `.and.` `.or.` `.not.` `.eqv.` `.neqv.` `.true.` `.false.` `.eq.` `.ne.` `.lt.` `.le.` `.gt.` `.ge.` |
+
+The `operator` class is matched by its **dots**, not as identifiers, and only
+the letters between them are rewritten -- so `.and.` becomes `.AND.` and the
+replacement stays the same width. The dots are also what makes it safe: `and`,
+`not` and `true` are all legal Fortran variable names, but `.and.` cannot be
+anything else. For the same reason the three guards below do not apply to it --
+`logical :: flag = .true.` sits right of a `::` and is still checked.
+
+**Fortran reserves nothing** -- `integer :: if` is legal, so every keyword is
+also a possible variable name. Uppercasing a variable is harmless but noisy, so
+three positional guards suppress the shapes a variable of that name is written
+in: right of a `::` (the declaration list is variable names), after a `%`
+(`obj%count`), and followed by `=` (`format = '(A)'`, `iostat=ios`, `p => x`,
+`type == 3`). A keyword introduces or terminates a statement, so it is never
+followed by `=`.
+
+Words too common as variable names for those guards to cover are left out of
+the lists entirely -- `value`, `data`, `target`, `len`, `kind`, `error`, and
+every I/O specifier (`unit`, `file`, `status`, `iostat`, ...), which are always
+written `name=` anyway. `in` / `out` / `inout` are checked positionally, only
+inside `intent(...)`.
+
+**Unit names.** Module, submodule, program and derived-type names are checked
+too (`vim.g.fortran_case_units`). They are not procedures, so they get a rule of
+their own, anchored on the keyword that introduces or references them -- `type`
+puts the name inside parentheses that belong to the *keyword*
+(`type(State)`), and `use physics` has no parentheses at all:
+
+| Written | Found |
+|---------|-------|
+| `module physics` / `end module physics` | `physics` |
+| `use physics` / `use physics, only: x` | `physics` |
+| `type :: State` / `end type State` | `State` |
+| `type(State) :: s` / `class(State), pointer :: p` | `State` |
+| `type, extends(State) :: Big` | `State` |
+| `s = State(1.0d0)` | `State`, via the invocation scan |
+
+Anchoring on the keyword is what keeps a variable that merely shares the name
+out of it: `real :: state_of_charge` is untouched.
+
+**Import and access lists.** `use m, only: Heating` and `public :: Heating`
+name existing procedures with no parentheses and no `call`, so they get one
+more rule -- without it a procedure's *calls* would be capitalized while the
+line that exports it was not. The entity list of a `public` / `private` /
+`protected` / `external` / `intrinsic` / `import` statement, and everything
+after `only:`, is names. The entity list of a *type declaration* is not:
+`real :: energy` declares a variable and is left alone even when the project
+also defines a function called `Energy`.
+
+**Configuration** (all optional, read live):
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `vim.g.fortran_case_check` | `true` | The on-save check |
+| `vim.g.fortran_case_severity` | `"WARN"` | `ERROR` / `WARN` / `INFO` / `HINT` |
+| `vim.g.fortran_case_intrinsics` | `true` | Check intrinsic procedures |
+| `vim.g.fortran_case_defined` | `true` | Check procedures the project defines |
+| `vim.g.fortran_case_documented` | `false` | Also check the names in `snippets/fortran-docs.json` (MPI, OpenMP, custom) |
+| `vim.g.fortran_case_all_calls` | `false` | Also require `CALL` targets the project does not define (external libraries) |
+| `vim.g.fortran_case_keywords` | `true` | `false` disables the keyword rule; a list picks classes, e.g. `{ "control", "operator" }` |
+| `vim.g.fortran_case_units` | `true` | Check module / submodule / program / derived-type **names** |
 
 ---
 
@@ -377,18 +899,12 @@ Trouble provides a structured list view for diagnostics, quickfix, and TODOs:
 
 **Source:** `lua/andrew/plugins/opencode.lua`
 
-| Mode | Key | Description | How to Use |
-|------|-----|-------------|------------|
-| n | `<leader>ot` | Toggle OpenCode panel | Open/close the AI assistant sidebar |
-| n | `<leader>oa` | Ask about code at cursor | Sends cursor context to AI with a question prompt |
-| v | `<leader>oa` | Ask about selected code | Sends selection to AI with a question prompt |
-| n | `<leader>o+` | Add buffer to prompt | Include current file in AI context |
-| v | `<leader>o+` | Add selection to prompt | Include selected text in AI context |
-| n | `<leader>oe` | Explain code at cursor | Ask AI to explain the code under cursor |
-| n | `<leader>on` | New session | Start a fresh conversation |
-| n, v | `<leader>os` | Select prompt | Choose from available prompts |
-| n | `<S-C-u>` | Scroll messages up | Scroll through AI conversation history |
-| n | `<S-C-d>` | Scroll messages down | Scroll through AI conversation history |
+**Keymaps removed 2026-09-06.** opencode.nvim is still installed and its
+`init()` side effects still run, but the spec no longer declares any `keys`, so
+nothing under `<leader>o` (or `<S-C-u>` / `<S-C-d>`) is bound and the plugin
+never loads. The ten original bindings are preserved verbatim as a commented
+block in `lua/andrew/plugins/opencode.lua`; uncomment it and delete the
+`lazy = true` line to restore them.
 
 ---
 
@@ -410,7 +926,7 @@ Create new notes from templates. Each opens a prompt for the note title and auto
 | n | `<leader>vtk` | Task note | Creates in `Projects/<proj>/Tasks/` |
 | n | `<leader>vtm` | Meeting note | Creates in `Projects/<proj>/Meetings/` |
 | n | `<leader>vtf` | Finding note | Creates in `Projects/<proj>/Findings/` |
-| n | `<leader>vtl` | Literature note | Creates in `Library/` |
+| n | `<leader>vtl` | Literature note | Creates in `Library/<title>/` (PDF goes beside it) |
 | n | `<leader>vtp` | Project dashboard | Creates `Projects/<name>/Dashboard.md` |
 | n | `<leader>vtj` | Journal entry | Creates in `Projects/<proj>/Journal/` |
 | n | `<leader>vtc` | Concept note | Creates in `Domains/<domain>/` |
@@ -684,6 +1200,33 @@ Use with operators like `d`, `c`, `y`, or in Visual mode (`v`).
 
 ---
 
+## Motions / Jumps (flash.nvim)
+
+**Source:** `lua/andrew/plugins/flash.lua`
+
+Jump anywhere on screen by typing a couple of characters and then the label
+that appears at the match.
+
+| Mode | Key | Description | How to Use |
+|------|-----|-------------|------------|
+| n, x, o | `s{chars}{label}` | Flash jump | Type `s` then a few characters; press the shown label to jump. Works as a motion, so `ds{label}` deletes up to it |
+| n, o | `S` | Flash treesitter | Labels every syntax node around the cursor, innermost first. `;` grows the selection, `,` shrinks it |
+| o | `r` | Remote flash | `yr{label}iw` yanks a word somewhere else and returns the cursor here |
+| o, x | `R` | Treesitter search | Type a pattern, then pick a syntax node around any match |
+| c | `<C-s>` | Toggle flash search | At the `/` or `?` prompt, turn jump labels on for the search in flight |
+
+Enhanced `f`/`F`/`t`/`T` (installed by flash itself, not listed above): after
+`f{char}`, press `f` or `;` for the next match and `F` or `,` for the previous,
+so a mistyped target is corrected without restarting. Restricted to the current
+line, matching vanilla Vim.
+
+**Not bound, on purpose:** `S` in visual mode stays with nvim-surround (wrap a
+selection), and `<C-space>` stays with nvim-treesitter's incremental selection.
+LazyVim binds flash to both; see the header comment in `flash.lua` for why this
+config does not.
+
+---
+
 ## Substitute / Surround / Comment
 
 ### Substitute
@@ -694,10 +1237,10 @@ Replace text using a register. Works like a "paste with motion" operator:
 
 | Mode | Key | Description | How to Use |
 |------|-----|-------------|------------|
-| n | `s{motion}` | Substitute with motion | `yiw` to yank a word, move to target, `siw` to replace it |
-| n | `ss` | Substitute entire line | Replace entire line with register content |
-| n | `S` | Substitute to end of line | Replace from cursor to end of line |
-| x | `s` | Substitute visual selection | Select text, press `s` to replace with register |
+| n | `gs{motion}` | Substitute with motion | `yiw` to yank a word, move to target, `gsiw` to replace it |
+| n | `gss` | Substitute entire line | Replace entire line with register content |
+| n | `gS` | Substitute to end of line | Replace from cursor to end of line |
+| x | `gs` | Substitute visual selection | Select text, press `gs` to replace with register |
 
 ### Surround
 
@@ -756,7 +1299,7 @@ Custom surrounds: `e` = LaTeX environment (`\begin{env}...\end{env}`), `c` = LaT
 
 **Completion sources by filetype:**
 - **Default:** lsp, path, snippets, buffer
-- **Fortran:** fortran_docs, lsp, snippets, path, buffer
+- **Fortran:** lsp, snippets, path, buffer (MPI/OpenMP completion comes from the in-process `fortran-extras` LSP server)
 - **Markdown:** wikilinks, vault_tags, vault_frontmatter, lsp, snippets, path, buffer
 
 ---
@@ -1118,6 +1661,13 @@ Variants: `;ve` = `\varepsilon`, `;vq` = `\vartheta`, `;vf` = `\varphi`
 | `:TableModeToggle` | Toggle table editing mode | vim-table-mode |
 | `:LspRestart` | Restart LSP server | built-in |
 | `:TodoFzfLua` | Search TODO/FIXME comments | todo-comments + fzf-lua |
+| `:FortranSymbols` | Fortran definitions **and call sites** in this buffer | fortran/symbols.lua |
+| `:FortranSymbolsWorkspace` | Fortran definitions **and call sites** across the project | fortran/symbols.lua |
+| `:FortranReferences [name]` | Every use of one Fortran name (default: word under cursor) | fortran/symbols.lua |
+| `:FortranCaseCheck [workspace]` | Check procedure-name capitalization | fortran/case.lua |
+| `:FortranCaseFix [workspace]` | Uppercase intrinsic / project procedure names | fortran/case.lua |
+| `:FortranCaseClear` | Clear capitalization diagnostics | fortran/case.lua |
+| `:FortranCaseToggle` | Toggle the on-save capitalization check | fortran/case.lua |
 
 ---
 
@@ -1126,7 +1676,8 @@ Variants: `;ve` = `\varepsilon`, `;vq` = `\vartheta`, `;vf` = `\varphi`
 | Server | Language | Notes |
 |--------|----------|-------|
 | lua_ls | Lua | Conda path, workspace libs |
-| fortls | Fortran | Custom hover docs, autocomplete, snippets |
+| fortls | Fortran | Project symbols; paired with the in-process `fortran-extras` server |
+| fortran-extras | Fortran | In-process Lua LSP: MPI/OpenMP hover, signature help, completion |
 | pylsp | Python | Jedi-based completion |
 | ctags_lsp | C/C++ | For Fortran ISO_C_BINDING headers |
 | rust-analyzer | Rust | Via rustaceanvim plugin |

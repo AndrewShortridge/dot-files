@@ -130,7 +130,7 @@ local function convert_embed(inner, buf_dir)
     end
   else
     content_lines = file_cache.read(path)
-    if #content_lines == 0 then
+    if not content_lines or #content_lines == 0 then
       return "> *[Could not read: " .. details.name .. "]*"
     end
     -- Strip frontmatter from embedded notes

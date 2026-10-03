@@ -365,6 +365,23 @@ function M.open()
   vim.keymap.set("n", "q", close_editor, vim.tbl_extend("force", map_opts, { desc = "Close editor" }))
   vim.keymap.set("n", "<Esc>", close_editor, vim.tbl_extend("force", map_opts, { desc = "Close editor" }))
 
+  -- Keep _state.cursor_idx in sync with the REAL cursor row. j/k/<Tab> update it
+  -- themselves, but G, gg, /search, <C-d>, mouse clicks etc. move the cursor
+  -- without them, which used to desync the index so <CR>/dd edited the wrong
+  -- field. render() lays out field i on buffer line i, so row maps 1:1.
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    buffer = float_buf,
+    callback = function()
+      if not _state or _state.float_buf ~= float_buf then return end
+      local n = #_state.fields
+      if n == 0 then return end
+      local win = _state.float_win
+      if not win or not vim.api.nvim_win_is_valid(win) then return end
+      local row = vim.api.nvim_win_get_cursor(win)[1]
+      _state.cursor_idx = math.min(math.max(row, 1), n)
+    end,
+  })
+
   -- Auto-close if the float window is somehow left
   vim.api.nvim_create_autocmd("WinClosed", {
     buffer = float_buf,

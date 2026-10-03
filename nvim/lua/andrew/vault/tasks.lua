@@ -196,6 +196,7 @@ end
 --- Collect tasks matching a specific checkbox state.
 ---@param mark string single char: " ", "/", "x", "-", ">"
 function M.tasks_by_state(mark)
+  mark = mark or " "
   index_tasks("Vault tasks [" .. mark .. "]", function(task)
     return task.status == mark
   end)

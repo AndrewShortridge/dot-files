@@ -145,6 +145,32 @@ end
 --- Collect entries from Neovim's command/keymap tables as a fallback.
 --- Used for any Vault* commands or <leader>v keymaps not explicitly registered.
 ---@return VaultPaletteEntry[]
+--- Resolved "<leader>v" prefix, e.g. " v" when mapleader is a space.
+--- nvim_get_keymap()/nvim_buf_get_keymap() return the RESOLVED lhs (" vxh"),
+--- never the literal "<leader>vxh" form, so collection must match on the
+--- resolved prefix and normalize back for dedup/display against the explicit
+--- registry (which stores the literal "<leader>..." form).
+---@return string leader  the resolved mapleader
+local function _resolved_leader()
+  local leader = vim.g.mapleader
+  if type(leader) ~= "string" or leader == "" then leader = "\\" end
+  return leader
+end
+
+--- If lhs is a <leader>v keymap (resolved or literal), return its normalized
+--- "<leader>v..." form; otherwise nil.
+---@param lhs string
+---@return string|nil
+local function _normalize_leader_v(lhs)
+  if lhs == "" then return nil end
+  if vim.startswith(lhs, "<leader>v") then return lhs end
+  local leader = _resolved_leader()
+  if vim.startswith(lhs, leader .. "v") then
+    return "<leader>" .. lhs:sub(#leader + 1)
+  end
+  return nil
+end
+
 function M._collect_from_nvim()
   local extra = {}
   local registered_commands = {}
@@ -177,13 +203,15 @@ function M._collect_from_nvim()
   -- Collect unregistered <leader>v keymaps (normal mode, global)
   for _, map in ipairs(vim.api.nvim_get_keymap("n")) do
     local lhs = map.lhs or ""
-    if lhs:match("^<leader>v") and not registered_keymaps[lhs] then
+    local norm = _normalize_leader_v(lhs)
+    if norm and not registered_keymaps[norm] then
+      registered_keymaps[norm] = true -- dedupe within the collection pass too
       extra[#extra + 1] = {
-        name = map.desc or lhs,
-        desc = map.desc or lhs,
-        category = M._infer_category(map.desc or lhs),
+        name = map.desc or norm,
+        desc = map.desc or norm,
+        category = M._infer_category(map.desc or norm),
         command = nil,
-        keymap = lhs,
+        keymap = norm,
         action = function()
           vim.api.nvim_feedkeys(
             vim.api.nvim_replace_termcodes(lhs, true, false, true),
@@ -199,13 +227,15 @@ function M._collect_from_nvim()
   if vim.bo.filetype == "markdown" then
     for _, map in ipairs(vim.api.nvim_buf_get_keymap(0, "n")) do
       local lhs = map.lhs or ""
-      if lhs:match("^<leader>v") and not registered_keymaps[lhs] then
+      local norm = _normalize_leader_v(lhs)
+      if norm and not registered_keymaps[norm] then
+        registered_keymaps[norm] = true
         extra[#extra + 1] = {
-          name = map.desc or lhs,
-          desc = map.desc or lhs,
-          category = M._infer_category(map.desc or lhs),
+          name = map.desc or norm,
+          desc = map.desc or norm,
+          category = M._infer_category(map.desc or norm),
           command = nil,
-          keymap = lhs,
+          keymap = norm,
           action = function()
             vim.api.nvim_feedkeys(
               vim.api.nvim_replace_termcodes(lhs, true, false, true),

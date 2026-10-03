@@ -5,6 +5,8 @@ local filter_utils = require("andrew.vault.filter_utils")
 local log = require("andrew.vault.vault_log").scope("completion_base")
 local table_pool = require("andrew.vault.table_pool")
 local operation_tracker = require("andrew.vault.operation_tracker")
+local char_bag = require("andrew.vault.char_bag")
+local work_scheduler = require("andrew.vault.work_scheduler")
 
 local M = {}
 
@@ -31,6 +33,7 @@ local _item_pool = table_pool.new(config.pools.completion_item, function(obj)
   obj.data = nil
   obj.labelDetails = nil
   obj._char_bag = nil
+  obj.source_name = nil
 end)
 table_pool.register("completion_item", _item_pool)
 
@@ -75,7 +78,7 @@ function M.make_item(label, insertText, filterText, kind, opts)
   local item = _item_pool:acquire(function()
     return { label = nil, insertText = nil, filterText = nil, kind = nil,
              sortText = nil, documentation = nil, data = nil, labelDetails = nil,
-             _char_bag = nil }
+             _char_bag = nil, source_name = nil }
   end)
   item.label = label
   item.insertText = insertText
@@ -524,8 +527,7 @@ function M.create_source(opts)
     -- Pre-warm the cache via DEFERRED priority (background, not competing
     -- with user-visible work like highlight rendering or embed display)
     if vim.bo.filetype == "markdown" then
-      local sched = require("andrew.vault.work_scheduler")
-      sched.schedule(sched.DEFERRED, function()
+      work_scheduler.schedule(work_scheduler.DEFERRED, function()
         build_items_async()
       end, { domain = "completion", label = "cache-warm" })
     end
@@ -537,8 +539,7 @@ function M.create_source(opts)
       pattern = "VaultCacheInvalidate",
       callback = function()
         if not cache_valid() and vim.bo.filetype == "markdown" then
-          local sched = require("andrew.vault.work_scheduler")
-          sched.schedule(sched.DEFERRED, function()
+          work_scheduler.schedule(work_scheduler.DEFERRED, function()
             build_items_async()
           end, { domain = "completion", label = "cache-rewarm" })
         end
@@ -553,16 +554,20 @@ function M.create_source(opts)
   end
 
   function source:get_completions(ctx, callback)
-    local scheduler = require("andrew.vault.work_scheduler")
+    local scheduler = work_scheduler
 
     -- If the source provides a custom get_completions, use it
     if opts.get_completions then
       if cache_valid() then
-        -- Cache hit: CRITICAL — return immediately, no scheduling overhead
+        -- Cache hit: call directly. CRITICAL scheduling is already synchronous
+        -- (work_scheduler runs CRITICAL via pcall immediately), so routing
+        -- through the scheduler was pure per-keystroke overhead. Keep a thin
+        -- pcall to preserve the previous error-logging behavior.
         _cache_hits = _cache_hits + 1
-        scheduler.schedule(scheduler.CRITICAL, function()
-          opts.get_completions(self, ctx, cached_items, callback)
-        end, { domain = "completion", label = "cache-hit" })
+        local ok, err = pcall(opts.get_completions, self, ctx, cached_items, callback)
+        if not ok then
+          log:error("source %s cache-hit get_completions failed: %s", source_name, err)
+        end
         return
       end
       -- Cache miss: NORMAL priority — ahead of DEFERRED background work
@@ -652,6 +657,34 @@ function M.field_value_items(items, key)
   return items.values and items.values[key] or {}
 end
 
+--- Create an independent CharBag pre-filter with a superset-narrowing cache.
+--- The candidate `items` list is a stable table reference across keystrokes
+--- (rebuilt only on index change), so we can narrow incrementally: when the new
+--- query's char-bag is a superset of the previous query's bag, every item
+--- passing the new filter must already pass the old one, so we filter the
+--- (smaller) previous result instead of the full list. Each caller holds its
+--- own closure so caches don't collide between distinct item tables.
+--- @return fun(items: table[], query_bag: table): table[]
+function M.new_charbag_filter()
+  local cache = { items = nil, bag = nil, filtered = nil }
+  return function(items, query_bag)
+    local base_set = items
+    if cache.items == items and cache.bag
+      and char_bag.is_superset(query_bag, cache.bag) then
+      base_set = cache.filtered
+    end
+    local filtered = {}
+    for i = 1, #base_set do
+      local item = base_set[i]
+      if not item._char_bag or char_bag.is_superset(item._char_bag, query_bag) then
+        filtered[#filtered + 1] = item
+      end
+    end
+    cache.items, cache.bag, cache.filtered = items, query_bag, filtered
+    return filtered
+  end
+end
+
 --- Single-pass field value accumulation and item building.
 --- Iterates idx.files once, building both name_items and value_items simultaneously
 --- without an intermediate field_values table.
@@ -671,6 +704,15 @@ function M.build_kv_single_pass(idx, field_name, known_vals, separator)
     return cached.result
   end
 
+  -- Resolve CharBag config once per build; attach _char_bag to every item so the
+  -- kv get_completions handler can pre-filter candidates before returning them.
+  -- Gate on file_count: name/value candidate counts are bounded by file_count, so
+  -- below the prefilter threshold the sweep never fires and the bags are dead weight.
+  local pf = config.prefilter
+  local cb = pf.enabled and pf.completion_char_bag
+    and idx:file_count() >= (pf.min_candidates_for_charbag or 500)
+    and char_bag or nil
+
   local field_counts = {} -- key -> count
   local value_items_by_key = {} -- key -> { value_string -> item }
   local item_index = {} -- key -> { value_string -> item } for O(1) updates
@@ -683,6 +725,7 @@ function M.build_kv_single_pass(idx, field_name, known_vals, separator)
     else
       local new_item = M.make_item(s, s, s, M.KIND.Value)
       new_item._count = initial_count
+      if cb then new_item._char_bag = cb.from_string(s) end
       key_idx[s] = new_item
       key_items[#key_items + 1] = new_item
     end
@@ -750,10 +793,12 @@ function M.build_kv_single_pass(idx, field_name, known_vals, separator)
   local name_items = {}
   for _, name in ipairs(sorted_names) do
     local count = field_counts[name]
-    name_items[#name_items + 1] = M.make_item(name, name .. separator, name, M.KIND.Variable, {
+    local name_item = M.make_item(name, name .. separator, name, M.KIND.Variable, {
       sortText = M.freq_sort_text(count, name),
       description = M.count_label(count),
     })
+    if cb then name_item._char_bag = cb.from_string(name) end
+    name_items[#name_items + 1] = name_item
   end
 
   local result = { names = name_items, values = value_items_by_key }
@@ -785,19 +830,40 @@ end
 --- @param matchers fun(before: string, ctx: table, bufnr: number): string|false|nil
 --- @return fun(self: table, ctx: table, items: table, callback: fun(response: table))
 function M.kv_get_completions(matchers)
+  -- Per-handler superset-narrowing caches: one for value mode, one for name
+  -- mode. Their candidate tables differ, so distinct closures keep narrowing
+  -- effective (a shared cache would simply miss across modes/keys).
+  local value_filter = M.new_charbag_filter()
+  local name_filter = M.new_charbag_filter()
   return function(self, ctx, items, callback)
     local col = ctx.cursor[2]
     local before = ctx.line:sub(1, col)
     local bufnr = ctx.bufnr or vim.api.nvim_get_current_buf()
 
     local key = matchers(before, ctx, bufnr)
-    if key then
-      callback(M.response(M.field_value_items(items, key)))
-    elseif key == false then
-      callback(M.response(items.names or {}))
-    else
+    if key == nil then
       callback(M.empty_response)
+      return
     end
+
+    local candidates = key and M.field_value_items(items, key) or (items.names or {})
+
+    -- CharBag pre-filter: narrow candidates by the trailing typed identifier.
+    -- A bare trigger (no typed prefix yet) leaves prefix below min length, so
+    -- the full list is returned unchanged. Small lists skip the sweep — blink
+    -- re-filters returned lists with its own fuzzy matcher.
+    local pf = config.prefilter
+    if pf.enabled and pf.completion_char_bag
+      and #candidates >= (pf.min_candidates_for_charbag or 500) then
+      local prefix = before:match("([%w%._/@%-]*)$") or ""
+      if #prefix >= (pf.min_query_length or 2) then
+        local query_bag = char_bag.from_string(prefix)
+        local filter = key and value_filter or name_filter
+        callback(M.response(filter(candidates, query_bag)))
+        return
+      end
+    end
+    callback(M.response(candidates))
   end
 end
 

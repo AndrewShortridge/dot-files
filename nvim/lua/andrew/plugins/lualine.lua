@@ -12,6 +12,9 @@ return {
   -- Dependencies
   dependencies = { "nvim-tree/nvim-web-devicons" },
 
+  -- Defer until after the UI paints (Tier 2 startup win)
+  event = "VeryLazy",
+
   -- =============================================================================
   -- Plugin Configuration
   -- =============================================================================
@@ -21,73 +24,14 @@ return {
     local lazy_status = require("lazy.status")
 
     -- =============================================================================
-    -- OneDark Color Palette for Status Line
+    -- OneDark Color Palette and Theme
     -- =============================================================================
-    -- Colors matching the OneDarkPro color scheme
-
-    local colors = {
-      bg = "#282c34", -- Dark gray background
-      fg = "#abb2bf", -- Light gray foreground
-      red = "#e06c75", -- Red for errors
-      green = "#98c379", -- Green for success/added
-      yellow = "#e5c07b", -- Yellow for warnings/modified
-      blue = "#61afef", -- Blue for info/links
-      purple = "#c678dd", -- Purple for special
-      cyan = "#56b6c2", -- Cyan for hints
-      darkgray = "#2c313c", -- Darker gray for sections
-      gray = "#3e4451", -- Medium gray
-      lightgray = "#5c6370", -- Light gray for inactive
-      inactive_bg = "#1f2329", -- Very dark for inactive windows
-    }
-
-    -- =============================================================================
-    -- Custom Theme
-    -- =============================================================================
-    -- Status line colors for each Vim mode
-
-    local my_lualine_theme = {
-      -- Normal mode (default)
-      normal = {
-        a = { bg = colors.blue, fg = colors.bg, gui = "bold" },
-        b = { bg = colors.darkgray, fg = colors.fg },
-        c = { bg = colors.bg, fg = colors.fg },
-      },
-
-      -- Insert mode (when typing)
-      insert = {
-        a = { bg = colors.green, fg = colors.bg, gui = "bold" },
-        b = { bg = colors.darkgray, fg = colors.fg },
-        c = { bg = colors.bg, fg = colors.fg },
-      },
-
-      -- Visual mode (when selecting)
-      visual = {
-        a = { bg = colors.purple, fg = colors.bg, gui = "bold" },
-        b = { bg = colors.darkgray, fg = colors.fg },
-        c = { bg = colors.bg, fg = colors.fg },
-      },
-
-      -- Command mode (when entering commands)
-      command = {
-        a = { bg = colors.yellow, fg = colors.bg, gui = "bold" },
-        b = { bg = colors.darkgray, fg = colors.fg },
-        c = { bg = colors.bg, fg = colors.fg },
-      },
-
-      -- Replace mode (overwrite typing)
-      replace = {
-        a = { bg = colors.red, fg = colors.bg, gui = "bold" },
-        b = { bg = colors.darkgray, fg = colors.fg },
-        c = { bg = colors.bg, fg = colors.fg },
-      },
-
-      -- Inactive windows (no focus)
-      inactive = {
-        a = { bg = colors.inactive_bg, fg = colors.lightgray, gui = "bold" },
-        b = { bg = colors.inactive_bg, fg = colors.lightgray },
-        c = { bg = colors.inactive_bg, fg = colors.lightgray },
-      },
-    }
+    -- Both live in andrew.themes.lualine_theme so the light/dark toggle
+    -- (<leader>ub, andrew.themes.toggle) can restore this exact theme when
+    -- switching back to OneDark, instead of falling back to lualine's "auto".
+    local onedark = require("andrew.themes.lualine_theme")
+    local colors = onedark.colors
+    local my_lualine_theme = onedark.theme
 
     -- Use global status line (single line for all windows)
     vim.opt.laststatus = 3

@@ -32,21 +32,19 @@ M.palettes = {
     surface0      = "#DCD3CB",  -- ctp-surface0: interactive-normal
     surface1      = "#D1C9C2",  -- ctp-surface1: borders (light-mode specific)
     surface2      = "#CAC1B9",  -- ctp-surface2: border-hover, scrollbar
-    gutter_bg     = "#B8D4E3",  -- helix soft-paper-light gutter (pale blue)
+    gutter_bg     = "#679CA3",  -- line number / sign column background
     gutter_fg     = "#3E6E75",  -- line number foreground (dark teal)
     gutter_cur_bg = "#5B8E94",  -- current line gutter background (deeper teal)
     gutter_cur_fg = "#E2F1F3",  -- current line number foreground (light teal)
 
     -- Text hierarchy
-    fg            = "#4C4F69",  -- AnuPpuccin Latte --ctp-text: primary text
+    fg            = "#575279",  -- ctp-text: primary text (deep muted purple)
     fg_dim        = "#525252",  -- ctp-overlay2: text-muted
     fg_faint      = "#797593",  -- Rose Pine subtle: line numbers, ghost text
 
     -- Primary accent — sapphire throughout
     accent        = "#1A7DA4",  -- ctp-sapphire: links, active elements, accent
     accent_soft   = "#4B8FAB",  -- Softer sapphire: active sidebar tab (CSS hardcoded)
-    cursor_bg     = "#1A7DA4",  -- sapphire accent: block/bar cursor background
-    cursor_fg     = "#FFFFFF",  -- letter under the block cursor
 
     -- Semantic accent palette (all from .theme-light --ctp-* definitions)
     red           = "#BA7184",  -- ctp-red: bold, H1, errors, danger
@@ -89,13 +87,14 @@ M.palettes = {
     surface1      = "#51566C",
     surface2      = "#62677E",
     gutter_bg     = "#303446",  -- line number / sign column background (matches bg)
+    gutter_fg     = "#838BA7",  -- line number foreground (muted overlay1)
+    gutter_cur_bg = "#414559",  -- current line gutter background (surface0)
+    gutter_cur_fg = "#99D1DB",  -- current line number foreground (sky)
     fg            = "#C6CEEF",
     fg_dim        = "#B5BDDC",
     fg_faint      = "#A5ADCE",
     accent        = "#11B7C5",
     accent_soft   = "#4B8FAB",
-    cursor_bg     = "#11B7C5",  -- teal accent: block/bar cursor background
-    cursor_fg     = "#FFFFFF",  -- letter under the block cursor
     red           = "#E78284",
     maroon        = "#EA999C",
     peach         = "#EF9F76",
@@ -145,9 +144,9 @@ local function build_highlights(c)
     Conceal        = { fg = c.mauve },
 
     -- Cursor: sapphire accent block (matches Obsidian titlebar/accent)
-    Cursor         = { fg = c.cursor_fg, bg = c.cursor_bg },
-    lCursor        = { fg = c.cursor_fg, bg = c.cursor_bg },
-    CursorIM       = { fg = c.cursor_fg, bg = c.cursor_bg },
+    Cursor         = { fg = c.bg, bg = c.accent },
+    lCursor        = { fg = c.bg, bg = c.accent },
+    CursorIM       = { fg = c.bg, bg = c.accent },
 
     -- Active line: AnuPpuccin rgba(surface1, 0.4) blend
     CursorColumn   = { bg = c.cursorline_bg },
@@ -695,7 +694,7 @@ function M.load(variant)
   if vim.g.colors_name then
     vim.cmd("hi clear")
   end
-  if vim.fn.exists("syntax_on") then
+  if vim.fn.exists("syntax_on") == 1 then
     vim.cmd("syntax reset")
   end
 

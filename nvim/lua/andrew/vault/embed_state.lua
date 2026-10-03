@@ -100,6 +100,12 @@ local function cleanup_buf_resources(bufnr, st)
     pcall(function() st.scroll_timer:close() end)
     st.scroll_timer = nil
   end
+
+  -- Close off-path GC throttle timer
+  if st.gc_timer then
+    pcall(function() st.gc_timer:close() end)
+    st.gc_timer = nil
+  end
 end
 
 --- Clear all per-buffer state for a given buffer.

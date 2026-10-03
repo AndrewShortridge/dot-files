@@ -70,6 +70,28 @@ local contains_value = values.contains_value
 
 local builtin_fns = builtins.make_fns({ contains_value = contains_value })
 
+--- Type-safe ordered comparison for WHERE operators.
+--- Returns a -1/0/1 result, or nil when the two operands are an
+--- incompatible (number vs non-numeric-string) pair. Callers treat nil
+--- as "predicate not satisfied" (Dataview semantics). Numeric strings are
+--- coerced so legitimate "5" > 3 style compares keep working.
+---@param l any
+---@param r any
+---@return number|nil  -1|0|1, or nil if incompatible
+local function ordered_compare(l, r)
+  local tl, tr = types.typename(l), types.typename(r)
+  if tl == "number" and tr == "string" then
+    local n = tonumber(r)
+    if not n then return nil end
+    return types.compare(l, n)
+  elseif tl == "string" and tr == "number" then
+    local n = tonumber(l)
+    if not n then return nil end
+    return types.compare(n, r)
+  end
+  return types.compare(l, r)
+end
+
 -- ---------------------------------------------------------------------------
 -- Expression evaluator
 -- ---------------------------------------------------------------------------
@@ -151,13 +173,13 @@ eval_expr = function(expr, page, current_page)
     elseif expr.op == "!=" then
       return not compare_eq(l, r)
     elseif expr.op == "<" then
-      return types.compare(l, r) < 0
+      local c = ordered_compare(l, r); return c ~= nil and c < 0
     elseif expr.op == ">" then
-      return types.compare(l, r) > 0
+      local c = ordered_compare(l, r); return c ~= nil and c > 0
     elseif expr.op == "<=" then
-      return types.compare(l, r) <= 0
+      local c = ordered_compare(l, r); return c ~= nil and c <= 0
     elseif expr.op == ">=" then
-      return types.compare(l, r) >= 0
+      local c = ordered_compare(l, r); return c ~= nil and c >= 0
     elseif expr.op == "+" then
       return add_values(l, r)
     elseif expr.op == "-" then
@@ -265,13 +287,29 @@ local function apply_sort(pages, ast, current_page)
   if not ast.sort then
     return pages
   end
-  table.sort(pages, function(a, b)
-    for _, s in ipairs(ast.sort) do
-      local va = eval_expr(s.expr, a, current_page)
-      local vb = eval_expr(s.expr, b, current_page)
-      local cmp = types.compare(va, vb)
+  -- Decorate-sort-undecorate (Schwartzian): precompute each page's sort
+  -- key(s) once (O(N) eval_expr calls) instead of re-evaluating inside the
+  -- comparator (O(N log N) calls). Directions are precomputed too. The
+  -- comparator below is semantically identical to the prior in-place sort,
+  -- so the (unstable) tie ordering is preserved.
+  local nkeys = #ast.sort
+  local dir = {}
+  for k = 1, nkeys do
+    dir[k] = ast.sort[k].dir == "DESC"
+  end
+  local dec = {}
+  for i, page in ipairs(pages) do
+    local rec = { page = page }
+    for k = 1, nkeys do
+      rec[k] = eval_expr(ast.sort[k].expr, page, current_page)
+    end
+    dec[i] = rec
+  end
+  table.sort(dec, function(a, b)
+    for k = 1, nkeys do
+      local cmp = types.compare(a[k], b[k])
       if cmp ~= 0 then
-        if s.dir == "DESC" then
+        if dir[k] then
           return cmp > 0
         end
         return cmp < 0
@@ -279,6 +317,9 @@ local function apply_sort(pages, ast, current_page)
     end
     return false
   end)
+  for i = 1, #dec do
+    pages[i] = dec[i].page
+  end
   return pages
 end
 

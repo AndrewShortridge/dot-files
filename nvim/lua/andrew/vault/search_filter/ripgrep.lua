@@ -12,17 +12,24 @@ local pat = require("andrew.vault.patterns")
 --- Build ripgrep command arguments for a single text/regex AST node.
 ---@param node table text or regex AST node
 ---@param vault_path string vault root directory
----@param files_from string|nil path to temp file with file list
+---@param restrict_paths string[]|nil explicit file list to search (nil = whole vault)
 ---@return string[] command arguments for vim.system()
-local function build_rg_args(node, vault_path, files_from)
+local function build_rg_args(node, vault_path, restrict_paths)
   local args = {
     "rg",
     "--column",
     "--line-number",
     "--no-heading",
     "--color=never",
+    -- Always print the path: rg omits it when handed a single positional file,
+    -- which would make extract_rg_file() return the match text instead.
+    "--with-filename",
   }
 
+  -- The pattern must be emitted AFTER every flag, immediately behind "--";
+  -- emitting it early turned --max-count/--iglob/the file list into positional
+  -- paths and rg failed with "No such file or directory".
+  local pattern
   if node.type == "text" then
     if node.quoted then
       -- Exact fixed-string match
@@ -31,21 +38,20 @@ local function build_rg_args(node, vault_path, files_from)
       -- Smart case for unquoted text
       args[#args + 1] = "--smart-case"
     end
-    args[#args + 1] = "--"
-    args[#args + 1] = node.value
+    pattern = node.value
   elseif node.type == "regex" then
     -- Apply regex flags
     local flags = node.flags or ""
     if flags:find("i") then
-      args[#args + 1] = "--case-insensitive"
+      -- rg has no --case-insensitive; the long form of -i is --ignore-case.
+      args[#args + 1] = "--ignore-case"
     end
     if flags:find("s") then
       args[#args + 1] = "--multiline-dotall"
     elseif flags:find("m") then
       args[#args + 1] = "--multiline"
     end
-    args[#args + 1] = "--"
-    args[#args + 1] = node.pattern
+    pattern = node.pattern
   end
 
   local max_per_file = config.search.max_matches_per_file
@@ -54,8 +60,24 @@ local function build_rg_args(node, vault_path, files_from)
     args[#args + 1] = tostring(max_per_file)
   end
 
-  if files_from then
-    args[#args + 1] = "--files-from=" .. files_from
+  -- Above search.max_files_from the caller drops the file restriction and hands
+  -- rg the whole vault, so the exclusions have to be expressed as globs here too.
+  for _, a in ipairs(require("andrew.vault.search_exclude").rg_args()) do
+    args[#args + 1] = a
+  end
+
+  -- "--" ends option parsing: everything after it is the pattern followed by
+  -- positional paths.
+  args[#args + 1] = "--"
+  args[#args + 1] = pattern
+
+  -- ripgrep has no --files-from flag (-f/--file reads *patterns*), so a
+  -- restricted set is passed as positional paths, bounded by
+  -- config.search.max_files_from at the call site.
+  if restrict_paths then
+    for _, p in ipairs(restrict_paths) do
+      args[#args + 1] = p
+    end
   else
     args[#args + 1] = vault_path
   end
@@ -165,7 +187,7 @@ end
 ---@return string[] args, fun(result: table): string[] process
 local function prepare_rg_call(node, file_paths, vault_path, tmpfile, limit_state)
   local use_file_restriction = should_restrict_files(tmpfile, file_paths)
-  local args = build_rg_args(node, vault_path, use_file_restriction and tmpfile or nil)
+  local args = build_rg_args(node, vault_path, use_file_restriction and file_paths or nil)
   local function process(result)
     return process_rg_output(result.stdout, use_file_restriction, file_paths, limit_state)
   end

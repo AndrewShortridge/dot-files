@@ -58,13 +58,25 @@ return {
       numhl = "",
     })
 
-    -- Define highlight groups for signs
-    vim.api.nvim_set_hl(0, "DapBreakpoint", { fg = "#e51400" })
-    vim.api.nvim_set_hl(0, "DapBreakpointCondition", { fg = "#e5ac00" })
-    vim.api.nvim_set_hl(0, "DapBreakpointRejected", { fg = "#e51400" })
-    vim.api.nvim_set_hl(0, "DapStopped", { fg = "#98c379" })
-    vim.api.nvim_set_hl(0, "DapLogPoint", { fg = "#61afef" })
-    vim.api.nvim_set_hl(0, "DapStoppedLine", { bg = "#2e3d2e" })
+    -- Define highlight groups for signs.
+    -- Re-applied on ColorScheme: a colorscheme starts with `hi clear`, which
+    -- wipes these, and nothing else re-creates them -- so before this, one
+    -- <leader>ub light/dark switch left every breakpoint sign in the gutter
+    -- uncoloured for the rest of the session.
+    local function dap_highlights()
+      vim.api.nvim_set_hl(0, "DapBreakpoint", { fg = "#e51400" })
+      vim.api.nvim_set_hl(0, "DapBreakpointCondition", { fg = "#e5ac00" })
+      vim.api.nvim_set_hl(0, "DapBreakpointRejected", { fg = "#e51400" })
+      vim.api.nvim_set_hl(0, "DapStopped", { fg = "#98c379" })
+      vim.api.nvim_set_hl(0, "DapLogPoint", { fg = "#61afef" })
+      vim.api.nvim_set_hl(0, "DapStoppedLine", { bg = "#2e3d2e" })
+    end
+
+    dap_highlights()
+    vim.api.nvim_create_autocmd("ColorScheme", {
+      group = vim.api.nvim_create_augroup("DapHighlights", { clear = true }),
+      callback = dap_highlights,
+    })
   end,
 
   -- =============================================================================
@@ -197,6 +209,18 @@ return {
     }
 
     -- =============================================================================
+    -- GDB Adapter (for Fortran)
+    -- =============================================================================
+    -- gdb 14+ speaks DAP natively. Fortran MUST use gdb, not codelldb: lldb has
+    -- no Fortran type system, so codelldb cannot read or set any Fortran variable
+    -- (the Scopes pane comes up empty). gdb has full Fortran support.
+    dap.adapters.gdb = {
+      type = "executable",
+      command = "gdb",
+      args = { "--interpreter=dap" },
+    }
+
+    -- =============================================================================
     -- C/C++ Debug Configuration
     -- =============================================================================
 
@@ -254,20 +278,30 @@ return {
     -- =============================================================================
     -- Fortran Debug Configuration
     -- =============================================================================
-    -- Uses codelldb for debugging Fortran programs
-    -- Compile with -g flag for debug symbols (e.g., gfortran -g -o program program.f90)
+    -- Uses GDB (see adapter above) - codelldb/lldb cannot read Fortran variables.
+    -- Compile with debug symbols: -g -O0 (ifx or gfortran).
 
     dap.configurations.fortran = {
       {
-        name = "Launch Fortran Program",
-        type = "codelldb",
+        name = "Launch Fortran (gdb)",
+        type = "gdb",
         request = "launch",
         program = function()
           return vim.fn.input("Path to executable: ", vim.fn.getcwd() .. "/", "file")
         end,
         cwd = "${workspaceFolder}",
-        stopOnEntry = false,
-        args = {},
+        stopAtBeginningOfMainSubprogram = false,
+      },
+      {
+        -- Attach to a running process (e.g. one MPI rank). On attach gdb stops
+        -- the process so the Scopes pane populates.
+        name = "Attach to process (gdb)",
+        type = "gdb",
+        request = "attach",
+        pid = function()
+          return require("dap.utils").pick_process()
+        end,
+        cwd = "${workspaceFolder}",
       },
     }
 

@@ -14,6 +14,11 @@ function M.search_advanced()
 
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].bufhidden = "wipe"
+  -- This prompt has its own <Tab> completion (field names / values) and binds
+  -- <CR> to submit.  blink.cmp also binds <CR> to "accept" while its menu is
+  -- open, which swallowed the first <CR> and forced the user to press Enter
+  -- twice to run the search.  Opt this buffer out of blink.cmp entirely.
+  vim.b[buf].completion = false
 
   local width = config.search.prompt_width
   local ui_dims = require("andrew.vault.ui").get_screen_dims()

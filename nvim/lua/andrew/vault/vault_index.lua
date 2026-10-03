@@ -25,7 +25,18 @@ local _folder_pool = string_intern.new(500)
 -- so identical lowercase values across entries share a single Lua string object.
 local _rebuild_lower_pool = string_intern.new(5000)
 
-local SCHEMA_VERSION = 7
+-- Bumped 7 -> 8 for multi-value (scalar-or-list) inline_fields shape.
+-- Bumped 8 -> 9: per-chunk parsed_data no longer persisted (it verbatim
+-- duplicates the entry's merged top-level fields); only {start_line,
+-- end_line, digest} are kept per chunk now.
+-- Bumped 9 -> 10: chunk digests switched from SHA-256 to CRC32 (8 hex chars,
+-- faster). Existing digests won't match on first load → one-time full reparse.
+-- Bumped 10 -> 11: parse_content() now stores task.line file-absolute instead
+-- of body-relative (it disagreed with parse_chunk()). A persisted index carries
+-- the old body-relative numbers, which make every task jump land #frontmatter
+-- lines too early, so it must be discarded rather than reused -- the bump turns
+-- that into one automatic rebuild instead of a manual :VaultIndexRebuild.
+local SCHEMA_VERSION = 11
 
 -- Fields derived from other entry data; stripped before JSON persistence to
 -- reduce index size (~30% smaller).  Rebuilt lazily on load / WAL replay.
@@ -33,6 +44,17 @@ local DERIVED_FIELDS = {
   "tag_set", "heading_slugs", "block_id_set",
   "abs_path", "basename", "basename_lower", "folder",
 }
+
+-- Set form of all entry-level keys omitted from persisted JSON (the lazy
+-- metatable-recomputable DERIVED_FIELDS plus the rel_stem pair, which load()
+-- rebuilds from rel_path). Used by strip_derived for O(1) key filtering.
+-- outlinks/tasks/_chunks are handled specially (deep-stripped copies), so they
+-- are also listed here to exclude them from the shallow field copy.
+local PERSIST_OMIT_KEYS = {
+  rel_stem = true, rel_stem_lower = true,
+  outlinks = true, tasks = true, _chunks = true,
+}
+for _, k in ipairs(DERIVED_FIELDS) do PERSIST_OMIT_KEYS[k] = true end
 
 --- Create a metatable for lazy derived field computation on index entries.
 --- Fields are computed on first access and cached via rawset for O(1) subsequent reads.
@@ -126,6 +148,7 @@ M.parse_task_fields = parser.parse_task_fields
 ---@field _name_index table<string, string[]>
 ---@field _alias_index table<string, string[]>
 ---@field _inlinks table<string, table[]>
+---@field _inlinks_reverse table<string, table<string, boolean>>
 ---@field _persist_timer uv.uv_timer_t|nil
 ---@field _generation number
 ---@field _last_persisted_generation number
@@ -185,6 +208,11 @@ function M.VaultIndex.new(vault_path)
   self._name_index = {}
   self._alias_index = {}
   self._inlinks = {}
+  self._inlinks_reverse = {}
+  -- Cached link resolver closure (reads self._name_index/_alias_index/files
+  -- live through `self`, so wholesale table reassignments stay transparent).
+  self._resolve_fn = nil
+  self._vault_prefix = self.vault_path .. "/"
   self._persist_timer = nil
   self._generation = 0
   self._last_persisted_generation = 0
@@ -266,6 +294,18 @@ end
 ---@return number
 function M.VaultIndex:subscriber_count()
   return #self._subscribers
+end
+
+--- True if any subscriber declares non-nil interests (i.e. needs change_types
+--- for interest-based filtering). When false, _compute_change_types can be
+--- skipped and nil change_types passed — interests_overlap() treats nil as
+--- "all changed", which is exactly how a nil-interests subscriber behaves.
+---@return boolean
+function M.VaultIndex:_has_interest_subscribers()
+  for _, sub in ipairs(self._subscribers) do
+    if sub.interests ~= nil then return true end
+  end
+  return false
 end
 
 -- ---------------------------------------------------------------------------
@@ -397,6 +437,66 @@ local function interests_overlap(interests, change_types)
   return false
 end
 
+-- Set equality for arrays of strings (tags, aliases)
+local function string_set_equal(a, b)
+  if not a and not b then return true end
+  if not a or not b then return false end
+  if #a ~= #b then return false end
+  local set = {}
+  for _, v in ipairs(a) do set[v] = true end
+  for _, v in ipairs(b) do
+    if not set[v] then return false end
+  end
+  return true
+end
+
+-- Set equality for arrays of tables, using a key function to extract a string key
+local function keyed_set_equal(a, b, key_fn)
+  if not a and not b then return true end
+  if not a or not b then return false end
+  if #a ~= #b then return false end
+  local set = {}
+  for _, v in ipairs(a) do set[key_fn(v)] = true end
+  for _, v in ipairs(b) do
+    if not set[key_fn(v)] then return false end
+  end
+  return true
+end
+
+-- List equality for arrays of tables, using a key function
+local function keyed_list_equal(a, b, key_fn)
+  if not a and not b then return true end
+  if not a or not b then return false end
+  if #a ~= #b then return false end
+  for i = 1, #a do
+    if key_fn(a[i]) ~= key_fn(b[i]) then return false end
+  end
+  return true
+end
+
+-- Shallow table key equality (for frontmatter: checks key presence, not values)
+local function keys_equal(a, b)
+  if not a and not b then return true end
+  if not a or not b then return false end
+  local count_a, count_b = 0, 0
+  for _ in pairs(a) do count_a = count_a + 1 end
+  for _ in pairs(b) do count_b = count_b + 1 end
+  if count_a ~= count_b then return false end
+  for k in pairs(a) do
+    if b[k] == nil then return false end
+  end
+  return true
+end
+
+-- Key extractors for table-typed fields
+local function heading_key(h) return (h.slug or "") .. ":" .. (h.level or 0) end
+local function outlink_key(l) return l._name_lower or l.path or "" end
+local function block_id_key(b) return b.id or "" end
+local function task_key(t)
+  return (t.status or "") .. ":" .. (t.line or 0) .. ":" .. (t.text or "")
+    .. ":" .. (t.due or "") .. ":" .. (t.priority or "") .. ":" .. (t.scheduled or "")
+end
+
 --- Compare old and new parsed entry to determine what changed.
 ---@param old_entry table|nil Previous index entry for this file
 ---@param new_entry table|nil Newly parsed entry
@@ -416,68 +516,12 @@ local function diff_entry(old_entry, new_entry)
     }
   end
 
-  -- Set equality for arrays of strings (tags, aliases)
-  local function string_set_equal(a, b)
-    if not a and not b then return true end
-    if not a or not b then return false end
-    if #a ~= #b then return false end
-    local set = {}
-    for _, v in ipairs(a) do set[v] = true end
-    for _, v in ipairs(b) do
-      if not set[v] then return false end
-    end
-    return true
-  end
-
-  -- Set equality for arrays of tables, using a key function to extract a string key
-  local function keyed_set_equal(a, b, key_fn)
-    if not a and not b then return true end
-    if not a or not b then return false end
-    if #a ~= #b then return false end
-    local set = {}
-    for _, v in ipairs(a) do set[key_fn(v)] = true end
-    for _, v in ipairs(b) do
-      if not set[key_fn(v)] then return false end
-    end
-    return true
-  end
-
-  -- List equality for arrays of tables, using a key function
-  local function keyed_list_equal(a, b, key_fn)
-    if not a and not b then return true end
-    if not a or not b then return false end
-    if #a ~= #b then return false end
-    for i = 1, #a do
-      if key_fn(a[i]) ~= key_fn(b[i]) then return false end
-    end
-    return true
-  end
-
-  -- Shallow table key equality (for frontmatter: checks key presence, not values)
-  local function keys_equal(a, b)
-    if not a and not b then return true end
-    if not a or not b then return false end
-    local count_a, count_b = 0, 0
-    for _ in pairs(a) do count_a = count_a + 1 end
-    for _ in pairs(b) do count_b = count_b + 1 end
-    if count_a ~= count_b then return false end
-    for k in pairs(a) do
-      if b[k] == nil then return false end
-    end
-    return true
-  end
-
-  -- Key extractors for table-typed fields
-  local function heading_key(h) return (h.slug or "") .. ":" .. (h.level or 0) end
-  local function outlink_key(l) return l._name_lower or l.path or "" end
-  local function block_id_key(b) return b.id or "" end
-
   return {
     frontmatter = not keys_equal(old_entry.frontmatter, new_entry.frontmatter),
     tags        = not string_set_equal(old_entry.tags, new_entry.tags),
     headings    = not keyed_list_equal(old_entry.headings, new_entry.headings, heading_key),
     outlinks    = not keyed_set_equal(old_entry.outlinks, new_entry.outlinks, outlink_key),
-    tasks       = #(old_entry.tasks or {}) ~= #(new_entry.tasks or {}),
+    tasks       = not keyed_list_equal(old_entry.tasks, new_entry.tasks, task_key),
     aliases     = not string_set_equal(old_entry.aliases, new_entry.aliases),
     block_ids   = not keyed_set_equal(old_entry.block_ids, new_entry.block_ids, block_id_key),
   }
@@ -698,7 +742,10 @@ function M.VaultIndex:_apply_staged(staged, deleted, old_entries, changed_rel_pa
     if not self._inlinks or not next(self._inlinks) then
       self:_recompute_inlinks()
     else
-      self:_recompute_inlinks_incremental(changed_rel_paths, deleted)
+      -- Only sources whose outlink SET actually changed contribute new inlink
+      -- edges; the rest are pure churn (e.g. prose-only edits). Skip them.
+      local outlinks_changed = M._build_outlinks_changed_set(old_entries, self.files, changed_rel_paths)
+      self:_recompute_inlinks_incremental(changed_rel_paths, deleted, outlinks_changed)
     end
   end
 
@@ -722,9 +769,12 @@ function M.VaultIndex:_apply_staged(staged, deleted, old_entries, changed_rel_pa
     end
   end
 
-  -- Compute change_types by diffing old vs new entries (OR'd across all files)
+  -- Compute change_types by diffing old vs new entries (OR'd across all files).
+  -- Skip the diff entirely when no subscriber declares interests — nil
+  -- change_types is treated as "all changed" by interests_overlap(), which is
+  -- exactly how a nil-interests subscriber behaves.
   local change_types = nil
-  if not is_cold_start then
+  if not is_cold_start and self:_has_interest_subscribers() then
     change_types = M._compute_change_types(
       old_entries, self.files, modified_paths, added_paths, deleted
     )
@@ -753,26 +803,42 @@ function M.VaultIndex:_wal_path()
   return self._index_dir .. "/changes.jsonl"
 end
 
---- Strip pre-computed lowercase fields from outlinks (recomputed on load).
+--- Return a shallow copy of outlinks with pre-computed lowercase fields omitted
+--- (recomputed on load). Non-mutating: the live link tables are never touched.
 ---@param outlinks table[]|nil
+---@return table[]|nil
 local function strip_outlinks_derived(outlinks)
-  if not outlinks then return end
-  for _, link in ipairs(outlinks) do
-    link._name_lower = nil
-    link.stem_lower = nil
-    link.basename_lower = nil
+  if not outlinks then return nil end
+  local out = {}
+  for i, link in ipairs(outlinks) do
+    local copy = {}
+    for k, v in pairs(link) do
+      if k ~= "_name_lower" and k ~= "stem_lower" and k ~= "basename_lower" then
+        copy[k] = v
+      end
+    end
+    out[i] = copy
   end
+  return out
 end
 
---- Strip pre-computed lowercase fields from tasks (recomputed on load).
+--- Return a shallow copy of tasks with pre-computed lowercase fields omitted
+--- (recomputed on load). Non-mutating: the live task tables are never touched.
 ---@param tasks table[]|nil
+---@return table[]|nil
 local function strip_tasks_derived(tasks)
-  if not tasks then return end
-  for _, task in ipairs(tasks) do
-    task.text_lower = nil
-    task.tags_lower = nil
-    task.repeat_rule_lower = nil
+  if not tasks then return nil end
+  local out = {}
+  for i, task in ipairs(tasks) do
+    local copy = {}
+    for k, v in pairs(task) do
+      if k ~= "text_lower" and k ~= "tags_lower" and k ~= "repeat_rule_lower" then
+        copy[k] = v
+      end
+    end
+    out[i] = copy
   end
+  return out
 end
 
 --- Rebuild pre-computed lowercase fields on outlinks after loading from disk.
@@ -817,27 +883,63 @@ local function rebuild_tasks_derived(tasks)
   end
 end
 
---- Strip derived fields from a single entry before JSON encoding.
---- Removes any rawset-cached derived values; __index will recompute on demand.
+--- Rebuild all non-persisted derived state on a single loaded entry.
+--- Factored out of load()'s per-file loop so the same body can run either
+--- inline (small vaults) or batched inside a coroutine (large vaults).
+---@param self VaultIndex
 ---@param entry VaultIndexEntry
+local function rebuild_entry_derived(self, entry)
+  -- Set lazy-derived-field metatable (abs_path, basename, folder, etc.)
+  self:_apply_entry_mt(entry)
+  -- Recompute rel_stem and rel_stem_lower (stripped before persist)
+  entry.rel_stem = entry.rel_path:gsub(pat.MD_EXTENSION, "")
+  entry.rel_stem_lower = entry.rel_stem:lower()
+  -- Rebuild pre-computed lowercase fields on outlinks and tasks
+  rebuild_outlinks_derived(entry.outlinks)
+  rebuild_tasks_derived(entry.tasks)
+  -- Loaded chunks carry only {start_line, end_line, digest}; parsed_data is
+  -- re-derived from chunk lines on the next incremental update.
+end
+
+--- Return a JSON-ready shallow copy of an entry with derived fields omitted.
+---
+--- NON-MUTATING: the live `self.files` entry is never modified. This is a
+--- correctness requirement, not just style — many derived fields are NOT
+--- recomputable by the entry metatable (only the 7 DERIVED_FIELDS are). The
+--- rel_stem pair and the per-outlink/per-task lowercase fields are only rebuilt
+--- by load() on disk-read. Mutating live entries here would leave those fields
+--- nil in-memory until the next Neovim restart, silently breaking inlink
+--- resolution (reads rel_stem) and task-tag search (reads tags_lower).
+---
+--- The omitted fields are stripped purely to shrink the persisted JSON (~30%);
+--- load() reconstructs all of them.
+---@param entry VaultIndexEntry
+---@return table  plain (metatable-free) copy ready for vim.json.encode
 local function strip_derived(entry)
-  for _, key in ipairs(DERIVED_FIELDS) do
-    rawset(entry, key, nil)
-  end
-  -- Strip redundant stem fields (recomputed on load from rel_path)
-  entry.rel_stem = nil
-  entry.rel_stem_lower = nil
-  strip_outlinks_derived(entry.outlinks)
-  strip_tasks_derived(entry.tasks)
-  if entry._chunks then
-    for _, chunk in ipairs(entry._chunks) do
-      local pd = chunk.parsed_data
-      if pd then
-        strip_outlinks_derived(pd.outlinks)
-        strip_tasks_derived(pd.tasks)
-      end
+  local copy = {}
+  for k, v in pairs(entry) do
+    if not PERSIST_OMIT_KEYS[k] then
+      copy[k] = v
     end
   end
+  copy.outlinks = strip_outlinks_derived(entry.outlinks)
+  copy.tasks = strip_tasks_derived(entry.tasks)
+  if entry._chunks then
+    -- Persist only the slim chunk identity ({start_line, end_line, digest}).
+    -- parsed_data is intentionally dropped: it verbatim duplicates the entry's
+    -- merged top-level fields. It is re-derived from chunk lines during the
+    -- next incremental update (see process_chunks in vault_index_build.lua).
+    local chunks = {}
+    for i, chunk in ipairs(entry._chunks) do
+      chunks[i] = {
+        start_line = chunk.start_line,
+        end_line = chunk.end_line,
+        digest = chunk.digest,
+      }
+    end
+    copy._chunks = chunks
+  end
+  return copy
 end
 
 --- Load from persisted index. Returns true if successful.
@@ -897,30 +999,53 @@ function M.VaultIndex:load()
     end
   end
 
-  -- Rebuild derived fields not persisted to disk
+  -- Rebuild derived fields not persisted to disk.
+  --
+  -- This runs synchronously-to-completion: load() MUST return with every entry
+  -- fully derived and _ready set, because init.lua calls build_async()
+  -- immediately afterward (which branches on `not _ready` for cold-start
+  -- detection) and the persist round-trip spec reads derived fields on the same
+  -- tick. On large vaults the per-entry pass is the dominant cost, so above
+  -- `load_chunk_threshold` files we run it inside a coroutine and pump libuv
+  -- between batches — this keeps load() blocking-until-done while letting the UI
+  -- paint/accept input between batches instead of stalling the first keystroke.
+  local cfg = require("andrew.vault.config").index
   local file_count = 0
-  for _, entry in pairs(self.files) do
-    file_count = file_count + 1
-    -- Set lazy-derived-field metatable (abs_path, basename, folder, etc.)
-    self:_apply_entry_mt(entry)
-    -- Recompute rel_stem and rel_stem_lower (stripped before persist)
-    entry.rel_stem = entry.rel_path:gsub(pat.MD_EXTENSION, "")
-    entry.rel_stem_lower = entry.rel_stem:lower()
-    -- Rebuild pre-computed lowercase fields on outlinks and tasks
-    rebuild_outlinks_derived(entry.outlinks)
-    rebuild_tasks_derived(entry.tasks)
-    -- Rebuild derived fields inside chunk parsed_data (stripped before persist)
-    if entry._chunks then
-      for _, chunk in ipairs(entry._chunks) do
-        local pd = chunk.parsed_data
-        if pd then
-          rebuild_outlinks_derived(pd.outlinks)
-          rebuild_tasks_derived(pd.tasks)
-        end
+  for _ in pairs(self.files) do file_count = file_count + 1 end
+  self._file_count = file_count
+
+  if file_count <= cfg.load_chunk_threshold then
+    -- Small vault: derive inline, exactly as before (no behavior change).
+    for _, entry in pairs(self.files) do
+      rebuild_entry_derived(self, entry)
+    end
+  else
+    -- Large vault: yield to the event loop between batches, but block load()
+    -- until the coroutine is dead so all derived state exists before _ready.
+    local co = coroutine.create(function()
+      local n = 0
+      for _, entry in pairs(self.files) do
+        rebuild_entry_derived(self, entry)
+        n = n + 1
+        if n % cfg.batch_size == 0 then coroutine.yield() end
+      end
+    end)
+    while coroutine.status(co) ~= "dead" do
+      local ok_co, err = coroutine.resume(co)
+      if not ok_co then
+        log.error("load derived rebuild failed: %s", tostring(err))
+        break
+      end
+      if coroutine.status(co) ~= "dead" then
+        -- Drain pending libuv callbacks/redraws between batches without ever
+        -- returning control to the caller before the rebuild completes.
+        vim.uv.run("nowait")
       end
     end
   end
-  self._file_count = file_count
+
+  -- The three O(N) passes below stay synchronous: they must complete before
+  -- _ready anyway, and the audit scopes the chunking fix to the per-entry loop.
   -- Rebuild derived indexes so the index is immediately queryable
   self:_rebuild_name_index()
   self:_recompute_inlinks()
@@ -937,30 +1062,60 @@ end
 ---@param changed_rel_paths string[]  rel_paths of changed/new files
 ---@param deleted_rel_paths string[]  rel_paths of deleted files
 function M.VaultIndex:_persist_delta(changed_rel_paths, deleted_rel_paths)
-  local wal_path = self:_wal_path()
-  local f = io.open(wal_path, "a")
-  if not f then
-    log.warn("WAL open failed: %s", wal_path)
-    return
-  end
+  -- Buffer the whole batch into ONE payload, then issue a single async
+  -- append (fs_open/fs_write/fs_close) — no blocking syscalls and no
+  -- per-record string churn on the UI thread.  Each record stays
+  -- newline-terminated so load()'s wf:lines() replay is byte-identical.
+  local parts = {}
 
   for _, rel_path in ipairs(changed_rel_paths) do
     local entry = self.files[rel_path]
     if entry then
-      strip_derived(entry)
-      local ok, line = pcall(vim.json.encode, { op = "set", path = rel_path, entry = entry })
-      -- No restore needed: __index metatable recomputes on demand
-      if ok then f:write(line .. "\n") end
+      -- Encode a stripped COPY; the live entry keeps its derived fields intact.
+      local stripped = strip_derived(entry)
+      local ok, line = pcall(vim.json.encode, { op = "set", path = rel_path, entry = stripped })
+      if ok then parts[#parts + 1] = line end
     end
   end
 
   for _, rel_path in ipairs(deleted_rel_paths) do
     local ok, line = pcall(vim.json.encode, { op = "del", path = rel_path })
-    if ok then f:write(line .. "\n") end
+    if ok then parts[#parts + 1] = line end
   end
 
-  f:close()
+  -- Keep the WAL-count arithmetic identical to the blocking version: count
+  -- ALL input paths (feeds the >1000 full-persist trigger and the truncation
+  -- guard), synchronously, regardless of how many records actually encoded.
   self._wal_count = self._wal_count + #changed_rel_paths + #deleted_rel_paths
+
+  -- Nothing to write: skip the syscall (an empty append would leave the file
+  -- byte-identical anyway).
+  if #parts == 0 then return end
+
+  local wal_path = self:_wal_path()
+  local payload = table.concat(parts, "\n") .. "\n"
+
+  vim.uv.fs_open(wal_path, "a", 438, function(open_err, fd)
+    if open_err or not fd then
+      vim.schedule(function()
+        log.warn("WAL open failed: %s", open_err or wal_path)
+      end)
+      return
+    end
+
+    -- Offset -1 with the "a" append flag so concurrent batches append
+    -- correctly instead of overwriting each other.
+    vim.uv.fs_write(fd, payload, -1, function(write_err)
+      if write_err then
+        vim.uv.fs_close(fd, function() end)
+        vim.schedule(function()
+          log.warn("WAL write failed: %s", write_err)
+        end)
+        return
+      end
+      vim.uv.fs_close(fd, function() end)
+    end)
+  end)
 end
 
 --- Truncate the WAL file after a successful full persist.
@@ -980,16 +1135,13 @@ function M.VaultIndex:_schedule_persist(changed_rel_paths, deleted_rel_paths)
   if changed_rel_paths or deleted_rel_paths then
     -- Incremental change: write delta to WAL (fast, <2ms)
     self:_persist_delta(changed_rel_paths or {}, deleted_rel_paths or {})
-    -- Large WAL: debounced full persist (existing path)
-    -- Small WAL: defer to IDLE (CursorHold) to avoid typing interference
+    -- Only compact the WAL into a full index once it has grown large.
+    -- Small WALs are left as-is: crash recovery replays them on load(),
+    -- and VimLeavePre's persist_now() writes a correct full index + truncates.
+    -- (Previously every small save enqueued an IDLE _persist() that did a
+    --  full strip + whole-index vim.json.encode, negating the WAL fast path.)
     if self._wal_count > 1000 then
       self:_schedule_full_persist()
-    else
-      local scheduler = require("andrew.vault.work_scheduler")
-      local idx = self
-      scheduler.schedule(scheduler.IDLE, function()
-        idx:_persist()
-      end, { domain = "index", label = "persist" })
     end
   else
     -- Full rebuild: schedule debounced full persist with adaptive delay
@@ -1029,17 +1181,19 @@ function M.VaultIndex:_prepare_persist_data(caller)
     return nil
   end
 
-  -- Strip cached derived fields to reduce JSON size (~30% smaller).
-  -- No restore needed: __index metatable recomputes on demand.
-  for _, entry in pairs(self.files) do
-    strip_derived(entry)
+  -- Build stripped COPIES to reduce JSON size (~30% smaller). The live
+  -- self.files entries are NOT mutated — see strip_derived for why that matters
+  -- (rel_stem / task tags_lower / outlink lowers are not metatable-recoverable).
+  local stripped_files = {}
+  for rel_path, entry in pairs(self.files) do
+    stripped_files[rel_path] = strip_derived(entry)
   end
 
   local data = {
     version = SCHEMA_VERSION,
     vault_path = self.vault_path,
     built_at = os.time(),
-    files = self.files,
+    files = stripped_files,
   }
   local ok, json = pcall(vim.json.encode, data)
 
@@ -1188,6 +1342,7 @@ function M.VaultIndex:_walk()
   self:_walk_files(function(rel_path, abs_path, stat)
     local entry = parser.parse_file(abs_path, rel_path, stat)
     if entry then
+      self:_apply_entry_mt(entry)
       if self.files[rel_path] == nil then
         self._file_count = self._file_count + 1
       end
@@ -1316,6 +1471,23 @@ local function add_entry_to_indexes(entry, name_idx, alias_idx)
   end
 end
 
+--- Defer collision detection to IDLE.
+--- Collision detection is an O(N) scan whose result is advisory only (it is
+--- never persisted, and wikilink resolution does not read it), so it is run
+--- off the foreground to keep startup/edit responsiveness. Coalesce: cancel any
+--- pending scan so only the latest is queued. The live self._name_index /
+--- self._alias_index are read at drain time (they may have been mutated by an
+--- incremental update in between); show_collisions recomputes on demand, so a
+--- pending/undrained scan never produces stale user-visible data.
+function M.VaultIndex:_schedule_collision_detect()
+  local scheduler = require("andrew.vault.work_scheduler")
+  scheduler.cancel_domain("collisions")
+  local idx = self
+  scheduler.schedule(scheduler.IDLE, function()
+    idx:_detect_collisions(idx._name_index, idx._alias_index)
+  end, { domain = "collisions", label = "detect" })
+end
+
 --- Rebuild the name lookup table (basename -> [abs_paths]).
 function M.VaultIndex:_rebuild_name_index()
   local name_idx = {}
@@ -1331,8 +1503,10 @@ function M.VaultIndex:_rebuild_name_index()
   self._name_cache = nil
   self._sorted_names = nil
 
-  -- Collision detection
-  self:_detect_collisions(name_idx, alias_idx)
+  -- Full-rebuild paths (cold start, load, build_sync) where startup
+  -- responsiveness matters: defer the collision scan to IDLE rather than
+  -- blocking the build.
+  self:_schedule_collision_detect()
 end
 
 --- Incrementally update the name and alias indexes for changed files.
@@ -1435,12 +1609,13 @@ function M.VaultIndex:_update_name_index_incremental(old_entries, changed_rel_pa
   self._name_cache = nil
   self._sorted_names = nil
 
-  -- Collision detection: skip for small batches (< 5 files) to avoid
-  -- the O(N) scan in _detect_collisions(). The next full build will
-  -- catch any new collisions.
+  -- For small batches (< 5 files) skip the collision scan entirely -- the next
+  -- full build / on-demand show_collisions() will catch new collisions. For
+  -- larger batches (checkout / save-all bursts), defer to IDLE so the
+  -- foreground is never blocked.
   local total_affected = #changed_rel_paths + #deleted_rel_paths
   if total_affected >= 5 then
-    self:_detect_collisions(name_idx, alias_idx)
+    self:_schedule_collision_detect()
   end
 end
 
@@ -1471,14 +1646,26 @@ end
 --- Only called from vault_index_inlinks with entry.outlinks items.
 ---@return fun(link: table): table|nil
 function M.VaultIndex:_build_resolve_fn()
-  local name_idx, alias_idx, files = self._name_index, self._alias_index, self.files
-  local prefix = self.vault_path .. "/"
+  if self._resolve_fn then return self._resolve_fn end
 
-  return function(link)
+  -- The closure captures ONLY `self` (and the immutable vault prefix), reading
+  -- self._name_index/_alias_index/files on each call. This is load-bearing:
+  -- _rebuild_name_index swaps _name_index/_alias_index wholesale and cold-start
+  -- builds reassign self.files, so capturing those table identities by value
+  -- would resolve against stale indexes. Reading through `self` is transparent
+  -- to those reassignments — hence one cached closure suffices for the lifetime
+  -- of the index, with no invalidation needed.
+  local prefix = self._vault_prefix
+  local plen = #prefix
+
+  local fn = function(link)
     local lower = link._name_lower
     local stem = link.stem_lower
     local base = link.basename_lower
     if not lower or lower == "" then return nil end
+
+    local name_idx = self._name_index
+    local files = self.files
 
     -- Try name index (covers basename and rel_stem lookups)
     local paths = name_idx[lower]
@@ -1486,28 +1673,31 @@ function M.VaultIndex:_build_resolve_fn()
       or name_idx[base or lower]
     if paths and #paths > 0 then
       local abs = paths[1]
-      if abs:sub(1, #prefix) == prefix then
-        local entry = files[abs:sub(#prefix + 1)]
+      if abs:sub(1, plen) == prefix then
+        local entry = files[abs:sub(plen + 1)]
         if entry then return entry end
       end
     end
 
     -- Try alias index
-    paths = alias_idx[lower]
+    paths = self._alias_index[lower]
     if paths and #paths > 0 then
       local abs = paths[1]
-      if abs:sub(1, #prefix) == prefix then
-        return files[abs:sub(#prefix + 1)]
+      if abs:sub(1, plen) == prefix then
+        return files[abs:sub(plen + 1)]
       end
     end
 
     return nil
   end
+
+  self._resolve_fn = fn
+  return fn
 end
 
 --- Recompute all inlinks.
 function M.VaultIndex:_recompute_inlinks()
-  self._inlinks = inlinks_mod.recompute(self.files, self:_build_resolve_fn())
+  self._inlinks, self._inlinks_reverse = inlinks_mod.recompute(self.files, self:_build_resolve_fn())
 end
 
 --- Build a bloom filter for an entry's tags, including hierarchical prefixes.
@@ -1630,9 +1820,14 @@ end
 --- Incrementally update inlinks for a set of changed/deleted files.
 ---@param changed_rel_paths string[]
 ---@param deleted_rel_paths string[]
-function M.VaultIndex:_recompute_inlinks_incremental(changed_rel_paths, deleted_rel_paths)
+---@param outlinks_changed_set table<string, boolean>|nil  set of changed
+---  rel_paths whose outlink SET actually changed. Sources NOT in this set
+---  contribute byte-identical inlink edges, so they are skipped (pure churn).
+---  When nil, all changed sources are reprocessed (back-compat behavior).
+function M.VaultIndex:_recompute_inlinks_incremental(changed_rel_paths, deleted_rel_paths, outlinks_changed_set)
   inlinks_mod.recompute_incremental(
-    self.files, self._inlinks, changed_rel_paths, deleted_rel_paths, self:_build_resolve_fn()
+    self.files, self._inlinks, self._inlinks_reverse, changed_rel_paths, deleted_rel_paths,
+    self:_build_resolve_fn(), outlinks_changed_set
   )
 end
 
@@ -1653,6 +1848,7 @@ function M.VaultIndex:build_sync()
   self:_rebuild_name_index()
   self:_recompute_inlinks()
   self:_rebuild_precomputed_sets()
+  self._summary_tree:build_from_files(self.files)
   self._ready = true
   self:_check_waiters()
   self:_schedule_persist()
@@ -1676,6 +1872,14 @@ end
 ---@param abs_paths string[]  Absolute paths to re-index
 function M.VaultIndex:update_files_batch(abs_paths)
   build_mod.update_files_batch(self, abs_paths)
+end
+
+--- Warm a loaded file's per-chunk parsed_data so its first save re-parses only
+--- the touched chunk(s) instead of all of them (post-load chunks carry no
+--- parsed_data). Background-safe and idempotent — see build_mod.warm_chunk_cache.
+---@param abs_path string  Absolute path to warm
+function M.VaultIndex:warm_chunk_cache(abs_path)
+  build_mod.warm_chunk_cache(self, abs_path)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1746,6 +1950,15 @@ end
 function M.VaultIndex:all_frontmatter_keys()
   local root = self._summary_tree:query("")
   local keys = vim.tbl_keys(root.fm_key_counts)
+  table.sort(keys)
+  return keys
+end
+
+--- Get all unique page-level inline field key names across the vault.
+---@return string[]
+function M.VaultIndex:all_inline_field_keys()
+  local root = self._summary_tree:query("")
+  local keys = vim.tbl_keys(root.inline_key_counts)
   table.sort(keys)
   return keys
 end
@@ -1822,6 +2035,12 @@ end
 
 --- Show all collisions in a floating window.
 function M.VaultIndex:show_collisions()
+  -- Recompute synchronously on demand so the displayed list is never stale:
+  -- the IDLE scan may be pending, and incremental updates skip detection for
+  -- small (<5 file) batches. :VaultIndexCollisions is rare and user-initiated,
+  -- so the O(N) cost here is acceptable. notify_popup's once-per-session guard
+  -- makes the embedded popup call a no-op after its first fire.
+  self:_detect_collisions(self._name_index, self._alias_index)
   collisions_mod.show(self._collisions)
 end
 
@@ -1838,6 +2057,37 @@ end
 --- Exposed for vault_index_build.lua to compute change_types.
 M._diff_entry = diff_entry
 
+--- True iff the entry's outlink SET changed (uses the SAME key + comparison
+--- that diff_entry uses for its `outlinks` flag). A nil old or new entry means
+--- add/delete, which always changes the contributed inlink edges.
+--- Exposed so incremental-update call sites can skip inlink recomputation for
+--- sources whose outgoing links are byte-identical to the previous parse.
+---@param old_entry table|nil
+---@param new_entry table|nil
+---@return boolean
+function M._outlinks_changed(old_entry, new_entry)
+  if not old_entry or not new_entry then return true end
+  return not keyed_set_equal(old_entry.outlinks, new_entry.outlinks, outlink_key)
+end
+
+--- Build the set of changed rel_paths whose outlink SET actually changed.
+--- Shared by the incremental-update call sites so the per-source filter loop
+--- lives in exactly one place. Sources absent from the result contribute
+--- byte-identical inlink edges and can be skipped by recompute_incremental.
+---@param old_entries table<string, table> Old entries keyed by rel_path
+---@param files table<string, table> Current index files table
+---@param changed_rel_paths string[]
+---@return table<string, boolean>
+function M._build_outlinks_changed_set(old_entries, files, changed_rel_paths)
+  local set = {}
+  for _, rp in ipairs(changed_rel_paths) do
+    if M._outlinks_changed(old_entries[rp], files[rp]) then
+      set[rp] = true
+    end
+  end
+  return set
+end
+
 --- Compute change_types by diffing old vs new entries for interest-based filtering.
 --- OR's change flags across all modified/added/deleted paths.
 ---@param old_entries table<string, table> Old entries keyed by rel_path
@@ -1852,23 +2102,32 @@ function M._compute_change_types(old_entries, files, modified, added, deleted)
     frontmatter = false, tags = false, headings = false,
     outlinks = false, tasks = false, aliases = false, block_ids = false,
   }
-  for _, rp in ipairs(modified) do
-    local dt = diff_entry(old_entries[rp], files[rp])
+  -- Saturation early-exit: there are exactly 7 flags; once all are true, no
+  -- further diff_entry call can change the result, so stop. `remaining` is
+  -- decremented ONLY on a genuine false->true transition (the `not
+  -- change_types[k]` guard is load-bearing), so the returned table is identical
+  -- to the exhaustive version. Most effective when any file is added/deleted
+  -- (diff_entry returns all-true), which saturates immediately. The OR across
+  -- all flags is preserved — a flag is never flipped back to false.
+  local remaining = 7
+  --- Merge a diff result; return true once all flags are saturated.
+  local function merge(dt)
     for k, v in pairs(dt) do
-      if v then change_types[k] = true end
+      if v and not change_types[k] then
+        change_types[k] = true
+        remaining = remaining - 1
+      end
     end
+    return remaining == 0
+  end
+  for _, rp in ipairs(modified) do
+    if merge(diff_entry(old_entries[rp], files[rp])) then return change_types end
   end
   for _, rp in ipairs(added) do
-    local dt = diff_entry(nil, files[rp])
-    for k, v in pairs(dt) do
-      if v then change_types[k] = true end
-    end
+    if merge(diff_entry(nil, files[rp])) then return change_types end
   end
   for _, rp in ipairs(deleted) do
-    local dt = diff_entry(old_entries[rp], nil)
-    for k, v in pairs(dt) do
-      if v then change_types[k] = true end
-    end
+    if merge(diff_entry(old_entries[rp], nil)) then return change_types end
   end
   return change_types
 end

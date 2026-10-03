@@ -12,6 +12,12 @@ return {
   -- Load lazily (on demand)
   event = "VeryLazy",
 
+  -- Upstream ships a git submodule (yazi-plugin/yazi-plugins) used only for
+  -- developing the Yazi-side plugin. A recursive checkout of a freshly added
+  -- submodule fails under lazy.nvim ("could not reset submodule index") and
+  -- leaves the checkout dirty, so skip submodules; nothing at runtime needs it.
+  submodules = false,
+
   -- Dependencies
   dependencies = {
     "nvim-lua/plenary.nvim",      -- Utility functions
@@ -22,6 +28,13 @@ return {
   init = function()
     vim.g.loaded_netrw = 1
     vim.g.loaded_netrwPlugin = 1
+
+    -- With netrw suppressed above, the FileExplorer augroup netrw normally
+    -- creates never exists. yazi.nvim's hijack_netrw then runs
+    -- `silent! autocmd! FileExplorer *`, which raises E216 (no such group) --
+    -- `silent!` hides the message but still poisons v:errmsg for the whole
+    -- session. Pre-declaring the (empty) group makes that command a no-op.
+    vim.api.nvim_create_augroup("FileExplorer", { clear = false })
   end,
 
   -- =============================================================================
@@ -79,13 +92,11 @@ return {
       floating_window_scaling_factor = 0.90,  -- 90% of editor size
       yazi_floating_window_border = "rounded",
       yazi_floating_window_winblend = 0,      -- No transparency
-      yazi_floating_window_zindex = nil,      -- Default z-index
 
       -- Keymaps inside Yazi
       keymaps = {
         show_help = "<f1>",
         grep_in_directory = "<c-s>",
-        grep_in_selected_files = "<c-s>",
       },
 
       -- fzf-lua integrations for grep
@@ -165,9 +176,23 @@ return {
       yazi.yazi({ path = vim.fn.expand("%:p") })
     end, { desc = "Open file explorer on current file (Yazi)" })
 
-    -- Close Yazi window
+    -- Close Yazi window. A bare `:close` raises E444 (plus a traceback) when
+    -- there is only one window, so close the yazi window explicitly when one is
+    -- open and refuse to close the last window otherwise.
     keymap.set("n", "<leader>ec", function()
-      vim.cmd("close")
+      local wins = vim.api.nvim_tabpage_list_wins(0)
+      for _, w in ipairs(wins) do
+        local b = vim.api.nvim_win_get_buf(w)
+        if vim.bo[b].filetype == "yazi" then
+          pcall(vim.api.nvim_win_close, w, true)
+          return
+        end
+      end
+      if #wins < 2 then
+        vim.notify("No explorer window to close", vim.log.levels.WARN)
+        return
+      end
+      pcall(vim.cmd, "close")
     end, { desc = "Close explorer window (Yazi)" })
 
     -- Refresh Yazi

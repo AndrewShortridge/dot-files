@@ -20,7 +20,7 @@
 
 [mgr]
 show_hidden = true
-ratio = [2, 5, 5]
+ratio = [0, 5, 5]
 linemode = "size"
 
 [preview]

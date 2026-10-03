@@ -534,6 +534,19 @@ function M.setup()
     M.review_list()
   end, { desc = "Find: all reviews list", silent = true })
 
+  -- Daily: today / tomorrow / yesterday (prompt to create if missing)
+  vim.keymap.set("n", "<leader>vdt", function()
+    open_daily(engine.today())
+  end, { desc = "Vault: today's daily log", silent = true })
+
+  vim.keymap.set("n", "<leader>vdT", function()
+    open_daily(engine.date_offset_from(engine.today(), 1))
+  end, { desc = "Vault: tomorrow's daily log", silent = true })
+
+  vim.keymap.set("n", "<leader>vdy", function()
+    open_daily(engine.date_offset_from(engine.today(), -1))
+  end, { desc = "Vault: yesterday's daily log", silent = true })
+
   -- FileType autocmd removed: now dispatched via event_dispatch.lua
 
   -- Palette registrations
@@ -542,6 +555,18 @@ function M.setup()
   palette.register_command("VaultDailyPrev", "Navigate to previous daily log", "Navigate", M.daily_prev, "<leader>v[")
   palette.register_command("VaultDailyNext", "Navigate to next daily log", "Navigate", M.daily_next, "<leader>v]")
   palette.register_command("VaultDailyToday", "Open today's daily log", "Navigate", M.daily_today)
+  -- These three are keymap-only: no :VaultDailyTodayPrompt / :VaultDailyTomorrow
+  -- / :VaultDailyYesterday user command exists, so registering them as commands
+  -- advertised (and dispatched) a command that would fail. Register the keymaps.
+  palette.register_keymap("<leader>vdt", "Open today's daily log (prompt to create)", "Navigate", function()
+    open_daily(engine.today())
+  end)
+  palette.register_keymap("<leader>vdT", "Open tomorrow's daily log (prompt to create)", "Navigate", function()
+    open_daily(engine.date_offset_from(engine.today(), 1))
+  end)
+  palette.register_keymap("<leader>vdy", "Open yesterday's daily log (prompt to create)", "Navigate", function()
+    open_daily(engine.date_offset_from(engine.today(), -1))
+  end)
   palette.register_command("VaultDailyList", "List all daily logs", "Navigate", M.daily_list, "<leader>vfd")
   palette.register_command("VaultCarryForward", "Carry forward incomplete tasks into current daily log", "Navigate", function()
     require("andrew.vault.templates.daily_log").carry_forward_into_buffer(0)

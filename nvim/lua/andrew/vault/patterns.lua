@@ -28,6 +28,11 @@ M.LINK_SELF_HEADING_BLOCK = "^#([^%^]+)%^(.+)$"
 M.LINK_NAME_HEADING_BLOCK = "^([^#%^]+)#([^%^]+)%^(.+)$"
 M.LINK_NAME_BLOCK = "^([^#%^]+)%^(.+)$"
 M.LINK_NAME_HEADING = "^([^#%^]+)#(.+)$"
+-- Obsidian's block-reference syntax `[[Note#^block]]` / `[[#^block]]`. Both must
+-- be matched BEFORE LINK_SELF_HEADING_BLOCK / LINK_NAME_HEADING, which would
+-- otherwise capture "^block" as a heading name.
+M.LINK_SELF_HASH_BLOCK = "^#%^(.+)$"
+M.LINK_NAME_HASH_BLOCK = "^([^#%^]+)#%^(.+)$"
 M.LINK_ALIAS = "%|([^%]]+)%]%]"
 M.LINK_TARGET = "%[%[([^|%]]+)%]%]"
 M.LINK_TARGETS_SIMPLE = "%[%[([^%]|#]+)"
@@ -35,7 +40,17 @@ M.LINK_TARGETS_SIMPLE = "%[%[([^%]|#]+)"
 -- ---------------------------------------------------------------------------
 -- Tags
 -- ---------------------------------------------------------------------------
-M.TAG = "#([%w_%-][%w_%-/]*)"
+-- Tag pattern. Captures the 1-BASED BYTE POSITION of the '#' followed by the
+-- tag name, so consumers can enforce a LEFT boundary: without one, the '#' in
+-- `[[Note#Heading]]`, `![[Note#Details]]` and `https://x.com#frag` registered
+-- phantom tags. Consumers must call M.tag_boundary_ok(line, pos) (or use the
+-- M.gmatch_tags iterator, which does it for them).
+M.TAG = "()#([%w_%-][%w_%-/]*)"
+
+-- Bytes which, immediately before a '#', mean the '#' is NOT a tag sigil:
+-- word chars (word#notatag), ']' (wikilink close), '-', '.' and '/' (URLs,
+-- paths, and `x.com#frag`).
+M.TAG_PREV_REJECT = "[%w_%]%-%./]"
 M.TAG_COMPLETION = "#([%w_/-]*)$"
 M.TAG_TRIGGER = "[%s^]#[%w_/-]*$"
 
@@ -211,11 +226,31 @@ function M.gmatch_lines_nonempty(text)
   return text:gmatch(M.LINE_NONEMPTY)
 end
 
---- Return an iterator over all tags in text.
+--- True when a '#' at 1-based byte position `pos` of `line` may start a tag,
+--- i.e. the preceding byte is not a word char, ']', '-', '.' or '/'.
+---@param line string
+---@param pos number  1-based byte position of the '#'
+---@return boolean
+function M.tag_boundary_ok(line, pos)
+  local prev = pos > 1 and line:sub(pos - 1, pos - 1) or ""
+  return not prev:match(M.TAG_PREV_REJECT)
+end
+
+--- Return an iterator over all VALID tags in text: left-boundary checked and
+--- with purely numeric "tags" (`#123`) excluded, matching what every consumer
+--- of M.TAG accepts. Callers get tag names only (no positions).
 ---@param text string
 ---@return fun(): string?
 function M.gmatch_tags(text)
-  return text:gmatch(M.TAG)
+  local iter = text:gmatch(M.TAG)
+  return function()
+    for pos, tag in iter do
+      if M.tag_boundary_ok(text, pos) and not tag:match("^%d+$") then
+        return tag
+      end
+    end
+    return nil
+  end
 end
 
 --- Return an iterator over CSV items.

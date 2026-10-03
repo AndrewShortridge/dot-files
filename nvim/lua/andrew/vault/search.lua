@@ -16,12 +16,12 @@ local M = {}
 
 function M.search()
   track("", "all", "grep")
-  require("fzf-lua").live_grep(engine.vault_fzf_opts("Vault search"))
+  require("fzf-lua").live_grep(engine.vault_search_fzf_opts("Vault search"))
 end
 
 function M.search_notes()
   track("", "all", "grep")
-  require("fzf-lua").live_grep(engine.vault_fzf_opts("Vault notes", {
+  require("fzf-lua").live_grep(engine.vault_search_fzf_opts("Vault notes", {
     rg_opts = engine.rg_base_opts(),
   }))
 end
@@ -53,7 +53,7 @@ function M.search_filtered()
 
     track("", selected.key, "grep")
 
-    require("fzf-lua").live_grep(engine.vault_fzf_opts("Vault [" .. selected.label .. "]", {
+    require("fzf-lua").live_grep(engine.vault_search_fzf_opts("Vault [" .. selected.label .. "]", {
       rg_opts = engine.rg_base_opts(selected.glob),
     }))
   end)
@@ -69,7 +69,7 @@ function M.search_by_type()
 
     track(choice, "all", "type")
 
-    require("fzf-lua").grep(engine.vault_fzf_opts("Vault type [" .. choice .. "]", {
+    require("fzf-lua").grep(engine.vault_search_fzf_opts("Vault type [" .. choice .. "]", {
       search = "^type:\\s+" .. choice,
       no_esc = true,
       rg_opts = engine.rg_base_opts(),

@@ -19,7 +19,7 @@ end
 
 local ns = vim.api.nvim_create_namespace("VaultFootnote")
 local footnotes_visible = {} -- bufnr -> boolean
-local _fn_cache = {} -- bufnr -> { tick, fn_map }
+local _fn_cache = {} -- bufnr -> { sig, fn_map, tick }
 local viewport = require("andrew.vault.viewport")
 
 -- Clean up _fn_cache entries when buffers are deleted to prevent memory leak
@@ -155,11 +155,80 @@ local function parse_all_footnotes(bufnr)
   return map
 end
 
---- Cached version of parse_all_footnotes using changedtick invalidation.
+--- Encode a single line into the signature if it can affect the footnote map.
+--- Only lines that matter are encoded: definition markers, reference-bearing
+--- lines, indented continuation lines, and blank lines (which terminate a
+--- continuation block). Each relevant line is prefixed with its 1-indexed lnum so
+--- an insert/delete that shifts later footnote lines also changes the signature.
+---@param parts string[] accumulator
+---@param i number 1-indexed line number
+---@param line string line text
+local function append_sig_line(parts, i, line)
+  if line == "" or line:match("^%s") or line:match(DEF_PAT) or line:find(REF_PAT) then
+    parts[#parts + 1] = i .. "\1" .. line
+  end
+end
+
+--- Compute a lightweight signature of the footnote-relevant lines in a buffer.
+--- Plain non-indented prose with no ref/def never enters the map, so editing it
+--- leaves the signature byte-identical (cache hit, no rebuild). Reads the whole
+--- buffer — the authoritative source. `footnote_signature_warm` produces a
+--- byte-identical result from the pipeline parse cache when it is warm and
+--- complete, avoiding this whole-buffer read on the per-keystroke path.
+---@param bufnr number
+---@return string signature
+local function footnote_signature(bufnr)
+  local buf_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local parts = {}
+  for i, line in ipairs(buf_lines) do
+    append_sig_line(parts, i, line)
+  end
+  return table.concat(parts, "\2")
+end
+
+--- Compute the footnote signature from the warm pipeline parse cache instead of
+--- a whole-buffer read. Returns nil when the cache is cold or does not span the
+--- whole buffer (eviction), so the caller falls back to `footnote_signature`.
+--- Byte-identical to `footnote_signature` when it returns non-nil: same predicate,
+--- same 1-indexed lnum prefix, same join, same line ordering.
+---@param bufnr number
+---@return string|nil signature, nil when cache is cold/incomplete
+local function footnote_signature_warm(bufnr)
+  local texts, count = parse_cache.get_line_texts(bufnr)
+  if not texts then return nil end
+  local n = vim.api.nvim_buf_line_count(bufnr)
+  -- Cached set must span the whole buffer; eviction can drop lines on large bufs.
+  if count ~= n then return nil end
+  local parts = {}
+  for ln = 0, n - 1 do
+    local line = texts[ln]
+    if line == nil then return nil end -- gap: incomplete, fall back to buffer read
+    append_sig_line(parts, ln + 1, line)
+  end
+  return table.concat(parts, "\2")
+end
+
+--- Cached version of parse_all_footnotes using a footnote-line signature for
+--- invalidation (rather than raw changedtick, which churns on every keystroke).
 ---@param bufnr number
 ---@return table footnote_map
 local function parse_all_footnotes_cached(bufnr)
-  return hl_coord.cached_value(_fn_cache, bufnr, parse_all_footnotes)
+  local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+  local cached = _fn_cache[bufnr]
+  if cached and cached.tick == tick then
+    return cached.fn_map -- tick unchanged: signature cannot have changed
+  end
+  -- Prefer the warm pipeline parse cache (byte-identical signature, no
+  -- whole-buffer read on the per-keystroke path); fall back to a direct
+  -- buffer read when the cache is cold or incomplete (eviction).
+  local sig = footnote_signature_warm(bufnr) or footnote_signature(bufnr)
+  if cached and cached.sig == sig then
+    cached.tick = tick -- refresh tick so future same-tick calls skip the signature
+    return cached.fn_map
+  end
+  local fn_map = parse_all_footnotes(bufnr)
+  _fn_cache[bufnr] = { sig = sig, fn_map = fn_map, tick = tick }
+  return fn_map
 end
 
 --- Get the definition content for a specific footnote ID in the current buffer.
@@ -350,16 +419,13 @@ function M.render_footnotes(opts)
   local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
   local full = opts.full ~= false -- default to full render
   local fc = opts.frame_cache
-  local fc_tick = fc and vim.api.nvim_buf_get_changedtick(bufnr)
 
   -- Determine clear/render range
   local range_start, range_end
   local inv_ranges = opts.invalid_ranges
   if inv_ranges and #inv_ranges > 0 then
     -- Region-scoped clear: only clear within invalid ranges
-    for _, range in ipairs(inv_ranges) do
-      vim.api.nvim_buf_clear_namespace(bufnr, ns, range.start_line, range.end_line)
-    end
+    require("andrew.vault.region_tracker").clear_ranges(bufnr, ns, inv_ranges)
     -- Clear bounding box for render scope; rendering loop uses
     -- inv_ranges for precise filtering (see ref_row check below)
     range_start = inv_ranges[1].start_line
@@ -376,6 +442,22 @@ function M.render_footnotes(opts)
   else
     range_start, range_end = viewport.get_margin_range(bufnr)
     vim.api.nvim_buf_clear_namespace(bufnr, ns, range_start, range_end)
+  end
+
+  -- Hot-path gate: when the pipeline parse cache is warm and reports zero
+  -- footnote tokens, the buffer has no refs/defs — skip the whole-buffer
+  -- signature + parse. Only short-circuit when the cache IS warm; a cold cache
+  -- (direct :VaultFootnoteRender / toggle before the pipeline warms) falls
+  -- through to the authoritative full-buffer parse below. Mirrors the empty-map
+  -- case so the namespace clear above still runs and visible/notify semantics
+  -- are preserved.
+  local cache_warm, has_footnote = parse_cache.has_token(bufnr, "footnote")
+  if cache_warm and not has_footnote then
+    footnotes_visible[bufnr] = false
+    if not opts.silent then
+      notify_no_footnotes()
+    end
+    return
   end
 
   -- Always parse full buffer (definitions may be outside viewport)
@@ -398,14 +480,25 @@ function M.render_footnotes(opts)
   local parent_arena = opts.arena
   local arena_scope = parent_arena or render_arena.begin_scope()
 
+  -- Frame-cache key derived from footnote CONTENT (like embed.lua's bufnr:i:inner),
+  -- not changedtick: the rendered virt_lines are fully determined by the id, the
+  -- definition content lines, and whether a definition exists. Keying on content
+  -- lets entries survive unrelated edits via the FrameCache current/previous
+  -- promotion. ref_row is intentionally excluded — identical def content rendered
+  -- at different reference rows produces identical (row-independent) virt_lines.
+  local function fn_content_key(id, info)
+    local body = info.def_lnum and table.concat(info.def_content, "\n") or "\0nodef"
+    return bufnr .. ":" .. id .. ":" .. #info.def_content .. ":" .. body
+  end
+
   --- Render a single footnote reference at the given 0-indexed row.
   ---@param id string footnote identifier
   ---@param info table entry from fn_map
   ---@param ref_row number 0-indexed row
   local function render_ref_at(id, info, ref_row)
-    -- Frame cache lookup (tick in key ensures content changes invalidate)
+    -- Frame cache lookup (content key survives unrelated edits)
     if fc then
-      local cache_key = bufnr .. ":" .. fc_tick .. ":" .. ref_row .. ":" .. id
+      local cache_key = fn_content_key(id, info)
       local cached = fc:get(cache_key)
       if cached then
         vim.api.nvim_buf_set_extmark(bufnr, ns, ref_row, 0, {
@@ -454,7 +547,7 @@ function M.render_footnotes(opts)
       })
       -- Store deep copy in frame cache (not arena-allocated)
       if fc then
-        local cache_key = bufnr .. ":" .. fc_tick .. ":" .. ref_row .. ":" .. id
+        local cache_key = fn_content_key(id, info)
         fc:set(cache_key, { virt_lines = FrameCache.copy_virt_lines(virt_lines) })
       end
     end
@@ -462,8 +555,8 @@ function M.render_footnotes(opts)
 
   local ok, err = pcall(function()
     -- Use pipeline token positions for reference iteration
-    local lpc = require("andrew.vault.line_parse_cache")
-    local iter = lpc.pipeline_token_iter(bufnr, "footnote")
+    -- (reuse the module-level parse_cache binding — same module as has_token above)
+    local iter = parse_cache.pipeline_token_iter(bufnr, "footnote")
     if iter then
       for line_nr, token in iter do
         if not token.subtype then -- references only, not definitions

@@ -222,6 +222,9 @@ local function compute_rename_changes(linking_files, old_name, new_name, old_pat
   }
 end
 
+-- Test affordance: expose the pure change-computation step (no behavior change)
+M._compute_rename_changes = compute_rename_changes
+
 --- Collect all rename changes (async when index is unavailable).
 ---@param old_name string
 ---@param new_name string

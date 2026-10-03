@@ -105,6 +105,8 @@ local _state_anchor = {}
 
 -- Forward declaration for unsubscribe (defined after subscriber section)
 local unsubscribe
+-- Forward declaration for ensure_subscription (defined after subscriber section)
+local ensure_subscription
 
 --- Invalidate the entire connection cache.
 function M.invalidate_cache()
@@ -701,12 +703,8 @@ function M.compute(source_rel_path, max_results, opts_cancel)
   -- Check cache before doing full setup
   local vi_check, index_gen_check = get_vault_index()
   if vi_check then
-    local ttl = config.connections.cache_ttl
-    local now = vim.uv.now() / 1000
     local cached = _cache:get(source_rel_path)
-    if filter_utils.is_cache_gen_valid(cached, index_gen_check, "index_gen")
-      and (now - cached.timestamp) < ttl
-    then
+    if filter_utils.is_cache_gen_valid(cached, index_gen_check, "index_gen") then
       _cache_hits = _cache_hits + 1
       stop()
       return cached.results
@@ -989,7 +987,7 @@ end, {
 
 --- Subscribe to vault index updates. Safe to call multiple times.
 --- Re-subscribes if vault index instance changed (vault switch).
-local function ensure_subscription()
+function ensure_subscription()
   _subscription.ensure()
 end
 

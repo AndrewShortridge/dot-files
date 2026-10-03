@@ -17,7 +17,7 @@ Press `<Space>` and wait for the **which-key** popup to see all available leader
 5. [LSP — Language Server Protocol](#5-lsp--language-server-protocol)
 6. [Completion (blink.cmp)](#6-completion-blinkcmp)
 7. [Diagnostics & Trouble](#7-diagnostics--trouble)
-8. [Git (Gitsigns)](#8-git-gitsigns)
+8. [Git](#8-git)
 9. [File Explorer (Yazi)](#9-file-explorer-yazi)
 10. [Debugging (DAP)](#10-debugging-dap)
 11. [Terminal](#11-terminal)
@@ -67,8 +67,8 @@ Press `<Space>` and wait for the **which-key** popup to see all available leader
 |------|-----|--------|-------------|
 | i | `jk` | `<ESC>` | Exit insert mode |
 | n | `<leader>nh` | `:nohl<CR>` | Clear search highlights |
-| n | `<leader>+` | `<C-a>` | Increment number under cursor |
-| n | `<leader>-` | `<C-x>` | Decrement number under cursor |
+| n | `<leader>na` | `<C-a>` | Increment number under cursor |
+| n | `<leader>nx` | `<C-x>` | Decrement number under cursor |
 
 **Yank highlight:** Yanked text flashes for 300ms (via `TextYankPost` autocmd).
 
@@ -106,6 +106,20 @@ Press `<Space>` and wait for the **which-key** popup to see all available leader
 | `<leader>tn` | `:tabn` | Go to next tab |
 | `<leader>tp` | `:tabp` | Go to previous tab |
 | `<leader>tf` | `:tabnew %` | Open current buffer in new tab |
+
+**LazyVim group** -- **Prefix:** `<leader><Tab>`
+
+The `<leader><Tab>` group is LazyVim's, ported whole. It overlaps the older `<leader>t` keys above -- both work. `<leader><Tab>o` (close every other tab) and the first/last jumps have no `<leader>t` equivalent. Careful: `<leader><Tab>f` is *First Tab*, while `<leader>tf` opens the current buffer in a new tab.
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| `<leader><Tab><Tab>` | `:tabnew` | New Tab |
+| `<leader><Tab>d` | `:tabclose` | Close Tab |
+| `<leader><Tab>o` | `:tabonly` | Close Other Tabs |
+| `<leader><Tab>]` | `:tabnext` | Next Tab |
+| `<leader><Tab>[` | `:tabprevious` | Previous Tab |
+| `<leader><Tab>f` | `:tabfirst` | First Tab |
+| `<leader><Tab>l` | `:tablast` | Last Tab |
 
 ---
 
@@ -149,33 +163,54 @@ Press `<Space>` and wait for the **which-key** popup to see all available leader
 |-----|--------|-------------|
 | `gd` | Definitions | Go to definition(s) via fzf-lua |
 | `gD` | Declaration | Go to declaration (fallback to definition) |
-| `gR` | References | Show all references via fzf-lua |
-| `gi` | Implementations | Show implementations via fzf-lua |
-| `gt` | Type definitions | Show type definitions via fzf-lua |
+| `gr` | References | Show all references via fzf-lua |
+| `gI` | Implementations | Show implementations via fzf-lua |
+| `gy` | Type definitions | Show type definitions via fzf-lua |
+| `gai` / `gao` | Call hierarchy | Incoming / outgoing calls via fzf-lua |
+| `]]` / `[[` | Reference jumps | Next / prev reference (Snacks.words) |
+| `<A-n>` / `<A-p>` | Reference jumps | Same, wrapping |
+| `<leader>ss` / `<leader>sS` | Symbols | Document / workspace symbols via fzf-lua |
+All LSP keys except `gD` and `<leader>cl` are **capability-gated** (`lua/andrew/lsp_keymaps.lua`):
+bound only when an attached server advertises the method. nvim 0.12's built-in
+`grn`/`gra`/`grx`/`grr`/`gri`/`grt` are deleted at startup so `gr` does not stall
+behind `timeoutlen`.
+
 
 ### Hover & Signature
 
 | Key | Mode | Description |
 |-----|------|-------------|
-| `K` | n | Show hover documentation (with Fortran custom docs) |
+| `K` | n | Show hover documentation (Fortran MPI/OpenMP docs come from fortran-extras) |
 | `<C-k>` | n, i | Show signature help (ty for Python if available) |
+| `gK` | n | Show signature help (LazyVim spelling) |
 
 ### Code Actions & Refactoring
 
 | Key | Mode | Description |
 |-----|------|-------------|
-| `<leader>ca` | n, v | See available code actions |
-| `<leader>rn` | n | Smart rename symbol |
-| `<leader>rs` | n | Restart LSP server |
+| `<leader>ca` | n, x | See available code actions (fzf, diff preview) |
+| `<leader>cA` | n | Source Action |
+| `<leader>co` | n | Organize Imports (gated on the kind) |
+| `<leader>cc` / `<leader>cC` | n, x / n | Run / display codelens |
+| `<leader>cr` | n | Smart rename symbol |
+| `<leader>cR` | n | Rename file (LSP-aware) |
+| `<leader>cf` / `<leader>cF` | n, x | Format / format injected langs |
+| `<leader>cs` / `<leader>cS` | n | Document / workspace symbols (fzf; aliases of `<leader>ss` / `<leader>sS`) |
+| `<leader>cl` | n | LSP info (fzf client picker) |
+| `<leader>cm` | n | Mason |
+| `<leader>lr` / `<leader>lh` | n | Restart LSP / toggle inlay hints |
 
 ### Diagnostics
 
 | Key | Description |
 |-----|-------------|
 | `<leader>D` | Show buffer diagnostics (fzf-lua picker) |
-| `<leader>d` | Show line diagnostics (floating window) |
-| `[d` | Go to previous diagnostic |
-| `]d` | Go to next diagnostic |
+| `<leader>cd` | Show line diagnostics (floating window) |
+| `[d` / `]d` | Previous / next diagnostic |
+| `[e` / `]e` | Previous / next error (shadowed in `.tex`) |
+| `[w` / `]w` | Previous / next warning |
+
+The diagnostic keys are GLOBAL, not LspAttach-bound.
 
 **Configured LSP servers:** lua_ls, pylsp, fortls, ctags_lsp, rust_analyzer (via rustaceanvim)
 
@@ -196,7 +231,7 @@ Press `<Space>` and wait for the **which-key** popup to see all available leader
 | `<C-k>` | Scroll up | Scroll documentation window up |
 
 **Completion sources by filetype:**
-- **Fortran:** fortran_docs, lsp, snippets, path, buffer
+- **Fortran:** lsp, snippets, path, buffer (MPI/OpenMP completion comes from the in-process `fortran-extras` LSP server)
 - **Markdown:** wikilinks, vault_tags, vault_frontmatter, lsp, snippets, path, buffer
 - **Default:** lsp, snippets, path, buffer
 
@@ -222,7 +257,31 @@ Press `<Space>` and wait for the **which-key** popup to see all available leader
 
 ---
 
-## 8. Git (Gitsigns)
+## 8. Git
+
+### Git Commands — Prefix: `<leader>g`
+
+**Source:** `lua/andrew/plugins/git.lua` (snacks.nvim spec fragment, ported from LazyVim)
+
+| Key | Mode | Description |
+|-----|------|-------------|
+| `<leader>gg` | n | Lazygit (root dir) |
+| `<leader>gG` | n | Lazygit (cwd) |
+| `<leader>gl` | n | Git log |
+| `<leader>gL` | n | Git log (cwd) |
+| `<leader>gc` | n | Commits (fzf-lua) |
+| `<leader>gf` | n | Current file history |
+| `<leader>gb` | n | Blame line |
+| `<leader>gs` | n | Git status |
+| `<leader>gS` | n | Git stash |
+| `<leader>gd` | n | Git diff (hunks) |
+| `<leader>gD` | n | Git diff (origin) |
+| `<leader>gB` | n, x | Git browse — open on the remote host |
+| `<leader>gY` | n, x | Git browse — copy the URL |
+
+**Conditional:** `<leader>gg` / `<leader>gG` need the `lazygit` binary (present). `<leader>gi` `<leader>gI` (issues) and `<leader>gp` `<leader>gP` (pull requests) need the `gh` binary, which is **not installed**, so they are inactive.
+
+### Gitsigns
 
 **Source:** `lua/andrew/plugins/gitsigns.lua` | Active on `on_attach` (buffer-local)
 
@@ -230,23 +289,32 @@ Press `<Space>` and wait for the **which-key** popup to see all available leader
 
 | Key | Description |
 |-----|-------------|
-| `]g` | Jump to next hunk |
-| `[g` | Jump to previous hunk |
+| `]g` / `[g` | Next / previous hunk — works in every filetype |
+| `]h` / `[h` | Next / previous hunk — **not bound in markdown** |
+| `]H` / `[H` | Last / first hunk in the file |
+> `]h` / `[h` are LazyVim's hunk keys but are **not bound in markdown**, where headings (`ftplugin/markdown.lua`) and `==highlights==` (`vault/highlights.lua`) already own them. `]g` / `[g` is the alias that works in every filetype.
 
-### Hunk Actions — Prefix: `<leader>h`
+
+### Hunk Actions — Prefix: `<leader>gh`
 
 | Key | Mode | Description |
 |-----|------|-------------|
-| `<leader>hs` | n, v | Stage hunk (or visual selection) |
-| `<leader>hr` | n, v | Reset hunk (or visual selection) |
-| `<leader>hS` | n | Stage entire buffer |
-| `<leader>hR` | n | Reset entire buffer |
-| `<leader>hu` | n | Undo stage hunk |
-| `<leader>hp` | n | Preview hunk (inline popup) |
-| `<leader>hb` | n | Blame line (full git blame) |
-| `<leader>hB` | n | Toggle current line blame (inline) |
-| `<leader>hd` | n | Diff this file |
-| `<leader>hD` | n | Diff this ~ (against previous commit) |
+| `<leader>ghs` | n, v | Stage hunk (or visual selection) |
+| `<leader>ghr` | n, v | Reset hunk (or visual selection) |
+| `<leader>ghS` | n | Stage entire buffer |
+| `<leader>ghR` | n | Reset entire buffer |
+| `<leader>ghu` | n | Undo stage hunk |
+| `<leader>ghp` | n | Preview hunk (inline popup) |
+| `<leader>ghb` | n | Blame line (full git blame) |
+| `<leader>ghB` | n | Blame the whole buffer |
+| `<leader>ght` | n | Toggle current line blame (inline) |
+| `<leader>ghd` | n | Diff this file |
+| `<leader>ghD` | n | Diff this ~ (against previous commit) |
+
+> `<leader>ghd`/`ghD` leave the cursor in the DIFF window, so `:q` closes the diff and returns you to
+> your file. Upstream gitsigns restores focus to your file instead, which makes `:q` close your own
+> window and strand you in the unlisted `gitsigns://…` index buffer.
+
 
 ### Text Object
 
@@ -255,6 +323,34 @@ Press `<Space>` and wait for the **which-key** popup to see all available leader
 | `ih` | o, x | Select hunk (operator/visual mode) |
 
 ---
+
+---
+
+## Diff Overlay (mini.diff)
+
+**Source:** `lua/andrew/plugins/mini-diff.lua`
+
+| Key | Description |
+|-----|-------------|
+| `<leader>go` | Toggle the diff overlay (old content shown inline) |
+| `gh + motion` | Apply (stage) the range |
+| `gH + motion` | Reset the range |
+| `gh (o, x)` | Hunk range text object |
+
+| Command | Description |
+|---------|-------------|
+| `:MiniDiffOverlay` | Toggle the overlay |
+| `:MiniDiffToggle` | Enable/disable mini.diff for this buffer |
+| `:MiniDiffQuickfix` | Send every hunk to the quickfix list |
+
+> Runs **alongside** gitsigns, which keeps the sign column, `<leader>gh` staging, blame and all
+> hunk motions. mini.diff's own `]h`/`[h`/`]H`/`[H` are disabled (gitsigns owns them; in markdown
+> headings and `==highlights==` do), and hunk marks go in the **number** column to avoid drawing
+> the same hunks twice. `gh`/`gH` shadow the built-in Select-mode starters.
+> On a buffer with no diff (picker previews, diff scratch buffers, terminals) all four keys report
+> `mini.diff: no diff for this buffer` rather than raising `E5108`.
+> The overlay choice is remembered per file and re-applied after a buffer reload (mini.diff drops it
+> from its per-buffer cache on any reload, `:edit` included).
 
 ## 9. File Explorer (Yazi)
 
@@ -390,12 +486,15 @@ Press `<Space>` and wait for the **which-key** popup to see all available leader
 
 | Key | Description |
 |-----|-------------|
-| `<leader>ll` | Run linters for current buffer |
-| `<leader>lm` | Run ruff (Python) |
-| `<leader>lf` | Toggle Fortran linter |
-| `<leader>lF` | Run Fortran linter (debug mode) |
-| `<leader>lw` | Lint entire Fortran workspace |
-| `<leader>lW` | Clear workspace diagnostics |
+| `<leader>Ll` | Run linters for current buffer |
+| `<leader>Lm` | Run ruff (Python) |
+| `<leader>Lf` | Toggle Fortran linter |
+| `<leader>LF` | Run Fortran linter (debug mode) |
+| `<leader>Lw` | Lint entire Fortran workspace |
+| `<leader>LW` | Clear workspace diagnostics |
+| `<leader>Lc` | Check Fortran capitalization |
+| `<leader>LC` | Fix Fortran capitalization (buffer) |
+| `<leader>Lt` | Toggle the capitalization check |
 
 ---
 
@@ -485,10 +584,10 @@ Supports treesitter-aware context (JSX, HTML, Vue, embedded languages).
 
 | Key | Mode | Description |
 |-----|------|-------------|
-| `s{motion}` | n | Substitute with motion (e.g., `siw` = substitute word) |
-| `ss` | n | Substitute entire line |
-| `S` | n | Substitute from cursor to end of line |
-| `s` | v | Substitute visual selection |
+| `gs{motion}` | n | Substitute with motion (e.g., `gsiw` = substitute word) |
+| `gss` | n | Substitute entire line |
+| `gS` | n | Substitute from cursor to end of line |
+| `gs` | v | Substitute visual selection |
 
 Replaces the selected text with register contents (or new text you type).
 
@@ -562,16 +661,12 @@ Produces markdown-compatible tables with auto-aligned columns.
 
 **Source:** `lua/andrew/plugins/opencode.lua` | **Prefix:** `<leader>o`
 
-| Key | Mode | Description |
-|-----|------|-------------|
-| `<leader>ot` | n | Toggle OpenCode panel |
-| `<leader>oa` | n, v | Ask OpenCode about code at cursor / selection |
-| `<leader>o+` | n, v | Add current buffer / selection to prompt |
-| `<leader>oe` | n | Explain code at cursor |
-| `<leader>on` | n | Create new OpenCode session |
-| `<leader>os` | n, v | Select OpenCode prompt |
-| `<S-C-u>` | n | Scroll OpenCode messages up |
-| `<S-C-d>` | n | Scroll OpenCode messages down |
+**Keymaps removed 2026-09-06.** opencode.nvim is still installed and its
+`init()` side effects still run, but the spec no longer declares any `keys`, so
+nothing under `<leader>o` (or `<S-C-u>` / `<S-C-d>`) is bound and the plugin
+never loads. The ten original bindings are preserved verbatim as a commented
+block in `lua/andrew/plugins/opencode.lua`; uncomment it and delete the
+`lazy = true` line to restore them.
 
 ---
 
@@ -1067,12 +1162,14 @@ Press `<Space>` and wait to see all groups. Here's the complete prefix map:
 | `<leader>e` | Explorer | Global |
 | `<leader>f` | Find/Files | Global |
 | `<leader>g` | Git | Global |
-| `<leader>h` | Git Hunks | Git buffers |
+| `<leader>gh` | Hunks | Git buffers |
 | `<leader>l` | Lint | Global |
 | `<leader>m` | Make/Build *(or Markdown in .md files)* | Global / Markdown |
-| `<leader>o` | OpenCode | Global |
+| `<leader>o` | _(unused — OpenCode keymaps removed)_ | Global |
+| `<leader>q` | Quit/Session | Global |
 | `<leader>r` | Rust/Refactor | Global / Rust |
 | `<leader>s` | Split/Window | Global |
+| `<leader><Tab>` | Tabs | Global |
 | `<leader>t` | Tab/Terminal | Global |
 | `<leader>v` | Vault | Markdown |
 | `<leader>vb` | Vault: Pins | Markdown |
@@ -1090,3 +1187,18 @@ Press `<Space>` and wait to see all groups. Here's the complete prefix map:
 ---
 
 *Generated from `~/.config/nvim` — 300+ keybindings across 40+ source files.*
+
+## 47. Quit / Session
+
+**Source:** `lua/andrew/plugins/persistence.lua`, `lua/andrew/core/keymaps.lua` | **Prefix:** `<leader>q`
+
+Sessions save on quit and restore only on request -- one per working directory, plus a separate one per git branch when it is not `main`/`master`. Terminals are deliberately not restored.
+
+| Key | Mode | Description |
+|-----|------|-------------|
+| `<leader>qq` | n | Quit All |
+| `<leader>qs` | n | Restore Session |
+| `<leader>qS` | n | Select Session |
+| `<leader>ql` | n | Restore Last Session |
+| `<leader>qd` | n | Don't Save Current Session |
+

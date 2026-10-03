@@ -7,6 +7,67 @@ local tokenizer = require("andrew.vault.query.js2lua.tokenizer")
 
 local M = {}
 
+-- Lua keyword/operator-words that, when emitted as the immediately preceding
+-- output entry, indicate that a following `[` begins an array literal (not
+-- property access). These are control-flow / logical-operator words emitted by
+-- the transpiler (e.g. `return ` from arrow bodies, ` or `/` and `/`not ` from
+-- ||/&&/!). `end` and `)` are intentionally excluded since an indexable
+-- expression can legitimately end in them.
+local LITERAL_CONTEXT_WORDS = {
+  ["return"] = true,
+  ["and"] = true,
+  ["or"] = true,
+  ["not"] = true,
+  ["then"] = true,
+  ["do"] = true,
+  ["else"] = true,
+  ["elseif"] = true,
+  ["in"] = true,
+}
+
+--- Compute the net bracket-depth delta and a top-level comma flag for a single
+--- emitted output entry, ignoring any bracket/comma characters that appear
+--- INSIDE Lua string literals. Each emitted string literal is a self-contained
+--- entry (e.g. a JS `"["` literal emits as the single entry `"["`), so one
+--- left-to-right pass per entry suffices: we track in-string state for both
+--- quote styles with backslash escapes and only count structural brackets that
+--- occur outside strings.
+---@param s string  a single ctx.out entry
+---@return number delta  net (openers - closers) for non-string brackets
+---@return boolean has_comma  true if a top-level (depth-0, non-string) comma is present
+local function entry_bracket_delta(s)
+  local delta = 0
+  local has_comma = false
+  local in_str = nil      -- current quote char when inside a string, else nil
+  local escaped = false
+  local i = 1
+  local n = #s
+  while i <= n do
+    local c = s:sub(i, i)
+    if in_str then
+      if escaped then
+        escaped = false
+      elseif c == "\\" then
+        escaped = true
+      elseif c == in_str then
+        in_str = nil
+      end
+    else
+      if c == '"' or c == "'" then
+        in_str = c
+      elseif c == "(" or c == "[" or c == "{" then
+        delta = delta + 1
+      elseif c == ")" or c == "]" or c == "}" then
+        delta = delta - 1
+      elseif c == "," and delta == 0 then
+        has_comma = true
+      end
+    end
+    i = i + 1
+  end
+  return delta, has_comma
+end
+
 -- Late-bound references to statement module functions (set via setters to
 -- break mutual recursion between expression.lua and statement.lua).
 local _transform_statement
@@ -240,12 +301,20 @@ local function extract_expr_from_output(ctx)
   local paren_depth = 0
   while es >= 1 do
     local s = out[es]
-    -- Count closing/opening parens to stay balanced
-    for ci = #s, 1, -1 do
-      local c = s:sub(ci, ci)
-      if c == ")" or c == "]" then paren_depth = paren_depth + 1
-      elseif c == "(" or c == "[" then paren_depth = paren_depth - 1
-      end
+    -- Count closing/opening parens to stay balanced, ignoring brackets that
+    -- occur inside emitted Lua string literals (string-literal-aware). The
+    -- helper returns (openers - closers); this scan tracks (closers - openers),
+    -- so subtract the delta.
+    local delta = entry_bracket_delta(s)
+    paren_depth = paren_depth - delta
+    -- An UNMATCHED opening bracket means this entry is the `(`/`[`/`{` that
+    -- opens the argument list (or grouping) we are currently inside, e.g. the
+    -- "(" of `dv.paragraph(a.length)`. The sub-expression therefore starts just
+    -- AFTER it; without this the scan swallowed `dv.paragraph(a` and emitted
+    -- `#(dv.paragraph(a))`.
+    if paren_depth < 0 then
+      es = es + 1
+      break
     end
     if paren_depth <= 0 and es > 1 then
       local prev_raw = out[es - 1]
@@ -253,6 +322,7 @@ local function extract_expr_from_output(ctx)
       -- Statement boundaries
       if prev == "" or prev == "=" or prev == "local" or prev == "return"
           or prev == "end" or prev == "then" or prev == "do" or prev == "else"
+          or prev == "," or prev == ";"
           or prev:match("=$") and not prev:match("[~<>=!]=$")
           or prev_raw:match("\n") then
         break
@@ -436,6 +506,51 @@ function M.transform_expression(ctx)
     elseif v == "--" then
       C.emit(ctx, "-- ")
       return
+    elseif v == "?." then
+      -- Optional chaining `obj?.prop` -> nil-safe field read via the runtime
+      -- helper __index_safe(obj, key). The already-emitted LHS is extracted
+      -- once so it is evaluated a single time. Supported forms this pass:
+      --   a?.b      (ident property)   -> __index_safe(a, "b")
+      --   a?.[expr] (computed)         -> __index_safe(a, <expr_lua>)
+      -- NOTE: the property is emitted as a plain string key and is NOT routed
+      -- through the method-rewrite table, so `a?.length` is a literal field
+      -- read (__index_safe(a, "length")), not a `#` length rewrite.
+      -- Optional-call `a?.()` and deeper computed/call mixes are out of scope
+      -- this pass.
+      C.skip_ws(ctx)
+      local obj = extract_expr_from_output(ctx)
+      local nxt = C.tk_cur(ctx)
+      if nxt.type == TK.IDENT then
+        local prop_name = nxt.value
+        C.tk_advance(ctx) -- skip property name
+        C.emit(ctx, "__index_safe(" .. obj .. ', "' .. prop_name .. '")')
+        return
+      elseif nxt.type == TK.PUNCT and nxt.value == "[" then
+        C.tk_advance(ctx) -- skip [
+        local key_tokens = {}
+        local depth = 1
+        while C.tk_cur(ctx).type ~= TK.EOF do
+          local at = C.tk_cur(ctx)
+          if at.type == TK.PUNCT and at.value == "[" then depth = depth + 1 end
+          if at.type == TK.PUNCT and at.value == "]" then
+            depth = depth - 1
+            if depth == 0 then
+              C.tk_advance(ctx) -- skip ]
+              break
+            end
+          end
+          key_tokens[#key_tokens + 1] = C.tk_advance(ctx)
+        end
+        local key_lua = vim.trim(transform_token_list(key_tokens, ctx))
+        C.emit(ctx, "__index_safe(" .. obj .. ", " .. key_lua .. ")")
+        return
+      else
+        -- Unsupported optional-chain form (e.g. `?.()`); fall back to a plain
+        -- nil-safe access with no key so emitted Lua still loads.
+        C.emit(ctx, "__index_safe(" .. obj .. ", nil)")
+        return
+      end
+
     elseif v == "." then
       -- Dot access. Check for special property/method patterns.
       C.skip_ws(ctx)
@@ -845,21 +960,15 @@ function M.transform_expression(ctx)
               end
               local comparator_lua = vim.trim(transform_token_list(arg_tokens, ctx))
 
-              -- JS comparator returns -1/0/1; Lua table.sort needs a < function.
-              -- Extract the object expression and wrap with comparator adapter.
-              local obj = extract_expr_from_output(ctx)
-
-              -- Check if comparator is a simple function that we can adapt
-              -- For pattern: function(a, b) return EXPR end
-              -- Transform EXPR from returning -1/0/1 to returning boolean
-              local params, body = comparator_lua:match("^function%(([^)]+)%)%s+return%s+(.+)%s+end$")
-              if params and body then
-                -- The body likely contains ternary IIFE patterns. Convert to boolean.
-                -- Simple approach: wrap the whole thing
-                C.emit(ctx, "table.sort(" .. obj .. ", function(" .. params .. ") return (" .. body .. ") < 0 end)")
-              else
-                C.emit(ctx, "table.sort(" .. obj .. ", function(a, b) return (" .. comparator_lua .. ")(a, b) < 0 end)")
-              end
+              -- Emit `:sort(fn)` (PageArray:sort) rather than table.sort():
+              --  * table.sort() returns nil, so `x = a.sort(f)` and any further
+              --    chaining (`.map`, `.limit`, ...) lost the array entirely.
+              --  * Dataview's DataArray.sort(p => key) takes a KEY EXTRACTOR,
+              --    while plain JS Array.sort((a,b) => n) takes a comparator.
+              -- PageArray:sort() inspects the function's arity and handles both
+              -- (1 param = key extractor, 2 params = comparator returning a
+              -- number or a boolean), and always returns a NEW PageArray.
+              C.emit(ctx, ":sort(" .. comparator_lua .. ")")
               return
             end
           end
@@ -899,12 +1008,127 @@ function M.transform_expression(ctx)
       return
     end
 
-    -- .concat -> ..
+    -- JS '+' is overloaded (numeric add vs string concat). A static transpiler
+    -- cannot know operand types (e.g. dv.current().file.name is a runtime
+    -- value), so rewrite the infix operator into a prefix call to the runtime
+    -- helper __js_add(a, b), which concatenates when either side is a string
+    -- and adds numerically otherwise. Reusing extract_expr_from_output for the
+    -- LHS yields natural left-associative nesting for chains.
     if v == "+" then
-      -- This could be string concatenation or addition. Lua uses .. for strings
-      -- and + for numbers. Since we can't always know the types, keep as +.
-      -- The runtime will handle it via metamethods or the dv environment.
-      C.emit(ctx, " + ")
+      -- Extract the already-emitted LHS, but bounded by the current bracket
+      -- group: we must not reach back across an unmatched '(' / '[' / '{' (e.g.
+      -- the open paren of an enclosing call or grouping), nor across a ','. This
+      -- keeps `(a + b)` -> `(__js_add(a, b))` and `f(1 + 2, 3)` -> the inner
+      -- `+` only, instead of swallowing the surrounding parens/args.
+      local out = ctx.out
+      local es = #out
+      while es >= 1 and vim.trim(out[es]) == "" do es = es - 1 end
+      local expr_end = es
+      local depth = 0
+      while es >= 1 do
+        local s = out[es]
+        -- String-literal-aware bracket accounting: brackets/commas inside an
+        -- emitted Lua string literal (e.g. a JS `"["` LHS) must NOT affect the
+        -- paren-depth balance, or a string literal with a stray bracket would
+        -- be wrongly treated as a boundary and dropped. The helper returns
+        -- (openers - closers) and a top-level non-string comma flag; this scan
+        -- tracks (closers - openers), so subtract the delta.
+        local delta, has_comma = entry_bracket_delta(s)
+        if has_comma and depth == 0 then
+          es = es + 1; break -- argument separator: boundary
+        end
+        depth = depth - delta
+        if depth < 0 then
+          es = es + 1; break -- unmatched opener: boundary
+        end
+        if depth <= 0 and es > 1 then
+          local pi = es - 1
+          while pi >= 1 and vim.trim(out[pi]) == "" and not out[pi]:match("\n") do
+            pi = pi - 1
+          end
+          local prev_raw = pi >= 1 and out[pi] or ""
+          local prev = vim.trim(prev_raw)
+          if prev == "" or prev == "=" or prev == "local" or prev == "return"
+              or prev == "end" or prev == "then" or prev == "do" or prev == "else"
+              or (prev:match("=$") and not prev:match("[~<>=!]=$"))
+              or prev_raw:match("\n") then
+            break
+          end
+        end
+        es = es - 1
+      end
+      if es < 1 then es = 1 end
+      local lhs_parts = {}
+      for i = es, expr_end do lhs_parts[#lhs_parts + 1] = out[i] end
+      local lhs = vim.trim(table.concat(lhs_parts))
+      for _ = es, #out do out[#out] = nil end
+
+      C.skip_ws(ctx)
+      -- Capture the RHS into a scratch buffer (mirrors transform_ternary). The
+      -- RHS spans one primary plus any tighter-binding continuation: member
+      -- access (.x), indexing/call suffixes (balanced [..]/(..)), and the
+      -- multiplicative operators (* / %). We stop before a closing bracket of
+      -- the enclosing group, a comma, or a lower-precedence continuation so the
+      -- caller's context stays intact. This yields left-associative chaining
+      -- for `a + b + c` and JS precedence for `a + b * c`.
+      local saved = ctx.out
+      ctx.out = {}
+      local function rhs_depth()
+        local d = 0
+        for _, s in ipairs(ctx.out) do
+          for ci = 1, #s do
+            local c = s:sub(ci, ci)
+            if c == "(" or c == "[" or c == "{" then d = d + 1
+            elseif c == ")" or c == "]" or c == "}" then d = d - 1 end
+          end
+        end
+        return d
+      end
+      -- A leading unary operator (-, +, !, ~) belongs to the RHS operand, not
+      -- to the additive split. Emit the unary prefix (mapping JS->Lua), then
+      -- capture the primary it applies to. Without this, `1 + -2` stops after
+      -- the bare `-`, leaving `__js_add(1, -)2` which fails to compile.
+      while true do
+        local u = C.peek_significant(ctx, 0)
+        if u.type == TK.OP and (u.value == "-" or u.value == "+"
+            or u.value == "!" or u.value == "~") then
+          C.skip_ws(ctx)
+          C.tk_advance(ctx) -- consume the unary operator
+          if u.value == "!" then
+            C.emit(ctx, "not ")
+          elseif u.value == "+" then
+            -- JS unary + is numeric coercion / no-op; Lua has no unary +, drop it.
+          else
+            C.emit(ctx, u.value) -- '-' (and '~' for completeness)
+          end
+        else
+          break
+        end
+      end
+      M.transform_expression(ctx) -- one primary
+      while C.tk_cur(ctx).type ~= TK.EOF do
+        if rhs_depth() > 0 then
+          -- Inside an unclosed bracket group started by the RHS: keep going.
+          M.transform_expression(ctx)
+        else
+          local nxt = C.peek_significant(ctx, 0)
+          if nxt.type == TK.OP and nxt.value == "." then
+            M.transform_expression(ctx) -- '.prop' suffix
+          elseif nxt.type == TK.PUNCT and (nxt.value == "[" or nxt.value == "(") then
+            M.transform_expression(ctx) -- opens index/call; loop closes it
+          elseif nxt.type == TK.OP and (nxt.value == "*" or nxt.value == "/" or nxt.value == "%") then
+            C.skip_ws(ctx)
+            C.emit(ctx, " " .. C.tk_advance(ctx).value .. " ")
+            C.skip_ws(ctx)
+            M.transform_expression(ctx)
+          else
+            break
+          end
+        end
+      end
+      local rhs = vim.trim(table.concat(ctx.out))
+      ctx.out = saved
+      C.emit(ctx, "__js_add(" .. lhs .. ", " .. rhs .. ")")
       return
     end
 
@@ -978,37 +1202,51 @@ function M.transform_expression(ctx)
       for i = #ctx.out, 1, -1 do
         local s = vim.trim(ctx.out[i])
         if s ~= "" then
+          -- A Lua keyword/operator-word before `[` means array-literal context.
+          -- Check this BEFORE the word-char regex (those keywords end in a word
+          -- char and would otherwise be misclassified as property access).
+          if LITERAL_CONTEXT_WORDS[s] then
+            is_literal = true
           -- If preceded by an identifier, ), or ] -> property access
-          if s:match("[%w_%)%]]$") then
+          elseif s:match("[%w_%)%]]$") then
             is_literal = false
           end
           break
         end
       end
 
+      -- Both branches consume through their OWN matching "]", so a recursive
+      -- transform_expression() call is always bracket-balanced and the loops
+      -- below never need their own depth counter. (The old code incremented a
+      -- depth counter on a nested "[" AND let the recursion swallow that
+      -- bracket's "]", so `[[1, 2]]` ran past its real closing "]" and emitted
+      -- `{{1, 2}])}`.)
       if is_literal then
         C.tk_advance(ctx) -- skip [
         C.emit(ctx, "{")
-        -- Transform contents until ]
-        local depth = 1
+        -- Transform contents until our own ]
         while C.tk_cur(ctx).type ~= TK.EOF do
-          if C.tk_is(ctx, TK.PUNCT, "[") then depth = depth + 1 end
           if C.tk_is(ctx, TK.PUNCT, "]") then
-            depth = depth - 1
-            if depth == 0 then
-              C.tk_advance(ctx) -- skip ]
-              C.emit(ctx, "}")
-              return
-            end
+            C.tk_advance(ctx) -- skip ]
+            C.emit(ctx, "}")
+            return
           end
           M.transform_expression(ctx)
         end
         C.emit(ctx, "}")
         return
       else
-        -- Property access: emit as-is
-        C.tk_advance(ctx)
+        -- Property access: emit as-is, consuming through our own ]
+        C.tk_advance(ctx) -- skip [
         C.emit(ctx, "[")
+        while C.tk_cur(ctx).type ~= TK.EOF do
+          if C.tk_is(ctx, TK.PUNCT, "]") then
+            C.tk_advance(ctx) -- skip ]
+            C.emit(ctx, "]")
+            return
+          end
+          M.transform_expression(ctx)
+        end
         return
       end
     end

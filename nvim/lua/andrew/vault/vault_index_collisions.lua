@@ -5,9 +5,12 @@ local C = {}
 
 local cleanup = require("andrew.vault.resource_cleanup")
 local config = require("andrew.vault.config")
+local hl_util = require("andrew.vault.hl_util")
 local notify = require("andrew.vault.notify")
 local ui = require("andrew.vault.ui")
 local text_utils = require("andrew.vault.text_utils")
+
+local ns = vim.api.nvim_create_namespace("vault_index_collisions")
 
 --- Module-level dismiss timer and window for collision popup.
 --- Hoisted so a new popup cancels the previous one's timer and window.
@@ -178,7 +181,7 @@ function C.notify_popup(collisions, already_notified)
 
     -- Apply per-line highlights
     for line_idx, hl_group in pairs(line_hls) do
-      vim.api.nvim_buf_add_highlight(buf, -1, hl_group, line_idx, 0, -1)
+      hl_util.add(buf, ns, hl_group, line_idx, 0, -1)
     end
 
     -- Position: top-right with small margin
@@ -283,7 +286,7 @@ function C.show(collisions)
 
   -- Apply highlights
   for _, hl in ipairs(highlights) do
-    vim.api.nvim_buf_add_highlight(float.buf, -1, hl[2], hl[1], hl[3], hl[4])
+    hl_util.add(float.buf, ns, hl[2], hl[1], hl[3], hl[4])
   end
 end
 

@@ -16,7 +16,7 @@ set -euo pipefail
 # PATH to each restored window via `kitten @ launch --env PATH=...`.
 # (A `bash -lc` lookup can't be used here: .bashrc's non-interactive guard skips
 #  the dirs we need, e.g. miniconda's fzf, breaking the jq/fzf check below.)
-export PATH="/opt/nvim-linux-x86_64/bin:$PATH:/usr/local/bin:/usr/bin:/home/andrew/miniconda3/bin:/home/andrew/.local/bin"
+export PATH="/opt/nvim-linux-x86_64/bin:$PATH:/usr/local/bin:/usr/bin:/home/andrew/miniconda3/bin:/home/andrew/.local/bin:/home/andrew/.bun/bin"
 
 SESSIONS_DIR="${KITTY_PROJECT_SESSIONS_DIR:-$HOME/.config/kitty/sessions}"
 LOG="${HOME}/.cache/kitty-project-loader.log"
@@ -227,20 +227,14 @@ _load_session_file() {
   echo "tabs to close: ${old_tabs[*]:-<none>}" >>"$LOG"
 
   # Use the Rust implementation (ksession-rs) for restore.
-  # No bash fallback - if Rust fails, we exit with error.
-  # Priority: KSESSION_IMPL env > ~/.local/bin/ksession > hardcoded path
+  # No fallback - if the binary is missing, we exit with error.
+  # Priority: KSESSION_IMPL env > ~/.local/bin/ksession
   local ksession_bin
-  if [[ -n "${KSESSION_IMPL:-}" ]]; then
-    ksession_bin="$KSESSION_IMPL"
-  elif [[ -x "${HOME}/.local/bin/ksession" ]]; then
-    ksession_bin="${HOME}/.local/bin/ksession"
-  else
-    ksession_bin="${HOME}/.config/kitty/scripts/ksession-rs/target/release/ksession"
-  fi
+  ksession_bin="${KSESSION_IMPL:-${HOME}/.local/bin/ksession}"
   if [[ ! -x "$ksession_bin" ]]; then
-    echo "ksession-rs binary not found at: $ksession_bin" >>"$LOG"
-    echo "ERROR: ksession-rs binary not found at: $ksession_bin" >&2
-    echo "ERROR: Please build and install ksession-rs: cd scripts/ksession-rs && cargo build --release && cp target/release/ksession ~/.local/bin/" >&2
+    echo "ksession binary not found at: $ksession_bin" >>"$LOG"
+    echo "ERROR: ksession binary not found at: $ksession_bin" >&2
+    echo "ERROR: Please install ksession-rs: run 'make install' in ~/.config/kitty/scripts/ksession-rs" >&2
     return 1
   fi
 

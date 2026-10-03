@@ -96,15 +96,11 @@ return {
   require("andrew.plugins.trouble"),
 
   -- Maximize/restore the current split window
-  -- Keybinding: <leader>sm (toggle maximization)
+  -- Keybinding: <leader>wm (toggle maximization)
   require("andrew.plugins.vim-maximizer"),
 
-  -- Improved UI for vim.ui.input and vim.ui.select
-  -- Provides: better looking prompts and file pickers
-  require("andrew.plugins.dressing"),
-
   -- Substitute motion: replace text with ease
-  -- Keybindings: s (motion), ss (line), S (to EOL), x (visual)
+  -- Keybindings: gs (motion), gss (line), gS (to EOL), x gs (visual)
   require("andrew.plugins.substitute"),
 
   -- Add/change/delete surrounding pairs

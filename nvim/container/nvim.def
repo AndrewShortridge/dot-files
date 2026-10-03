@@ -1,0 +1,606 @@
+# =============================================================================
+# Apptainer definition: portable Neovim + this config, for HPC
+# =============================================================================
+# Builds a single .sif holding Neovim 0.12.5, every external CLI the config
+# shells out to, all 49 lazy.nvim plugins, the treesitter parsers and the mason
+# language servers -- so the image needs NO network at run time. That matters
+# on HPC, where compute nodes are usually air-gapped.
+#
+# Fortran is the reason this image exists. Two language servers cover it:
+#   fortls          conda-forge binary; project symbols, definitions, rename.
+#   fortran-extras  in-process Lua server (lua/andrew/fortran/lsp.lua); hover,
+#                   signature help, completion, inlay hints, code actions and
+#                   diagnostics for MPI, OpenMP and Fortran keywords, answered
+#                   from a generated registry baked into the config tree
+#                   (lua/andrew/fortran/data/{mpi,openmp,keywords}.lua). It has
+#                   no binary and no network dependency; it works wherever the
+#                   config tree does.
+#
+# Base is conda-forge rather than plain Ubuntu on purpose: this config's
+# toolchain is already conda (nvim itself is the conda-forge `nvim` package,
+# as are fortls / ruff / lua-language-server / stylua / fd / rg / fzf / yazi),
+# so building on miniforge reproduces the host environment instead of
+# approximating it.
+#
+# Build:  ./container/build.sh          (see that script; needs --fakeroot)
+# Run:    apptainer run nvim.sif file.f90
+# Docs:   container/README.md
+
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+# -----------------------------------------------------------------------------
+# Config goes in at build time, so the image is self-contained.
+# Build from the repo root: entries are relative to it. (No comments inside the
+# section itself; the %files parser takes every line as a path pair.)
+#
+#   doc/     is NOT documentation-only: every fortran-extras diagnostic carries
+#            a codeDescription.href of file://<config>/doc/fortran-extras.md#<rule>
+#            (lua/andrew/fortran/lsp_diagnostics.lua), opened by <leader>cH.
+#            Before it was listed, every href in the image pointed at a file
+#            that did not exist.
+#   tests/   (2M) ships so %test can run the real Fortran specs against the
+#            baked tree, and so the same specs can be re-run on the cluster:
+#              apptainer exec nvim.sif nvim --headless -u NONE -l \
+#                  /opt/nvim/config/nvim/tests/fortran_lsp_hover_spec.lua
+#   container/fortran-smoke.lua
+#            end-to-end Fortran smoke test through the real config (see its
+#            header). Placed OUTSIDE the config tree so nothing sources it by
+#            accident.
+# -----------------------------------------------------------------------------
+%files
+    init.lua        /opt/nvim/config/nvim/
+    lazy-lock.json  /opt/nvim/config/nvim/
+    lua             /opt/nvim/config/nvim/
+    after           /opt/nvim/config/nvim/
+    ftplugin        /opt/nvim/config/nvim/
+    queries         /opt/nvim/config/nvim/
+    syntax          /opt/nvim/config/nvim/
+    colors          /opt/nvim/config/nvim/
+    snippets        /opt/nvim/config/nvim/
+    luasnippets     /opt/nvim/config/nvim/
+    spell           /opt/nvim/config/nvim/
+    doc             /opt/nvim/config/nvim/
+    tests           /opt/nvim/config/nvim/
+    container/fortran-smoke.lua  /opt/nvim/fortran-smoke.lua
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Apptainer applies %environment during %post as well. CONDA_PREFIX is set
+    # there for the benefit of the config at RUN time; unset it here so the
+    # `conda install` below cannot mistake this for an activated environment.
+    # (NVIM_CONTAINER leaks the same way -- see the unset further down, which
+    # has to stay where it is because the seeding steps depend on it.)
+    unset CONDA_PREFIX
+
+    # -------------------------------------------------------------------------
+    # %files above copies ONLY the runtime tree, by name. That is deliberate:
+    # `%files . <dst>` would drag in the vendored LazyVim reference copy (82M),
+    # the scratch dir (33M), git history (9.4M) and the improvements notes
+    # (6.2M) -- ~130M of the 139M config tree -- and its nesting behaviour for
+    # a "." source is ambiguous across Apptainer versions. Listing the entries
+    # is both smaller and deterministic.
+    #
+    # Sanity-check that the config actually landed where nvim will look.
+    # -------------------------------------------------------------------------
+    test -f /opt/nvim/config/nvim/init.lua
+    test -d /opt/nvim/config/nvim/lua/andrew
+    # The Fortran registry is the MPI/OpenMP knowledge base; without it the
+    # in-process server answers nothing and no error is raised anywhere.
+    test -f /opt/nvim/config/nvim/lua/andrew/fortran/data/mpi.lua
+    test -f /opt/nvim/config/nvim/lua/andrew/fortran/data/openmp.lua
+    test -f /opt/nvim/config/nvim/lua/andrew/fortran/data/keywords.lua
+    test -f /opt/nvim/config/nvim/doc/fortran-extras.md
+    test -f /opt/nvim/config/nvim/tests/spec_helper.lua
+
+    # -------------------------------------------------------------------------
+    # System packages conda-forge does not carry well.
+    #
+    # openssh-client is deliberately NOT here: its postinst chgrp's the setgid
+    # /usr/bin/ssh-agent to the `ssh` group, which cannot be mapped in a
+    # single-uid rootless namespace ("chgrp: Invalid argument" -> dpkg exit 1
+    # -> the whole %post aborts). conda-forge's `openssh` has no such postinst,
+    # so it is installed below instead.
+    # -------------------------------------------------------------------------
+    # apt drops privileges to the `_apt` user (uid 42) for downloads. In a
+    # rootless build that uid is not mapped into the namespace, so apt dies with
+    # "setgroups (1: Operation not permitted)". Disabling the sandbox is the
+    # standard fix for unprivileged container builds and is a no-op when the
+    # build does have a full uid range.
+    echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/00-no-sandbox
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl wget unzip xz-utils \
+        build-essential gdb \
+        locales less
+    rm -rf /var/lib/apt/lists/*
+    locale-gen en_US.UTF-8 || true
+
+    # -------------------------------------------------------------------------
+    # The toolchain, from conda-forge.
+    #
+    # nvim is pinned EXACTLY: this config targets 0.12 APIs (vim.lsp.enable,
+    # the 0.12 gr* defaults), so a 0.11 image would break LSP attach.
+    # tree-sitter-cli is pinned to 0.25.9 because the latex grammar needs that
+    # CLI's --no-bindings behaviour to build. Note conda-forge has no package
+    # called plain `tree-sitter`: the CLI is `tree-sitter-cli`, the library is
+    # `libtree-sitter`.
+    #
+    # unibilium is pinned to 2.1.2 because conda-forge's nvim=0.12.5 links
+    # against the malformed soname `libunibilium.so..` (trailing dots) that
+    # 2.1.2 ships. Newer unibilium (2.1.4) ships a correctly-named library, and
+    # nvim then dies at startup with
+    #   error while loading shared libraries: libunibilium.so..
+    # This is a real conda-forge inconsistency, not a config problem.
+    # The rest float; add pins from conda-base-packages.txt if you need
+    # bit-for-bit parity with the workstation.
+    # -------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # DELIBERATELY NOT INSTALLED -- these are omissions, not oversights:
+    #
+    #   xclip / xsel / wl-clipboard
+    #     Neovim picks a clipboard provider by probing for these FIRST and only
+    #     falls back to OSC 52 when none is found. There is no X display in
+    #     here, so installing them would make Neovim choose a provider that
+    #     cannot work and BREAK the copy/paste that currently works fine over
+    #     SSH via OSC 52. Adding them is actively harmful.
+    #
+    #   Intel MPI (impi / mpiifx)
+    #     conda's Intel-MPI wrappers ship with an unsubstituted install prefix
+    #     (I_MPI_SUBSTITUTE_INSTALLDIR) and do not run. Real vendor MPI on the
+    #     cluster comes from environment modules, outside the container.
+    # -------------------------------------------------------------------------
+    # DELIBERATELY INSTALLED, and it was not before:
+    #
+    #   openmpi (conda-forge)
+    #     Not for running MPI programs -- for `mpi.mod`, `mpi_f08.mod` and
+    #     `mpif.h` under /opt/conda/include. Without them, gfortran's lint of
+    #     ANY file containing `use mpi` or `include 'mpif.h'` dies with a single
+    #     fatal "Cannot open module file 'mpi.mod'" that masks every other
+    #     diagnostic, and nothing in the config suppresses it. The MPI include
+    #     discovery (lua/andrew/fortran/mpi.lua) probes $CONDA_PREFIX/include,
+    #     which is /opt/conda/include here, so the linter gets its -I and fortls
+    #     gets --include_dirs with no further wiring. The hover/completion data
+    #     for MPI does NOT come from these files -- that is the baked registry
+    #     -- but the generator that produced the registry read exactly this
+    #     package's mpi.mod on the workstation, so the two agree.
+    #     conda-forge's openmpi wrappers (mpif90 -> opal_wrapper) DO run,
+    #     verified with a clean environment; the broken-prefix problem is Intel
+    #     MPI's. Site MPI still wins when present: the discovery order puts
+    #     I_MPI_ROOT / MPI_HOME / MPI_ROOT / MPICH_DIR / OPAL_PREFIX ahead of
+    #     $CONDA_PREFIX, so binding the cluster's module in overrides this.
+    # -------------------------------------------------------------------------
+    conda install -y -n base -c conda-forge \
+        nvim=0.12.5 \
+        unibilium=2.1.2 \
+        tree-sitter-cli=0.25.9 libtree-sitter=0.25.9 \
+        git ripgrep fd-find fzf universal-ctags \
+        fortls ruff stylua lua-language-server \
+        nodejs python=3.13 \
+        gfortran openmpi \
+        yazi lazygit git-delta imagemagick \
+        bat \
+        fprettify yq cppcheck \
+        rust gh cmake \
+        openssh
+    conda clean -afy
+
+    # -------------------------------------------------------------------------
+    # `fd` compatibility symlink.
+    #
+    # Debian names fd's binary `fdfind` (it clashes with fdclone there);
+    # conda-forge names it `fd`. Anything written against a Debian box asks for
+    # fdfind, finds nothing here, and fails SILENTLY -- fzf-lua's file picker
+    # just returns an empty list. The config now resolves the name itself, so
+    # this is belt-and-braces, and it keeps the wrapper script from having to
+    # inject a shim at run time.
+    # -------------------------------------------------------------------------
+    ln -sf fd /opt/conda/bin/fdfind
+
+    # -------------------------------------------------------------------------
+    # Nerd Fonts (v3.5.1, matching the workstation).
+    #
+    # READ THIS BEFORE ASSUMING IT FIXES ICONS: glyphs in fzf-lua, which-key and
+    # lualine are drawn by the terminal emulator on YOUR machine, from ITS font.
+    # A remote process only ever writes codepoints down the wire. Fonts in here
+    # cannot change what your terminal draws, and installing them will not fix
+    # tofu boxes over SSH -- that is fixed in the local terminal's config.
+    #
+    # They are still worth shipping, because things INSIDE the container do
+    # rasterise text: imagemagick converting SVG/PDF to PNG for snacks.nvim
+    # image rendering, and ghostscript. Without a font that has the private-use
+    # range, any icon in a converted document renders as a blank box.
+    #
+    # /opt/conda/fonts is the target because conda's fontconfig is the ONLY one
+    # in this image (there is no /etc/fonts) and it scans exactly two dirs:
+    # /opt/conda/fonts and $HOME/.fonts. Fonts anywhere else are invisible.
+    # -------------------------------------------------------------------------
+    NF_VER=3.5.1
+    mkdir -p /opt/conda/fonts/nerd-fonts
+    for f in NerdFontsSymbolsOnly JetBrainsMono; do
+        curl -fsSL -o "/tmp/$f.zip" \
+          "https://github.com/ryanoasis/nerd-fonts/releases/download/v${NF_VER}/$f.zip"
+        # Windows Compatible variants are duplicates with different metrics.
+        unzip -qo "/tmp/$f.zip" -d /opt/conda/fonts/nerd-fonts \
+          -x '*Windows Compatible*' '*.md' 'LICENSE*' || true
+        rm -f "/tmp/$f.zip"
+    done
+    fc-cache -f >/dev/null 2>&1 || true
+    echo "fonts: $(fc-list 2>/dev/null | grep -ci nerd) Nerd Font faces registered"
+
+    # -------------------------------------------------------------------------
+    # Node-based tools the config calls by bare name.
+    #
+    # nvim-lint runs `eslint` for js/ts/vue (eslint_d from mason is a DIFFERENT
+    # binary and does not satisfy it), and tsc is probed by the type-checker
+    # module. npm -g here lands binaries in /opt/conda/bin, already on PATH.
+    # -------------------------------------------------------------------------
+    npm install -g --no-fund --no-audit eslint typescript
+
+    # -------------------------------------------------------------------------
+    # ftnchek is not in conda and not in Ubuntu's default repos as a usable
+    # binary; it is unpacked from the Debian archive, mirroring how it was
+    # installed on the workstation (~/.local/bin, no sudo).
+    # Non-fatal: the config already guards <leader>Lk on executable().
+    # -------------------------------------------------------------------------
+    # The exact build suffix changes with every Ubuntu rebuild, so resolve the
+    # newest amd64 .deb from the pool listing rather than hardcoding a filename.
+    ( cd /tmp \
+      && FTN_POOL=http://archive.ubuntu.com/ubuntu/pool/universe/f/ftnchek \
+      && FTN_DEB=$(curl -fsSL "$FTN_POOL/" \
+           | grep -oE 'ftnchek_[0-9][^"<>]*_amd64\.deb' | sort -V | tail -1) \
+      && test -n "$FTN_DEB" \
+      && curl -fsSLO "$FTN_POOL/$FTN_DEB" \
+      && dpkg-deb -x "$FTN_DEB" /tmp/ftnchek \
+      && cp /tmp/ftnchek/usr/bin/ftnchek /opt/conda/bin/ \
+      && rm -rf /tmp/ftnchek "/tmp/$FTN_DEB" \
+      && echo "installed $FTN_DEB" ) || echo "WARN: ftnchek unavailable, :FortranCheck will be inert"
+
+    # -------------------------------------------------------------------------
+    # Seed plugins, parsers and language servers INTO the image.
+    #
+    # XDG_DATA_HOME is the image path here and at run time, so everything
+    # installed now is exactly what the container finds later. Each step is
+    # non-fatal: a failure here degrades one feature, it should not sink a
+    # 40-minute build.
+    # -------------------------------------------------------------------------
+    export XDG_CONFIG_HOME=/opt/nvim/config
+    export XDG_DATA_HOME=/opt/nvim/data
+    export XDG_STATE_HOME=/tmp/nvim-build-state
+    export XDG_CACHE_HOME=/tmp/nvim-build-cache
+    # mason's bin dir carries prettier / eslint_d / ty / rust-analyzer / codelldb
+    # / ctags-lsp. mason.nvim prepends it to vim.env.PATH itself, but ONLY once
+    # it loads -- and it is filetype-gated in this config, so for markdown and
+    # plain text it never does. Putting it on PATH here makes those tools
+    # reachable regardless of whether mason happened to load.
+    export PATH=/opt/nvim/data/nvim/mason/bin:/opt/conda/bin:$PATH
+
+    # The config resolves some formatters as "$CONDA_PREFIX/bin/<name>". Nothing
+    # sets CONDA_PREFIX in here (no `conda activate`), so that expanded to
+    # "/bin/fprettify" and Fortran files silently never formatted. The prefix is
+    # genuinely /opt/conda, so state it.
+    export CONDA_PREFIX=/opt/conda
+
+    # Apptainer applies %environment during %post too, so NVIM_CONTAINER=1 is
+    # already set here. It must NOT be during the build: the config uses it to
+    # relocate the treesitter parser dir and empty `ensure_installed`, which is
+    # right at RUN time (read-only image, parsers pre-baked) but at BUILD time
+    # means the parsers never get baked at all -- 3 shipped instead of 22.
+    # (23 are requested; latex has never built in any image, silently, and
+    # the count guard below does not care. Everything else bakes.)
+    # Build as a normal install; %environment re-applies the flag at run time.
+    unset NVIM_CONTAINER
+    mkdir -p "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
+
+    # Fail loudly and immediately if nvim cannot even start. The seeding steps
+    # below are deliberately non-fatal, which means a broken interpreter would
+    # otherwise surface as three harmless-looking WARN lines and an empty data
+    # directory -- a build that "succeeds" and ships nothing.
+    nvim --version | head -1
+
+    nvim --headless "+Lazy! sync" +qa                  || echo "WARN: lazy sync incomplete"
+    # nvim-treesitter is lazy-loaded, so a bare +TSUpdateSync hits `E492: Not an
+    # editor command` -- and nvim STILL exits 0, so the `|| echo WARN` below
+    # never fired and the log looked clean. Parsers got built anyway by lazy's
+    # build hooks (hence 22 of them), but the step was doing nothing. Load the
+    # plugin first so the command actually exists; the count guard below is what
+    # ultimately decides whether the bake worked.
+    nvim --headless "+Lazy! load nvim-treesitter" \
+                    "+TSUpdateSync" +qa                || echo "WARN: treesitter parser build incomplete"
+    # mason is ft-gated in this config, so force it loaded before installing
+    nvim --headless "+Lazy! load mason.nvim" \
+                    "+Lazy! load mason-tool-installer.nvim" \
+                    "+MasonToolsInstallSync" +qa       || echo "WARN: mason servers incomplete"
+
+    # Guard the regression above: if the parser bake silently no-ops again, fail
+    # here rather than shipping an image that recompiles parsers on a node with
+    # no compiler and no network.
+    PARSERS=$(ls /opt/nvim/data/nvim/lazy/nvim-treesitter/parser 2>/dev/null | wc -l)
+    test "$PARSERS" -ge 10 || { echo "FATAL: only $PARSERS parsers baked, expected >=10"; exit 1; }
+    # The count guard cannot tell WHICH parsers baked. The fortran one is
+    # load-bearing: lua/andrew/fortran/highlight.lua degrades silently to
+    # mask-only without it and queries/fortran/context.scm never compiles.
+    test -f /opt/nvim/data/nvim/lazy/nvim-treesitter/parser/fortran.so \
+        || { echo "FATAL: fortran treesitter parser did not bake"; exit 1; }
+    echo "baked $PARSERS treesitter parsers"
+
+    # MPI module files must be where lua/andrew/fortran/mpi.lua looks for them
+    # (see the openmpi note above). Fatal, because a missing mpif.h is exactly
+    # the silent lint regression this package exists to prevent.
+    test -f /opt/conda/include/mpif.h || { echo "FATAL: /opt/conda/include/mpif.h missing"; exit 1; }
+    test -f /opt/conda/include/mpi.mod || { echo "FATAL: /opt/conda/include/mpi.mod missing"; exit 1; }
+    # And gfortran must be able to read that mpi.mod: .mod files are tied to
+    # the compiler major that wrote them, and conda resolves the two packages
+    # independently.
+    printf 'program t\nuse mpi\ninteger :: ierr\ncall MPI_Init(ierr)\nend program\n' > /tmp/mpi-probe.f90
+    gfortran -fsyntax-only -I/opt/conda/include /tmp/mpi-probe.f90 \
+        || { echo "FATAL: gfortran cannot read /opt/conda/include/mpi.mod (compiler/openmpi mismatch)"; exit 1; }
+    rm -f /tmp/mpi-probe.f90
+    echo "mpi.mod readable by $(gfortran --version | head -1)"
+
+    rm -rf /tmp/nvim-build-state /tmp/nvim-build-cache
+
+    # Read-only at run time; make that explicit rather than accidental.
+    chmod -R a+rX /opt/nvim
+    echo "seeded: $(du -sh /opt/nvim/data | cut -f1) of plugins/parsers/servers"
+
+    # -------------------------------------------------------------------------
+    # Neovim entrypoint shim.
+    #
+    # %environment cannot be trusted for variables the HOST also sets: Apptainer
+    # applies the host environment after sourcing it, so `unset XDG_RUNTIME_DIR`
+    # and `export CONDA_PREFIX` there are both undone before nvim ever runs.
+    # (PATH is special-cased and does survive.) An entrypoint script is the only
+    # place inside the image that is guaranteed to run last, and it covers every
+    # route in -- `apptainer run`, `apptainer exec nvim`, and a bare `nvim` from
+    # `apptainer shell` -- which %runscript alone would not.
+    #
+    # Built AFTER seeding so the build itself uses the real binary.
+    # -------------------------------------------------------------------------
+    mv /opt/conda/bin/nvim /opt/conda/bin/nvim.bin
+    cat > /opt/conda/bin/nvim <<'SHIM'
+#!/bin/sh
+# Entrypoint shim -- see the comment in nvim.def's %post. Do not "simplify" this
+# into %environment; it was there and did not work.
+
+# The host exports XDG_RUNTIME_DIR=/run/user/$UID. Apptainer binds /tmp, $HOME,
+# /dev, /proc and /sys -- but never /run/user, so that path does not exist in
+# here and every socket Neovim opens fails ("serverstart(): no such file or
+# directory"). Clearing it makes Neovim create its own private
+# /tmp/nvim.$USER/<random> and remove it on exit.
+if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ ! -w "${XDG_RUNTIME_DIR:-}" ]; then
+    unset XDG_RUNTIME_DIR
+fi
+
+# conform.lua resolves formatters as "$CONDA_PREFIX/bin/<name>". Unset, that
+# became "/bin/fprettify" and Fortran files silently never formatted; worse, the
+# host's own CONDA_PREFIX leaks in and points at a path that does not exist here.
+CONDA_PREFIX=/opt/conda
+export CONDA_PREFIX
+
+# Belt-and-braces: %environment already does this, but a caller using
+# --cleanenv or overriding PATH would lose it.
+case ":${PATH}:" in
+    *:/opt/nvim/data/nvim/mason/bin:*) ;;
+    *) PATH="/opt/nvim/data/nvim/mason/bin:${PATH}"; export PATH ;;
+esac
+
+exec /opt/conda/bin/nvim.bin "$@"
+SHIM
+    chmod 755 /opt/conda/bin/nvim
+    /opt/conda/bin/nvim --version | head -1
+
+# -----------------------------------------------------------------------------
+# The XDG split is the whole trick.
+#
+#   CONFIG + DATA  -> inside the image, read-only, identical for every user
+#   STATE + CACHE  -> the caller's real home, writable
+#
+# Neovim must be able to write shada, undo history, swap and logs. A .sif is
+# immutable, so those go to $HOME (which Apptainer bind-mounts by default)
+# while plugins and servers are served from the image.
+# -----------------------------------------------------------------------------
+%environment
+    # mason's bin dir carries prettier / eslint_d / ty / pylsp / emmet-ls /
+    # prisma-language-server / eslint-lsp / rust-analyzer / codelldb / ctags-lsp.
+    # mason.nvim prepends it to vim.env.PATH itself, but ONLY once it loads --
+    # and it is filetype-gated here, so for markdown and plain text it never
+    # does. PATH is one of the few things %environment can reliably set: the
+    # container's value wins over the host's.
+    export PATH=/opt/nvim/data/nvim/mason/bin:/opt/conda/bin:$PATH
+    export XDG_CONFIG_HOME=/opt/nvim/config
+    export XDG_DATA_HOME=/opt/nvim/data
+    export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+    export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+    export LANG=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
+    # Tell the config it is containerised, so it can skip the update checker.
+    export NVIM_CONTAINER=1
+
+    # Apptainer binds /tmp, $HOME, /dev, /proc and /sys -- but NOT /run/user.
+    # So a host XDG_RUNTIME_DIR (/run/user/$UID) arrives here pointing at a
+    # directory that does not exist, and every socket Neovim opens fails with
+    # "serverstart(): Failed to start server: no such file or directory".
+    # fzf-lua hits it first (RPC socket at require time), but :terminal and
+    # anything else using stdpath("run") break identically.
+    #
+    # THIS ALONE DOES NOT WORK, and the reason is worth knowing: Apptainer
+    # re-applies the host environment AFTER sourcing %environment, so any
+    # variable the host also defines gets its host value back and an `unset`
+    # here is silently undone. Verified: sourcing this file by hand inside the
+    # container DOES clear the variable, yet it is still set at process start.
+    # PATH is special-cased and does survive; XDG_RUNTIME_DIR and CONDA_PREFIX
+    # do not. The real fix is the nvim entrypoint shim built at the end of
+    # %post, which runs after all environment handling. This stays as a
+    # best-effort for `apptainer shell` and other non-nvim entry points.
+    if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ ! -w "${XDG_RUNTIME_DIR:-}" ]; then
+        unset XDG_RUNTIME_DIR
+    fi
+    export CONDA_PREFIX=/opt/conda
+
+%runscript
+    exec nvim "$@"
+
+%test
+    set -eu
+    # %test does NOT get %environment -- verified: with mason's bin dir set only
+    # there, `prettier` was the single tool this loop could not find. So build
+    # the same PATH explicitly rather than assuming it is inherited.
+    export PATH=/opt/nvim/data/nvim/mason/bin:/opt/conda/bin:$PATH
+    # The XDG split from %environment is not inherited either. Without these
+    # the shim probe below, which loads the real config, tries to write shada
+    # and the Lua loader cache under /root, which is read-only during %test:
+    # two "Error in init.lua ... read-only file system" lines that look like
+    # a broken image and are not.
+    export XDG_CONFIG_HOME=/opt/nvim/config
+    export XDG_DATA_HOME=/opt/nvim/data
+    export XDG_STATE_HOME=/tmp/nvim-test-state
+    export XDG_CACHE_HOME=/tmp/nvim-test-cache
+    nvim --version | head -1
+    # Report every missing tool, not just the first. A rebuild is 30 minutes;
+    # finding out about them one per build is not a good trade.
+    MISSING=""
+    for t in rg fd fdfind fzf git ctags fortls ruff stylua lua-language-server \
+             gfortran gdb node fprettify yq prettier ty eslint_d \
+             cargo rustc gh cmake eslint tsc pylsp; do
+        command -v "$t" >/dev/null || MISSING="$MISSING $t"
+    done
+    [ -z "$MISSING" ] || { echo "MISSING:$MISSING"; exit 1; }
+    # NOTE the extra /nvim: stdpath("data") is $XDG_DATA_HOME/nvim, so with
+    # XDG_DATA_HOME=/opt/nvim/data the tree is /opt/nvim/data/nvim/{lazy,site,mason}.
+    NVDATA=/opt/nvim/data/nvim
+    test -d "$NVDATA/lazy" || { echo "MISSING: seeded plugins"; exit 1; }
+    # nvim-treesitter (master) installs parsers into its OWN plugin directory,
+    # not site/parser. They load from there because lazy.nvim keeps the plugin
+    # dir on the runtimepath.
+    PARSERS=$(ls "$NVDATA/lazy/nvim-treesitter/parser" 2>/dev/null | wc -l)
+    test "$PARSERS" -gt 0 || { echo "MISSING: treesitter parsers"; exit 1; }
+    # ---------------------------------------------------------------------
+    # Regression test for the bug that broke fzf-lua on the cluster.
+    #
+    # The host exports XDG_RUNTIME_DIR=/run/user/$UID; Apptainer never binds
+    # /run/user, so inside the container it names a directory that does not
+    # exist and every socket Neovim opens fails. Simulate a host value and
+    # assert the entrypoint shim neutralises it.
+    # ---------------------------------------------------------------------
+    test -x /opt/conda/bin/nvim.bin || { echo "MISSING: nvim entrypoint shim"; exit 1; }
+
+    RUNDIR=$(XDG_RUNTIME_DIR=/run/user/999999 nvim --headless \
+        -c 'lua io.write(vim.fn.stdpath("run"))' -c qa 2>/dev/null || true)
+    case "$RUNDIR" in
+        /run/user/999999*|"") echo "FAIL: shim left XDG_RUNTIME_DIR at [$RUNDIR]"; exit 1 ;;
+    esac
+
+    XDG_RUNTIME_DIR=/run/user/999999 nvim --headless -c 'lua
+        local ok = pcall(vim.fn.serverstart, "probe.sock")
+        if not ok then vim.cmd("cq") end' -c qa \
+        || { echo "FAIL: serverstart broken under a host XDG_RUNTIME_DIR"; exit 1; }
+
+    CP=$(nvim --headless -c 'lua io.write(tostring(vim.env.CONDA_PREFIX))' -c qa 2>/dev/null || true)
+    test "$CP" = "/opt/conda" || { echo "FAIL: CONDA_PREFIX is [$CP], expected /opt/conda"; exit 1; }
+    echo "OK: XDG_RUNTIME_DIR -> $RUNDIR, CONDA_PREFIX -> $CP"
+
+    NERD=$(fc-list 2>/dev/null | grep -ci nerd || true)
+    test "$NERD" -gt 0 || { echo "MISSING: nerd fonts not registered with fontconfig"; exit 1; }
+    echo "OK: $(ls "$NVDATA/lazy" | wc -l) plugins, $PARSERS parsers, $(ls "$NVDATA/mason/packages" 2>/dev/null | wc -l) mason packages, $NERD nerd faces"
+
+    # ---------------------------------------------------------------------
+    # Fortran: the MPI / OpenMP documentation and completion stack.
+    #
+    # %test does not get %environment; the XDG split was exported at the top
+    # of this section so stdpath("config") resolves to the baked tree, or
+    # every spec below would silently test $HOME/.config/nvim instead.
+    # ---------------------------------------------------------------------
+    export CONDA_PREFIX=/opt/conda
+    export NVIM_CONTAINER=1
+    NVCONF=/opt/nvim/config/nvim
+
+    # The pieces the Fortran servers are made of.
+    for f in lua/andrew/fortran/lsp.lua lua/andrew/fortran/registry.lua \
+             lua/andrew/fortran/data/mpi.lua lua/andrew/fortran/data/openmp.lua \
+             lua/andrew/fortran/data/keywords.lua doc/fortran-extras.md \
+             snippets/package.json snippets/fortran.json snippets/new-snippets.json \
+             queries/fortran/context.scm; do
+        test -f "$NVCONF/$f" || { echo "MISSING: $NVCONF/$f"; exit 1; }
+    done
+    test -f "$NVDATA/lazy/nvim-treesitter/parser/fortran.so" \
+        || { echo "MISSING: fortran treesitter parser"; exit 1; }
+
+    # What the gfortran linter and fortls need to resolve `use mpi` / mpif.h.
+    # lua/andrew/fortran/mpi.lua probes $CONDA_PREFIX/include for mpif.h.
+    test -f /opt/conda/include/mpif.h || { echo "MISSING: /opt/conda/include/mpif.h (openmpi)"; exit 1; }
+    test -f /opt/conda/include/mpi.mod || { echo "MISSING: /opt/conda/include/mpi.mod (openmpi)"; exit 1; }
+    MPIDIRS=$(nvim --headless -u NONE \
+        -c 'lua package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path' \
+        -c 'lua io.write(table.concat(require("andrew.fortran.mpi").include_dirs(), ","))' \
+        -c qa 2>/dev/null || true)
+    case ",$MPIDIRS," in
+        *,/opt/conda/include,*) ;;
+        *) echo "FAIL: mpi.include_dirs() found [$MPIDIRS], expected /opt/conda/include"; exit 1 ;;
+    esac
+    echo "OK: MPI include discovery -> $MPIDIRS"
+
+    # ftnchek is best-effort in %post; say so rather than fail.
+    command -v ftnchek >/dev/null || echo "WARN: ftnchek not on PATH; :FortranCheck will be inert"
+
+    # The real specs, against the baked tree. Every one is -u NONE-safe and
+    # needs no fortls process; fortran_completion_sort_spec additionally loads
+    # blink.cmp from the seeded plugin dir, which is why it runs here and not
+    # against a bare checkout. fortran_registry_fresh_spec is deliberately
+    # absent: it re-runs the generators against the workstation's mpi.mod.
+    FAILED=""
+    for spec in fortran_registry_spec fortran_registry_render_spec fortran_render_spec \
+                fortran_mpi_spec fortran_openmp_spec \
+                fortran_lsp_server_spec fortran_lsp_hover_spec fortran_lsp_signature_spec \
+                fortran_lsp_completion_spec fortran_lsp_diagnostics_spec \
+                fortran_completion_sort_spec; do
+        if OUT=$(nvim --headless -u NONE -l "$NVCONF/tests/$spec.lua" 2>&1); then
+            echo "  $spec: $(printf '%s\n' "$OUT" | tail -1)"
+        else
+            FAILED="$FAILED $spec"
+            printf '%s\n' "$OUT" | grep -E 'FAIL|Error|error' | head -5
+        fi
+    done
+    [ -z "$FAILED" ] || { echo "FAIL: fortran specs:$FAILED"; exit 1; }
+
+    # The specs above drive the server modules directly. This one goes through
+    # the real config -- init.lua, lazy.nvim, the ft-gated lspconfig spec that
+    # calls require("andrew.fortran").setup() -- and asks the attached client
+    # for MPI hover, OpenMP hover and MPI completion. It is the only check that
+    # would notice the wiring (not the data) breaking. fortls may attach too
+    # and may log an error of its own about an unrooted temp dir; the smoke
+    # test asks fortran-extras alone and ignores fortls.
+    test -f /opt/nvim/fortran-smoke.lua || { echo "MISSING: /opt/nvim/fortran-smoke.lua"; exit 1; }
+    SMOKE=$(cd /tmp && timeout 120 nvim --headless -l /opt/nvim/fortran-smoke.lua 2>&1) \
+        || { printf '%s\n' "$SMOKE" | grep -E '^(FAIL|OK)' ; echo "FAIL: fortran-smoke.lua"; exit 1; }
+    printf '%s\n' "$SMOKE" | grep -E '^OK: fortran-extras' \
+        || { printf '%s\n' "$SMOKE" | tail -20; echo "FAIL: fortran-smoke.lua printed no OK line"; exit 1; }
+
+    rm -rf /tmp/nvim-test-state /tmp/nvim-test-cache
+    echo "OK: fortran-extras MPI/OpenMP registry, hover, signature, completion and diagnostics verified in-image"
+
+%labels
+    Description Neovim 0.12.5 with andrew's config, self-contained for HPC
+    Neovim 0.12.5
+    Fortran fortls + in-process fortran-extras (MPI/OpenMP/keyword docs, completion, diagnostics), gfortran, openmpi headers, ftnchek
+
+%help
+    Neovim 0.12.5 plus this config, fully self-contained.
+
+      apptainer run nvim.sif [files...]     edit
+      apptainer exec nvim.sif nvim --version
+      apptainer test nvim.sif               verify the toolchain
+
+    Config and plugins are read-only inside the image. Your shada, undo and
+    logs are written to $HOME/.local/state. To install extra plugins or
+    servers at run time, layer a writable overlay -- see container/README.md.
+
+    Fortran: fortls plus the in-process fortran-extras server give hover,
+    signature help, completion, inlay hints, code actions and diagnostics
+    for MPI, OpenMP and Fortran keywords, entirely offline. gfortran lint
+    resolves `use mpi` / mpif.h against the bundled openmpi headers; bind a
+    site MPI module in (MPI_HOME, I_MPI_ROOT, ...) to lint against that
+    instead. <leader>cH on a fortran-extras diagnostic opens its rule page.

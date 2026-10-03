@@ -45,16 +45,12 @@ opt.smartcase = true    -- Become case-sensitive if search contains uppercase
 -- Highlight the cursor line for better visibility
 opt.cursorline = true
 
--- Attach the Cursor/lCursor highlight groups to each mode so the colorscheme's
--- Cursor color actually applies. The Neovim default guicursor specifies shapes
--- only (no highlight group on the block/bar), leaving the cursor at the
--- terminal's default color.
-opt.guicursor = "n-v-c-sm:block-Cursor/lCursor,i-ci-ve:ver25-Cursor/lCursor,r-cr-o:hor20-Cursor/lCursor,t:block-blinkon500-blinkoff500-TermCursor"
-
 -- Enable true color support and dark background for terminal colors
 opt.termguicolors = true  -- Enable 24-bit RGB color in terminal
 opt.background = "dark"   -- Set background color scheme to dark
 opt.signcolumn = "yes"    -- Always show sign column for diagnostics/git signs
+opt.showtabline = 2       -- Always show the tabline (bufferline no longer
+                          -- manages this; <leader>uA toggles it)
 
 -- =============================================================================
 -- Backspace Behavior
@@ -80,6 +76,37 @@ opt.swapfile = false    -- Avoid swap prompts (git provides safety)
 opt.scrolloff = 8       -- Keep 8 lines visible above/below cursor
 opt.sidescrolloff = 8   -- Horizontal equivalent for nowrap mode
 
+-- Scroll wrapped lines by screen row instead of jumping a whole logical line.
+-- Only has an effect where 'wrap' is on: markdown (via ftplugin/markdown.lua,
+-- which sets it window-locally too) and any buffer where <leader>uw turns wrap
+-- on. LazyVim sets this globally (config/options.lua:100); without it, toggling
+-- wrap on a long-lined buffer scrolls in jarring multi-row jumps.
+opt.smoothscroll = true
+
+-- snacks.nvim animation kill-switch, read by Snacks.animate.enabled() and
+-- flipped by <leader>ua. nil already behaves as true, so this is declarative
+-- rather than load-bearing -- it matches LazyVim (config/options.lua:10) and
+-- makes the global off-switch discoverable from the options file.
+vim.g.snacks_animate = true
+
+-- =============================================================================
+-- Sessions
+-- =============================================================================
+-- What :mksession writes, for persistence.nvim (<leader>q, plugins/persistence.lua).
+-- This is LazyVim's exact list (config/options.lua:91). Deltas from Neovim's
+-- default `blank,buffers,curdir,folds,help,tabpages,winsize,terminal`:
+--   + globals  -- persist g: variables (upper-case names only, per :h mksession)
+--   + skiprtp  -- do not bake 'runtimepath'/'packpath' into the session file,
+--                 which would otherwise pin a stale lazy.nvim plugin set
+--   - blank    -- skip empty unnamed buffers
+--   - terminal -- do NOT restore terminals. Load-bearing here: this config's
+--                 floating terminal does its own buffer reuse, and restored
+--                 terminal buffers would come back dead alongside it.
+-- 'folds' is kept (as LazyVim keeps it) and is safe with the treesitter `expr`
+-- folding markdown uses -- the session records fold STATE, and ftplugin/markdown
+-- re-establishes foldmethod/foldexpr on FileType when the buffer reloads.
+opt.sessionoptions = { "buffers", "curdir", "tabpages", "winsize", "help", "globals", "skiprtp", "folds" }
+
 -- =============================================================================
 -- Performance and UI
 -- =============================================================================
@@ -94,3 +121,5 @@ opt.completeopt = "menu,menuone,noselect"  -- Better native completion behavior
 -- Configure new window placement for splits
 opt.splitright = true   -- Vertical splits open to the right of current window
 opt.splitbelow = true   -- Horizontal splits open below current window
+opt.splitkeep = "screen" -- Keep text on the same screen line when splitting
+opt.winminwidth = 5     -- Never shrink a window narrower than this

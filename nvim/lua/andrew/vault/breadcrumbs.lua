@@ -88,13 +88,41 @@ function M.compute_breadcrumb(bufnr)
   return format_winbar(segments)
 end
 
+--- True if `win` can carry a winbar without stealing its last text row.
+--- Floats and one-row windows cannot: setting 'winbar' on them emits
+--- "E36: Not enough room" (echoed via emsg, so it never raises).
+---@param win number
+---@return boolean
+local function can_show_winbar(win)
+  if not vim.api.nvim_win_is_valid(win) then return false end
+  if vim.api.nvim_win_get_config(win).relative ~= "" then return false end
+  return vim.api.nvim_win_get_height(win) > 1
+end
+
+--- Apply a winbar to every window displaying `bufnr`.
+--- Targets those windows explicitly rather than using `vim.wo` (the *current*
+--- window). BufEnter is coalesced (config.events.buf_enter_coalesce_ms), so by the
+--- time this runs the current window can be an unrelated 1-row vim.ui.input
+--- float while `bufnr` is still the markdown buffer.
+---@param bufnr number
+---@param trail string
+local function apply_winbar(bufnr, trail)
+  for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+    if can_show_winbar(win) then
+      pcall(vim.api.nvim_set_option_value, "winbar", trail, { win = win })
+    end
+  end
+end
+
 ---@param args table autocmd callback args
 function M.update(args)
   local bufnr = args.buf
   if vim.bo[bufnr].buftype ~= "" then return end
   local trail = M.compute_breadcrumb(bufnr)
-  vim.wo.winbar = trail or ""
+  apply_winbar(bufnr, trail or "")
 end
+
+M.can_show_winbar = can_show_winbar
 
 function M.setup()
   vim.api.nvim_set_hl(0, "VaultBreadcrumbItem", { link = "Directory" })
@@ -119,7 +147,7 @@ end
 --- @param ctx { bufnr: number, file: string, is_vault_md: boolean }
 function M.on_buf_enter_non_vault(ctx)
   if vim.bo[ctx.bufnr].buftype ~= "" then return end
-  vim.wo.winbar = ""
+  apply_winbar(ctx.bufnr, "")
 end
 
 return M

@@ -128,6 +128,47 @@ for name, snippet in pairs(snippets) do
   end
 end
 
+-- MERGE into whatever fortran-docs.json already holds, rather than replacing
+-- it. Only ~210 of its 388 entries come from new-snippets.json: the rest are
+-- INTRINSIC docs (achar, allocated, dot_product, epsilon, ...) that were added
+-- by hand, five of them as structured OBJECTS that andrew.fortran.docs.render
+-- normalizes. A plain overwrite silently deleted all 178 of them, and hover on
+-- SIZE, ALLOCATED and DOT_PRODUCT stopped working.
+local merged = {}
+local kept = 0
+local existing_file = io.open(output_path, "r")
+if existing_file then
+  local existing_raw = existing_file:read("*a")
+  existing_file:close()
+  local ok_existing, existing = pcall(vim.json.decode, existing_raw)
+  if not ok_existing or type(existing) ~= "table" then
+    print("Error: " .. output_path .. " exists but does not parse; refusing to overwrite it")
+    os.exit(1)
+  end
+  for k, v in pairs(existing) do
+    merged[k] = v
+    kept = kept + 1
+  end
+end
+
+-- Longest wins, the same rule the extraction above already applies to its own
+-- map. 206 of the pre-existing entries are the FULL structured rendering of a
+-- routine (4.5 KB of Name/Synopsis/Description/Examples); what this script can
+-- rebuild from `description` alone is a single 120-character sentence, so
+-- replacing them unconditionally would downgrade hover for every one of them.
+-- A new snippet, which has no entry yet, is still picked up.
+local updated = 0
+for k, v in pairs(docs) do
+  local old = merged[k]
+  if type(old) ~= "string" and old ~= nil then
+    -- A structured entry outranks any extracted string: see the header of
+    -- andrew.fortran.docs.render.
+  elseif old == nil or #v > #old then
+    merged[k] = v
+    updated = updated + 1
+  end
+end
+
 -- Write output with proper JSON formatting
 local out_file = io.open(output_path, "w")
 if not out_file then
@@ -135,25 +176,32 @@ if not out_file then
   os.exit(1)
 end
 
--- Manual JSON encoding for simple string->string table
+--- One entry, formatted the way the file already is: two-space indent, one
+--- `"key": value` per line. Values are encoded by vim.json so a non-string
+--- (the structured intrinsic entries) survives, and so does any control
+--- character the hand-rolled escaper used to emit raw.
+---@param tbl table
+---@return string
 local function encode_docs(tbl)
-  local parts = {}
-  for k, v in pairs(tbl) do
-    if type(k) == "string" and type(v) == "string" then
-      -- Escape special characters in JSON strings
-      local escaped = v
-        :gsub("\\", "\\\\")
-        :gsub('"', '\\"')
-        :gsub("\n", "\\n")
-        :gsub("\r", "\\r")
-        :gsub("\t", "\\t")
-      table.insert(parts, string.format('  "%s": "%s"', k, escaped))
+  local keys = {}
+  for k in pairs(tbl) do
+    if type(k) == "string" then
+      keys[#keys + 1] = k
     end
+  end
+  table.sort(keys)
+
+  local parts = {}
+  for _, k in ipairs(keys) do
+    parts[#parts + 1] = string.format("  %s: %s", vim.json.encode(k), vim.json.encode(tbl[k]))
   end
   return "{\n" .. table.concat(parts, ",\n") .. "\n}"
 end
 
-out_file:write(encode_docs(docs))
+out_file:write(encode_docs(merged))
 out_file:close()
 
-print("Extracted " .. count .. " documentation entries to " .. output_path)
+print(string.format(
+  "Extracted %d documentation entries (%d written, %d pre-existing kept) to %s",
+  count, updated, kept, output_path
+))

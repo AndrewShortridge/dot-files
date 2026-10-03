@@ -7,6 +7,7 @@ local link_utils = require("andrew.vault.link_utils")
 local block_patterns = require("andrew.vault.block_patterns")
 local string_intern = require("andrew.vault.string_intern")
 local pat = require("andrew.vault.patterns")
+local char_bag = require("andrew.vault.char_bag")
 
 local function build_context_lines(lines, target_line, context_width)
   context_width = context_width or 2
@@ -25,7 +26,7 @@ end
 --- @param opts table  { label_prefix: string|nil, insert_suffix: string|nil, documentation: table|nil, data: table|nil }
 --- @return table
 local function make_block_item(b, opts)
-  return base.make_item(
+  local item = base.make_item(
     (opts.label_prefix or "") .. b.id,
     b.id .. (opts.insert_suffix or ""),
     b.id .. " " .. (b.text or ""),
@@ -36,6 +37,10 @@ local function make_block_item(b, opts)
       data = vim.tbl_extend("force", { completion_kind = "block" }, opts.data or {}),
     }
   )
+  -- Tag the source label at build time (block lists are small, built per '^'
+  -- trigger) so blink does not need a per-keystroke transform_items scan.
+  item.source_name = "Block"
+  return item
 end
 
 --- Build a single heading completion item.
@@ -45,7 +50,7 @@ end
 --- @return table
 local function make_heading_item(h, order, opts)
   opts = opts or {}
-  return base.make_item(
+  local item = base.make_item(
     h.text,
     h.text .. "]]",
     h.text,
@@ -57,20 +62,94 @@ local function make_heading_item(h, order, opts)
       data = vim.tbl_extend("force", { completion_kind = "heading" }, opts.data or {}),
     }
   )
+  -- Tag the source label at build time (heading lists are small, built per '#'
+  -- trigger) so blink does not need a per-keystroke transform_items scan.
+  item.source_name = "Heading"
+  return item
+end
+
+-- Per-buffer cache of the expensive same-file extraction (buffer read + parse),
+-- keyed on (bufnr, changedtick). The cache also memoizes the BUILT item arrays:
+-- the item list is identical across keystrokes of an unchanged buffer (blink
+-- re-filters via its own fuzzy matcher), and the items are immutable post-build,
+-- so the per-keystroke loop (make_block_item + build_context_lines + tbl_extend)
+-- is skipped entirely on a (bufnr, tick) hit.
+--
+-- Block items are keyed by a variant string derived from item_opts because the
+-- two callers ('^id' standalone vs '[[^' same-file) produce different items
+-- (label_prefix vs insert_suffix). `items` is a small map: variant -> item[].
+local _block_cache = { bufnr = -1, tick = -1, buf_lines = nil, blocks = nil, items = nil }
+local _heading_cache = { bufnr = -1, tick = -1, headings = nil, items = nil }
+
+-- Memoizes the "]]"-stripped variant of an item array. When autopairs has
+-- already inserted the closing "]]" after the cursor, the trailing "]]" must be
+-- dropped from each item's insertText to avoid producing "]]]]". The naive
+-- approach clones every "]]"-suffixed item on EVERY keystroke. Instead, key the
+-- stripped clone-array on the SOURCE array's table identity (the note-name /
+-- heading / block arrays are stable across keystrokes of an unchanged buffer/
+-- index — the same invariant the array caches above rely on), so the clone is
+-- built ONCE per array and reused. Weak keys+values let stale stripped arrays be
+-- GC'd when the source array is replaced (e.g. after a rebuild). If the source
+-- arrays ever stop being stable across keystrokes this degrades to per-keystroke
+-- cloning (still correct, only slower) — there is no correctness coupling.
+local _stripped_cache = setmetatable({}, { __mode = "kv" })
+
+--- Return an array equal to `items` but with the trailing "]]" removed from
+--- every item.insertText that has it. Clones the affected items (never mutates
+--- the shared, cached item tables) and memoizes the result per source-array
+--- identity so the clone loop runs once per distinct array, not per keystroke.
+--- @param items table[]
+--- @return table[]
+local function stripped_close_bracket(items)
+  local cached = _stripped_cache[items]
+  if cached then return cached end
+  local out = {}
+  for i = 1, #items do
+    local item = items[i]
+    if item.insertText and item.insertText:sub(-2) == "]]" then
+      local clone = {}
+      for k, v in pairs(item) do clone[k] = v end
+      clone.insertText = item.insertText:sub(1, -3)
+      out[i] = clone
+    else
+      out[i] = item
+    end
+  end
+  _stripped_cache[items] = out
+  return out
 end
 
 --- Build block completion items from the current buffer's lines.
 --- @param item_opts table  Options passed through to make_block_item (label_prefix, insert_suffix, etc.)
 --- @return table[]
 local function build_buffer_block_items(item_opts)
-  local buf_lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-  local blocks = block_patterns.extract_from_lines(buf_lines)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+  -- Variant key: only label_prefix / insert_suffix distinguish the two callers.
+  -- "\0" is a delimiter byte (cannot appear in either option), not a tunable.
+  local variant = (item_opts.label_prefix or "") .. "\0" .. (item_opts.insert_suffix or "")
+  local buf_lines, blocks
+  if _block_cache.bufnr == bufnr and _block_cache.tick == tick then
+    -- Built-array cache hit: return the memoized items for this variant.
+    local cached = _block_cache.items and _block_cache.items[variant]
+    if cached then return cached end
+    buf_lines = _block_cache.buf_lines
+    blocks = _block_cache.blocks
+  else
+    buf_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    blocks = block_patterns.extract_from_lines(buf_lines)
+    _block_cache.bufnr, _block_cache.tick = bufnr, tick
+    _block_cache.buf_lines, _block_cache.blocks = buf_lines, blocks
+    _block_cache.items = {} -- reset memoized item arrays for the new content
+  end
   local block_items = {}
   for _, b in ipairs(blocks) do
     block_items[#block_items + 1] = make_block_item(b, vim.tbl_extend("force", {
       documentation = { kind = "plaintext", value = build_context_lines(buf_lines, b.line) },
     }, item_opts))
   end
+  _block_cache.items = _block_cache.items or {}
+  _block_cache.items[variant] = block_items
   return block_items
 end
 
@@ -218,8 +297,13 @@ local function build_items_for_file(rel_path, entry, idx)
   local fm = entry.frontmatter
   local desc = intern_desc(build_description(fm, rel))
 
-  local use_char_bag = config.prefilter.enabled and config.prefilter.completion_char_bag
-  local cb = use_char_bag and require("andrew.vault.char_bag") or nil
+  -- Only attach per-item char bags when the candidate list can reach the
+  -- prefilter threshold; below it the sweep never fires and the bags are dead
+  -- weight (build time + memory). Candidate count ~= file_count for wikilinks.
+  local pf = config.prefilter
+  local use_char_bag = pf.enabled and pf.completion_char_bag
+    and idx:file_count() >= (pf.min_candidates_for_charbag or 500)
+  local cb = use_char_bag and char_bag or nil
 
   -- Alias items
   local aliases = entry.aliases
@@ -251,6 +335,10 @@ local function build_items_for_file(rel_path, entry, idx)
   return items
 end
 
+-- CharBag pre-filter with its own superset-narrowing cache (see
+-- base.new_charbag_filter for the narrowing rationale).
+local charbag_filter = base.new_charbag_filter()
+
 local source = base.create_source({
   name = "wikilinks",
 
@@ -273,9 +361,13 @@ local source = base.create_source({
     -- Reset the description pool on each rebuild to free stale strings
     reset_desc_pool()
 
-    -- Pre-resolve CharBag config once per build (avoid per-item table lookups)
-    local use_char_bag = config.prefilter.enabled and config.prefilter.completion_char_bag
-    local cb = use_char_bag and require("andrew.vault.char_bag") or nil
+    -- Pre-resolve CharBag config once per build (avoid per-item table lookups).
+    -- Gate on file_count: below the prefilter threshold the sweep never fires,
+    -- so per-item bags are dead weight (build time + memory).
+    local pf = config.prefilter
+    local use_char_bag = pf.enabled and pf.completion_char_bag
+      and idx:file_count() >= (pf.min_candidates_for_charbag or 500)
+    local cb = use_char_bag and char_bag or nil
 
     -- Snapshot the index for consistent reads during coroutine iteration.
     -- Both keys and entries come from the same snapshot, so no entry can
@@ -347,8 +439,9 @@ local source = base.create_source({
 
     -- Standalone block ID reference: ^partial (not inside [[ ]])
     -- Triggers when typing ^id anywhere that isn't already a wikilink
-    -- NB: "!?%[%[" is a completion-specific trigger (embed-or-wikilink); no exact pat equivalent
-    if not before:match("!?%[%[") then
+    -- Gate: presence of "[[" (the optional "!" only precedes it, so a plain-byte
+    -- "[[" scan is exactly equivalent to "!?%[%[" here and ~4000x cheaper per keystroke).
+    if not before:find("[[", 1, true) then
       if before:match("%^[%w%-]*$") then
         local buf_path = vim.api.nvim_buf_get_name(0)
         if buf_path ~= "" then
@@ -362,31 +455,40 @@ local source = base.create_source({
 
     -- If closing ]] already exists after cursor (e.g. from autopairs),
     -- strip ]] from insertText to avoid doubled brackets
+    -- `after:find("]]", 1, true) == 1` is exactly `after:match("^%]%]")` (both
+    -- test that `after` starts with "]]") but skips the pattern engine.
     local after = ctx.line:sub(ctx.cursor[2] + 1)
-    if after:match("^%]%]") then
+    if after:find("]]", 1, true) == 1 then
       local orig_callback = callback
       callback = function(result)
-        if result and result.items then
-          local stripped_items = {}
-          for _, item in ipairs(result.items) do
-            if item.insertText and item.insertText:sub(-2) == "]]" then
-              local new_item = vim.tbl_extend("force", {}, item)
-              new_item.insertText = item.insertText:sub(1, -3)
-              stripped_items[#stripped_items + 1] = new_item
-            else
-              stripped_items[#stripped_items + 1] = item
-            end
-          end
-          result = base.response(stripped_items)
+        if result and result.items and #result.items > 0 then
+          result = base.response(stripped_close_bracket(result.items))
         end
         orig_callback(result)
       end
     end
 
-    -- Block completion: [[Note Name^partial, [[^partial (same file), or ![[...^partial
+    -- Capture the wikilink tail once (the gate above already confirmed "!?%[%["
+    -- is present, so this match succeeds). The block/heading triggers below
+    -- dispatch on this single capture via cheap byte scans instead of re-matching
+    -- the full line prefix with anchored, backtracking patterns each keystroke.
     -- NB: completion-specific trigger pattern (no pat equivalent)
-    local block_note_name = before:match("!?%[%[(.-)%^[^%]]*$")
-    if block_note_name then
+    local tail = before:match("!?%[%[(.-)$") or ""
+    -- Position of the last "]" in tail: the old `%^[^%]]*$` / `#[^%]]*$` patterns
+    -- required the caret/hash to be followed by no "]" to EOL, i.e. to lie AFTER
+    -- the last "]" in tail. Scan for it once and reuse for both triggers.
+    local last_rb = 0
+    local p = tail:find("]", 1, true)
+    while p do
+      last_rb = p
+      p = tail:find("]", p + 1, true)
+    end
+
+    -- Block completion: [[Note Name^partial, [[^partial (same file), or ![[...^partial
+    -- Find the first literal "^" strictly after the last "]" (plain=true: "^" is a byte).
+    local caret = tail:find("^", last_rb + 1, true)
+    if caret then
+      local block_note_name = tail:sub(1, caret - 1)
       if block_note_name == "" then
         -- Same-file block reference: [[^ — read live buffer for unsaved changes
         callback(base.response(build_buffer_block_items({ insert_suffix = "]]" })))
@@ -416,14 +518,33 @@ local source = base.create_source({
     end
 
     -- Heading completion: [[Note Name#partial, [[#partial (same file), or ![[...#partial
-    -- NB: completion-specific trigger pattern (no pat equivalent)
-    local note_name = before:match("!?%[%[(.-)#[^%]]*$")
-    if note_name then
+    -- Find the first literal "#" strictly after the last "]" (same invariant as block).
+    local hash = tail:find("#", last_rb + 1, true)
+    if hash then
+      local note_name = tail:sub(1, hash - 1)
       if note_name == "" then
-        -- Same-file heading reference: [[# — prefer index, fall back to buffer lines
-        local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-        local buf_path = vim.api.nvim_buf_get_name(0)
-        local headings = get_headings(lines, buf_path)
+        -- Same-file heading reference: [[# — prefer index, fall back to buffer
+        -- lines. Cache the extracted heading list on (bufnr, changedtick) so it
+        -- is not rebuilt on every re-trigger of an unchanged buffer.
+        local bufnr = vim.api.nvim_get_current_buf()
+        local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+        local headings
+        if _heading_cache.bufnr == bufnr and _heading_cache.tick == tick then
+          -- Built-array cache hit: the heading item list is identical across
+          -- keystrokes of an unchanged buffer, so skip the per-keystroke rebuild.
+          if _heading_cache.items then
+            callback(base.response(_heading_cache.items))
+            return
+          end
+          headings = _heading_cache.headings
+        else
+          local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+          local buf_path = vim.api.nvim_buf_get_name(bufnr)
+          headings = get_headings(lines, buf_path)
+          _heading_cache.bufnr, _heading_cache.tick = bufnr, tick
+          _heading_cache.headings = headings
+          _heading_cache.items = nil -- invalidate memoized items for new content
+        end
         local heading_items = {}
         for _, h in ipairs(headings) do
           heading_items[#heading_items + 1] = make_heading_item(h, h.order, {
@@ -433,6 +554,7 @@ local source = base.create_source({
             } or nil,
           })
         end
+        _heading_cache.items = heading_items
         callback(base.response(heading_items))
       else
         -- Cross-file heading reference: [[Note# — use vault index
@@ -453,22 +575,17 @@ local source = base.create_source({
       return
     end
 
-    -- Normal note name completion: apply CharBag pre-filter before returning
+    -- Normal note name completion: apply CharBag pre-filter before returning.
+    -- Skip the sweep for small lists: blink re-filters via its fuzzy matcher
+    -- (both incomplete flags are false), so narrowing here only pays off once
+    -- the candidate list is large.
     local prefilter = config.prefilter
-    if prefilter.enabled and prefilter.completion_char_bag then
-      -- NB: completion-specific trigger pattern (no pat equivalent)
-      local query = before:match("!?%[%[(.-)$") or ""
+    if prefilter.enabled and prefilter.completion_char_bag
+      and #items >= (prefilter.min_candidates_for_charbag or 500) then
+      local query = tail -- captured once above; equals before:match("!?%[%[(.-)$")
       if #query >= (prefilter.min_query_length or 2) then
-        local char_bag = require("andrew.vault.char_bag")
         local query_bag = char_bag.from_string(query)
-        local filtered = {}
-        for i = 1, #items do
-          local item = items[i]
-          if not item._char_bag or char_bag.is_superset(item._char_bag, query_bag) then
-            filtered[#filtered + 1] = item
-          end
-        end
-        callback(base.response(filtered))
+        callback(base.response(charbag_filter(items, query_bag)))
         return
       end
     end

@@ -448,8 +448,20 @@ local function prepare_evaluate(ast, index, graph_sets, restrict_to, arena_scope
   -- Full snapshot (not just files) because extract_pre_checks uses derived
   -- indexes (_tag_blooms, _files_by_type, etc.) which must be consistent
   -- with the files table. restrict_to is already a separate table.
-  local snap = (not restrict_to and require("andrew.vault.config").index.use_snapshots
-    and index.snapshot) and index:snapshot() or index
+  --
+  -- The snapshot is memoized per generation on the index: _apply_staged mutates
+  -- files and bumps _generation synchronously, so a snapshot stays valid for the
+  -- entire lifetime of a generation. Live search runs many evaluates per
+  -- generation (one per keystroke), so this avoids a fresh copy_files each time.
+  local snap = index
+  if not restrict_to and require("andrew.vault.config").index.use_snapshots
+    and index.snapshot then
+    if index._cached_snapshot_gen ~= index._generation then
+      index._cached_snapshot = index:snapshot()
+      index._cached_snapshot_gen = index._generation
+    end
+    snap = index._cached_snapshot
+  end
   local files = restrict_to or snap.files
 
   -- build_filter_context needs the original index for create_memoized_resolver
@@ -464,7 +476,15 @@ local function prepare_evaluate(ast, index, graph_sets, restrict_to, arena_scope
   -- and match_has call index:get_inlinks() which requires VaultIndex methods.
   -- The snapshot's _inlinks reference is the same object, so consistency is
   -- maintained; methods just need the metatable dispatch.
+
+  -- Search-only directory exclusions (.obsidian, templates). Hoisted out of the
+  -- loop: active() is the table-identity check, so the common case costs one
+  -- boolean test per file rather than a config lookup.
+  local se = require("andrew.vault.search_exclude")
+  local apply_exclusions = se.active()
+
   local function predicate(rel_path, entry)
+    if apply_exclusions and se.is_excluded(rel_path) then return false end
     if pre_checks then
       for _, check in ipairs(pre_checks) do
         if not check(entry, rel_path) then return false end
