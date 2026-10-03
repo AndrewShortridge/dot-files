@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+# bookmarks - context/project bookmark picker for COSMIC (fzf in a kitty panel)
+#
+#   bookmarks                     pick context -> project -> bookmark
+#   bookmarks work                pick project in "work" -> bookmark
+#   bookmarks work ml             pick bookmark in work/ml
+#   bookmarks --popup [MODE] [CTX [PROJ]]  same, inside a centered kitty overlay panel
+#   bookmarks --menu [CTX [PROJ]]   key menu: one more keypress picks the mode below
+#                                   (the COSMIC shortcut runs: bookmarks --popup --menu)
+#   bookmarks --edit [CTX [PROJ]]   open the chosen list in $EDITOR
+#   bookmarks --session [CTX [PROJ]] open/focus the project's browser window (bsession open)
+#   bookmarks --save [CTX [PROJ]]   save the project window you were in (or CTX/PROJ) and
+#                                   fzf-pick its unbookmarked urls into the .txt (bsession save --promote)
+#   bookmarks --close [CTX [PROJ]]  save, then close that project window (bsession close)
+#
+# Layout:  ~/.config/bookmarks/<context>/<project>.txt           curated bookmarks
+#          ~/.config/bookmarks/<context>/<project>.session.toml  saved window layout (bsession)
+#          ~/.config/bookmarks/config   (sourced; per-context browser + workspace)
+#
+# Line format inside a .txt:   label :: url      or just   url
+# Blank lines and lines starting with # are ignored.
+#
+# config defines, per context (see that file):
+#   browser_<ctx>    command that opens a url (url appended)
+#   app_id_<ctx>     the browser's Wayland app_id, used to find its window
+#   workspace_<ctx>  COSMIC workspace the browser must live on
+#   restore_<ctx>    extra args for a cold start (session restore)
+#   host_<ctx>       bsession native host name (firefox|brave|...), used by --session/--save
+# A context without app_id/workspace just runs browser_<ctx> (or $BROWSER,
+# or xdg-open). Workspace placement needs cosmic-wmctl on PATH.
+set -euo pipefail
+
+ROOT="${BOOKMARKS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/bookmarks}"
+ALL='*'
+
+# die MSG -- inside the panel, hold the message on screen before the overlay vanishes
+die() {
+    printf 'bookmarks: %s\n' "$*" >&2
+    [[ -n ${BOOKMARKS_IN_PANEL:-} ]] && read -rsn1 -p 'press any key' _
+    exit 1
+}
+
+command -v fzf >/dev/null || die "fzf is required"
+
+pick() { # pick PROMPT  (stdin: candidates) -> stdout: choice, exit 1 on cancel
+    fzf --reverse --no-multi --cycle --info=inline --prompt="$1 " \
+        --delimiter=$'\t' --with-nth=1 --tabstop=4 --border=rounded
+}
+
+contexts() { find -L "$ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort; }
+projects() { find -L "$ROOT/$1" -maxdepth 1 -type f -name '*.txt' -printf '%f\n' | sed 's/\.txt$//' | sort; }
+
+# entries CTX PROJ -> "display<TAB>url" lines; PROJ='*' spans every project in CTX
+entries() {
+    local ctx=$1 proj=$2 files=() f tag line label url
+    if [[ $proj == "$ALL" ]]; then
+        mapfile -t files < <(find -L "$ROOT/$ctx" -maxdepth 1 -type f -name '*.txt' | sort)
+    else
+        files=("$ROOT/$ctx/$proj.txt")
+    fi
+    for f in "${files[@]}"; do
+        tag=$(basename "$f" .txt)
+        while IFS= read -r line || [[ -n $line ]]; do
+            [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
+            if [[ $line == *"::"* ]]; then
+                label=${line%%::*}; url=${line#*::}
+            else
+                label=$line; url=$line
+            fi
+            label=${label#"${label%%[![:space:]]*}"}; label=${label%"${label##*[![:space:]]}"}
+            url=${url#"${url%%[![:space:]]*}"};       url=${url%"${url##*[![:space:]]}"}
+            [[ -n $url ]] || continue
+            # Already schemed: "x://", or "scheme:" followed by a non-digit
+            # (so host:port like localhost:8080 still gets https://). Keep in
+            # step with store.rs parse_entries.
+            [[ $url == *://* || $url =~ ^[A-Za-z][A-Za-z0-9+.-]*:[^0-9/] ]] || url="https://$url"
+            if [[ $proj == "$ALL" ]]; then
+                printf '%-12s %-48s %s\t%s\n' "[$tag]" "$label" "$url" "$url"
+            else
+                printf '%-48s %s\t%s\n' "$label" "$url" "$url"
+            fi
+        done < "$f"
+    done
+}
+
+notify() { command -v notify-send >/dev/null && notify-send -a bookmarks "$1" "${2:-}"; printf 'bookmarks: %s %s\n' "$1" "${2:-}" >&2; }
+
+# spawn CMD URL -- run the browser command. In the panel, kitty does the
+# spawn: on Wayland it requests an xdg-activation token for the keypress and
+# hands it to the child as XDG_ACTIVATION_TOKEN, which is what lets the
+# browser take focus (and lets cosmic-comp switch to its workspace). A bare
+# spawn from a layer-shell overlay cannot steal focus.
+spawn() {
+    if [[ -n ${BOOKMARKS_IN_PANEL:-} ]]; then
+        kitten @ load-config -o "open_url_with=$1"
+        kitten @ action open_url "$2"
+        sleep 0.2   # token round-trip is async; let kitty spawn before we exit
+    else
+        # cmd is intentionally word-split (carries flags); no quoting, no globbing
+        set -f
+        # shellcheck disable=SC2086
+        setsid -f $1 "$2" >/dev/null 2>&1 </dev/null
+        set +f
+    fi
+}
+
+# windows_of APP_ID -> identifiers of that app's toplevels, with workspace
+windows_of() {
+    cosmic-wmctl windows --json 2>/dev/null \
+        | jq -r --arg a "$1" '.[] | select(.app_id == $a) | "\(.identifier)\t\(.workspaces[0] // "")"'
+}
+
+open_url() { # open_url CTX URL
+    local ctx=$1 url=$2 cmd app ws restore
+    [[ -r $ROOT/config ]] && . "$ROOT/config"
+    local b="browser_$ctx" a="app_id_$ctx" w="workspace_$ctx" r="restore_$ctx"
+    cmd=${!b:-${BROWSER:-xdg-open}}; app=${!a:-}; ws=${!w:-}; restore=${!r:-}
+
+    if [[ -z $app || -z $ws ]] || ! command -v cosmic-wmctl >/dev/null; then
+        spawn "$cmd" "$url"
+        return
+    fi
+    if ! cosmic-wmctl workspaces --json | jq -e --arg n "$ws" 'any(.[]; .name == $n)' >/dev/null; then
+        notify "workspace $ws does not exist" "pin it: cosmic-wmctl workspace-pin $ws"
+        spawn "$cmd" "$url"
+        return
+    fi
+
+    local id have_ws running=0 settle=0
+    while IFS=$'\t' read -r id have_ws; do
+        [[ -n $id ]] || continue
+        if [[ $have_ws != "$ws" ]]; then
+            cosmic-wmctl window-move "identifier=$id" "$ws" --exact --force-ext-move >/dev/null
+            settle=1
+        fi
+        running=1
+    done < <(windows_of "$app")
+
+    if (( running )); then
+        # Running instance: remote-open the url. The activation token makes
+        # cosmic-comp switch to the window's workspace and focus it.
+        (( settle )) && sleep 0.3   # let the move land before activation
+        spawn "$cmd" "$url"
+    else
+        # Cold start: switch first so the new window maps on the right
+        # workspace, then launch with session restore.
+        cosmic-wmctl workspace-activate "$ws"
+        spawn "$cmd $restore" "$url"
+        # Belt and braces: if the first window lands elsewhere, move it.
+        setsid -f bash -c '
+            for _ in $(seq 1 60); do
+                sleep 0.5
+                w=$(cosmic-wmctl windows --json 2>/dev/null | jq -r --arg a "$1" ".[] | select(.app_id == \$a) | .workspaces[0]" | head -1)
+                [[ -z $w ]] && continue
+                [[ $w == "$2" ]] || cosmic-wmctl window-move "app_id=$1" "$2" --exact --force-ext-move >/dev/null
+                exit 0
+            done' _ "$app" "$ws" >/dev/null 2>&1 </dev/null
+    fi
+    [[ -n ${BOOKMARKS_IN_PANEL:-} ]] || { sleep 0.5; cosmic-wmctl window-activate "app_id=$app" >/dev/null 2>&1 || true; }
+}
+
+# menu -- which-key style second keystroke after the global shortcut; sets $mode.
+menu() {
+    local k rest c
+    trap 'printf "\e[?25h"' EXIT   # cursor back even on EOF / Ctrl-C
+    while :; do
+        printf '\e[H\e[2J\e[?25l\n  \e[1mbookmarks\e[0m\n\n'
+        printf '  \e[1;33m%s\e[0m  %-9s %s\n' \
+            f find      'open a bookmark' \
+            o open      'open / focus a project window' \
+            s save      'save the window you were just in; add its new urls to the list' \
+            a 'save all' 'save every open project window' \
+            c close     'save and close the window you were just in' \
+            e edit      'edit a project list' \
+            i status    'connected browsers and their project windows' \
+            q cancel    ''
+        IFS= read -rsn1 k || exit 0
+        if [[ $k == $'\e' ]]; then
+            # Bare Esc cancels; an escape *sequence* (arrows, F-keys, Alt-x)
+            # is swallowed whole and ignored instead of leaking "[A" to the tty.
+            rest=''
+            while IFS= read -rsn1 -t 0.02 c; do rest+=$c; done
+            [[ -n $rest ]] && continue
+            exit 0
+        fi
+        case $k in
+            f) mode=pick; return ;;
+            o) mode=session; return ;;
+            s) mode=save; return ;;
+            a) mode=saveall; return ;;
+            c) mode=close; return ;;
+            e) mode=edit; return ;;
+            i) mode=status; return ;;
+            q|'') exit 0 ;;
+        esac
+    done
+}
+
+mode=pick
+case ${1:-} in
+    --popup)
+        shift
+        BOOKMARKS_IN_PANEL=1 exec kitten panel --edge=center --layer=overlay \
+            --focus-policy=exclusive --lines=24 --columns=110 --app-id=bookmarks \
+            -o allow_remote_control=yes -- "$0" "$@"
+        ;;
+    --menu) shift; menu ;;
+    --edit) mode=edit; shift ;;
+    --session) mode=session; shift ;;
+    --save) mode=save; shift ;;
+    --close) mode=close; shift ;;
+    --help|-h) sed -n '2,30p' "$0"; exit 0 ;;
+esac
+
+[[ -d $ROOT ]] || die "no bookmark dir at $ROOT"
+
+# held [-q] CMD... -- run CMD; inside the panel, keep its output on screen
+# before the overlay vanishes: until a key on failure, briefly on success
+# (not at all with -q, for commands whose result is a window appearing).
+held() {
+    local linger=1.2
+    [[ $1 == -q ]] && { linger=0; shift; }
+    if "$@"; then
+        [[ -n ${BOOKMARKS_IN_PANEL:-} && $linger != 0 ]] && sleep "$linger"
+        exit 0
+    fi
+    [[ -n ${BOOKMARKS_IN_PANEL:-} ]] && read -rsn1 -p 'press any key' _
+    exit 1
+}
+
+ctx=${1:-}; proj=${2:-}
+case $mode in
+    save)    [[ -n $ctx ]] || held bsession save --focused --promote ;;   # the window you were just in
+    close)   [[ -n $ctx ]] || held bsession close --focused ;;
+    saveall) held bsession save --promote ;;
+    status)  bsession status || true; [[ -n ${BOOKMARKS_IN_PANEL:-} ]] && read -rsn1 _; exit 0 ;;
+esac
+
+if [[ -z $ctx ]]; then
+    ctx=$(contexts | pick 'context:') || exit 0
+fi
+[[ -d $ROOT/$ctx ]] || die "no context '$ctx'"
+
+if [[ -z $proj ]]; then
+    proj=$( { [[ $mode == pick ]] && echo "$ALL"; projects "$ctx"; } | pick "$ctx /") || exit 0
+fi
+# "$ALL" is only an offer of the pick mode; typed on argv elsewhere it would
+# reach $EDITOR/bsession as a literal "*".
+[[ $proj == "$ALL" && $mode == pick ]] || [[ -f $ROOT/$ctx/$proj.txt ]] || die "no project '$ctx/$proj'"
+
+case $mode in
+    # shellcheck disable=SC2086  # $EDITOR may carry flags ("code --wait")
+    edit)    exec ${EDITOR:-nvim} "$ROOT/$ctx/$proj.txt" ;;
+    session) held -q bsession open "$ctx" "$proj" ;;
+    save)    held bsession save "$ctx" "$proj" --promote ;;
+    close)   held bsession close "$ctx" "$proj" ;;
+esac
+
+choice=$(entries "$ctx" "$proj" | pick "$ctx/$proj >") || exit 0
+open_url "$ctx" "${choice##*$'\t'}"

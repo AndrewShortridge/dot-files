@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# screenctl - brightness and night light control for COSMIC (Pop!_OS)
+#
+#   screenctl brightness            show current brightness (percent)
+#   screenctl brightness 40         set to 40%
+#   screenctl brightness +10 / -10  step up / down by 10%
+#   screenctl night on [KELVIN]     warm tint (default 2500K)
+#   screenctl night off             remove tint
+#   screenctl night toggle          on <-> off
+#   screenctl night status
+set -euo pipefail
+
+BUS=com.system76.CosmicSettingsDaemon
+OBJ=/com/system76/CosmicSettingsDaemon
+IFACE=com.system76.CosmicSettingsDaemon
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/screenctl"
+NIGHT_STATE="$STATE_DIR/night"
+NIGHT_HELPER=/usr/bin/cosmic-nightlight-helper
+DEFAULT_TEMP="${SCREENCTL_TEMP:-2500}"
+
+prop() { busctl --user get-property "$BUS" "$OBJ" "$IFACE" "$1" | awk '{print $2}'; }
+
+brightness() {
+    local max cur pct target
+    max=$(prop MaxDisplayBrightness)
+    cur=$(prop DisplayBrightness)
+    pct=$(( (cur * 100 + max / 2) / max ))
+    case "${1:-}" in
+        "") echo "$pct%"; return ;;
+        +*|-*) target=$(( pct + ${1} )) ;;
+        *) target=${1%\%} ;;
+    esac
+    (( target < 1 )) && target=1
+    (( target > 100 )) && target=100
+    busctl --user set-property "$BUS" "$OBJ" "$IFACE" DisplayBrightness i $(( target * max / 100 ))
+    echo "$target%"
+}
+
+night() {
+    mkdir -p "$STATE_DIR"
+    local cmd="${1:-status}"
+    if [[ "$cmd" == toggle ]]; then
+        [[ -f "$NIGHT_STATE" ]] && cmd=off || cmd=on
+    fi
+    case "$cmd" in
+        status) [[ -f "$NIGHT_STATE" ]] && echo "on ($(cat "$NIGHT_STATE")K)" || echo off ;;
+        on|off)
+            if [[ ! -x "$NIGHT_HELPER" ]]; then
+                echo "cosmic-nightlight is not installed. See: https://github.com/cosmic-nightlight/cosmic-nightlight/releases" >&2
+                exit 1
+            fi
+            if [[ "$cmd" == on ]]; then
+                local temp="${2:-$DEFAULT_TEMP}"
+                pkexec "$NIGHT_HELPER" --temp "$temp" && echo "$temp" > "$NIGHT_STATE" && echo "night light on (${temp}K)"
+            else
+                pkexec "$NIGHT_HELPER" --off && rm -f "$NIGHT_STATE" && echo "night light off"
+            fi ;;
+        *) echo "usage: screenctl night on [KELVIN] | off | toggle | status" >&2; exit 2 ;;
+    esac
+}
+
+case "${1:-}" in
+    brightness|b) shift; brightness "$@" ;;
+    night|n) shift; night "$@" ;;
+    *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

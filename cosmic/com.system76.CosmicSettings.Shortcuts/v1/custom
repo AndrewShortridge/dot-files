@@ -1,0 +1,71 @@
+{
+    (
+        modifiers: [
+            Super,
+            Shift,
+        ],
+        key: "n",
+    ): Spawn("/home/andrew/.local/bin/screenctl night toggle"),
+    (
+        modifiers: [
+            Super,
+            Shift,
+        ],
+        key: "minus",
+    ): Spawn("/home/andrew/.local/bin/screenctl brightness -10"),
+    (
+        modifiers: [
+            Super,
+        ],
+        key: "t",
+    ): Disable,
+    (
+        modifiers: [
+            Super,
+        ],
+        key: "Return",
+    ): System(Terminal),
+    (
+        modifiers: [
+            Super,
+            Shift,
+        ],
+        key: "equal",
+    ): Spawn("/home/andrew/.local/bin/screenctl brightness +10"),
+    (
+        modifiers: [
+            Super,
+        ],
+    ): System(WorkspaceOverview),
+    (
+        modifiers: [
+            Alt,
+        ],
+        key: "space",
+    ): System(Launcher),
+    (
+        modifiers: [
+            Super,
+        ],
+        key: "n",
+    ): NextWorkspace,
+    (
+        modifiers: [
+            Super,
+        ],
+        key: "p",
+    ): PreviousWorkspace,
+    (
+        modifiers: [
+            Super,
+        ],
+        key: "space",
+    ): System(Launcher),
+    (
+        modifiers: [
+            Super,
+            Shift,
+        ],
+        key: "b",
+    ): Spawn("/home/andrew/.local/bin/bookmarks --popup --menu"),
+}
