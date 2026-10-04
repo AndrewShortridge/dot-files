@@ -157,7 +157,7 @@ alias ls="eza --color=always --icons=always --grid --group-directories-first"
 alias wezterm='wezterm --config-file ~/.config/wezterm/wezterm.lua'
 
 # Claude code alias
-alias cc='claude --dagnerously-skip-permissions'
+alias cc='claude --dangerously-skip-permissions'
 
 # Adding zsh autosuggestions, MUST have this to work
 source ~/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
