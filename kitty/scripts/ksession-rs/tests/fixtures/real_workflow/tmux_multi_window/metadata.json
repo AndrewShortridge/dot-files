@@ -1,0 +1,30 @@
+{
+  "name": "tmux_multi_window",
+  "description": "Single tmux session with multiple windows",
+  "generated_at": "2026-05-26T13:56:30.040234193+00:00",
+  "kitty_version": "kitty 0.47.0 created by Kovid Goyal",
+  "tab_count": 1,
+  "window_count": 1,
+  "complexity": "light",
+  "tags": [
+    "tmux",
+    "multi-window"
+  ],
+  "build_params": {
+    "num_windows": "1",
+    "num_tabs": "1",
+    "build_duration_ms": "1690"
+  },
+  "scenario": {
+    "min_tabs": 1,
+    "max_tabs": 1,
+    "min_windows": 1,
+    "max_windows": 1,
+    "min_buffers": 0,
+    "max_buffers": 0,
+    "min_nvim": 0,
+    "max_nvim": 0,
+    "min_tmux": 1,
+    "max_tmux": 1
+  }
+}

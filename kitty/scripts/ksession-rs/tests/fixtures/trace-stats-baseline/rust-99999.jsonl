@@ -1,0 +1,15 @@
+{"name":"save.total","ph":"X","ts":1699000000000000,"dur":19000,"pid":99999,"tid":1,"args":{"name":"baseline"}}
+{"name":"save.total","ph":"X","ts":1699000000100000,"dur":20000,"pid":99999,"tid":1,"args":{"name":"baseline"}}
+{"name":"save.total","ph":"X","ts":1699000000200000,"dur":21000,"pid":99999,"tid":1,"args":{"name":"baseline"}}
+{"name":"save.total","ph":"X","ts":1699000000300000,"dur":22000,"pid":99999,"tid":1,"args":{"name":"baseline"}}
+{"name":"save.total","ph":"X","ts":1699000000400000,"dur":23000,"pid":99999,"tid":1,"args":{"name":"baseline"}}
+{"name":"save.total","ph":"X","ts":1699000000500000,"dur":24000,"pid":99999,"tid":1,"args":{"name":"baseline"}}
+{"name":"save.total","ph":"X","ts":1699000000600000,"dur":25000,"pid":99999,"tid":1,"args":{"name":"baseline"}}
+{"name":"save.total","ph":"X","ts":1699000000700000,"dur":26000,"pid":99999,"tid":1,"args":{"name":"baseline"}}
+{"name":"save.total","ph":"X","ts":1699000000800000,"dur":28000,"pid":99999,"tid":1,"args":{"name":"baseline"}}
+{"name":"save.total","ph":"X","ts":1699000000900000,"dur":35000,"pid":99999,"tid":1,"args":{"name":"baseline"}}
+{"name":"save.capture.window","ph":"X","ts":1699000000000000,"dur":10000,"pid":99999,"tid":2,"args":{"kitty_id":"42"}}
+{"name":"save.capture.window","ph":"X","ts":1699000000100000,"dur":11000,"pid":99999,"tid":2,"args":{"kitty_id":"43"}}
+{"name":"save.capture.window","ph":"X","ts":1699000000200000,"dur":12000,"pid":99999,"tid":3,"args":{"kitty_id":"44"}}
+{"name":"save.capture.window","ph":"X","ts":1699000000300000,"dur":13000,"pid":99999,"tid":3,"args":{"kitty_id":"45"}}
+{"name":"save.capture.window","ph":"X","ts":1699000000400000,"dur":14000,"pid":99999,"tid":2,"args":{"kitty_id":"46"}}

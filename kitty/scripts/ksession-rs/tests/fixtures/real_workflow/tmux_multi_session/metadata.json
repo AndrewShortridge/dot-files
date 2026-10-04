@@ -1,0 +1,30 @@
+{
+  "name": "tmux_multi_session",
+  "description": "Multiple independent tmux sessions",
+  "generated_at": "2026-05-26T13:56:30.970499217+00:00",
+  "kitty_version": "kitty 0.47.0 created by Kovid Goyal",
+  "tab_count": 2,
+  "window_count": 2,
+  "complexity": "light",
+  "tags": [
+    "tmux",
+    "multi-session"
+  ],
+  "build_params": {
+    "num_tabs": "2",
+    "num_windows": "1",
+    "build_duration_ms": "2417"
+  },
+  "scenario": {
+    "min_tabs": 2,
+    "max_tabs": 2,
+    "min_windows": 2,
+    "max_windows": 2,
+    "min_buffers": 0,
+    "max_buffers": 0,
+    "min_nvim": 0,
+    "max_nvim": 0,
+    "min_tmux": 2,
+    "max_tmux": 2
+  }
+}

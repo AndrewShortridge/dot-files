@@ -1,0 +1,223 @@
+{
+  "name": "typical_001",
+  "created_at": "2026-05-26T13:56:33.111873738Z",
+  "schema": 1,
+  "kitty_version": "",
+  "os_windows": [
+    {
+      "tabs": [
+        {
+          "title": "bash",
+          "layout": "fat",
+          "active_window_idx": 2,
+          "windows": [
+            {
+              "kitty_id": 1,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.posix",
+                  "activate",
+                  "base"
+                ]
+              },
+              "scrollback": null
+            },
+            {
+              "kitty_id": 5,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.bash",
+                  "hook"
+                ]
+              },
+              "scrollback": null
+            },
+            {
+              "kitty_id": 6,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.bash",
+                  "hook"
+                ]
+              },
+              "scrollback": null
+            }
+          ]
+        },
+        {
+          "title": "tab-1",
+          "layout": "fat",
+          "active_window_idx": 2,
+          "windows": [
+            {
+              "kitty_id": 2,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.bash",
+                  "hook"
+                ]
+              },
+              "scrollback": null
+            },
+            {
+              "kitty_id": 7,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.bash",
+                  "hook"
+                ]
+              },
+              "scrollback": null
+            },
+            {
+              "kitty_id": 8,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.bash",
+                  "hook"
+                ]
+              },
+              "scrollback": null
+            }
+          ]
+        },
+        {
+          "title": "tab-2",
+          "layout": "fat",
+          "active_window_idx": 2,
+          "windows": [
+            {
+              "kitty_id": 3,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.posix",
+                  "activate",
+                  "base"
+                ]
+              },
+              "scrollback": null
+            },
+            {
+              "kitty_id": 9,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.bash",
+                  "hook"
+                ]
+              },
+              "scrollback": null
+            },
+            {
+              "kitty_id": 10,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.bash",
+                  "hook"
+                ]
+              },
+              "scrollback": null
+            }
+          ]
+        },
+        {
+          "title": "tab-3",
+          "layout": "fat",
+          "active_window_idx": 2,
+          "windows": [
+            {
+              "kitty_id": 4,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.posix",
+                  "activate",
+                  "base"
+                ]
+              },
+              "scrollback": null
+            },
+            {
+              "kitty_id": 11,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.bash",
+                  "hook"
+                ]
+              },
+              "scrollback": null
+            },
+            {
+              "kitty_id": 12,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.bash",
+                  "hook"
+                ]
+              },
+              "scrollback": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

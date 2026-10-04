@@ -1,0 +1,5 @@
+/target
+
+# Runtime-generated heavy fixtures (not committed, cached locally)
+tests/fixtures/real_workflow/heavy_001/
+tests/fixtures/real_workflow/very_heavy_001/

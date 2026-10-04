@@ -1,0 +1,16 @@
+{
+  "name": "nvim_clean",
+  "description": "Clean nvim: No open files, no changes",
+  "generated_at": "2026-05-25T23:15:00Z",
+  "kitty_version": "kitty 0.47.0",
+  "tab_count": 1,
+  "window_count": 1,
+  "tags": [
+    "nvim",
+    "clean",
+    "no-files"
+  ],
+  "build_params": {
+    "type": "manual"
+  }
+}

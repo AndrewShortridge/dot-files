@@ -1,0 +1,50 @@
+{
+  "tabs": [
+    {
+      "id": 1,
+      "title": "project",
+      "windows": [
+        {
+          "id": 1,
+          "title": "nvim",
+          "foreground": {
+            "text": "/home/u/.local/bin/nvim",
+            "exe": "nvim"
+          },
+          "cwd": "/home/u/project"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "docs",
+      "windows": [
+        {
+          "id": 2,
+          "title": "README.md",
+          "foreground": {
+            "text": "/home/u/.local/bin/nvim README.md",
+            "exe": "nvim"
+          },
+          "cwd": "/home/u/docs"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "config",
+      "windows": [
+        {
+          "id": 3,
+          "title": ".bashrc",
+          "foreground": {
+            "text": "/home/u/.local/bin/nvim .bashrc",
+            "exe": "nvim"
+          },
+          "cwd": "/home/u"
+        }
+      ]
+    }
+  ],
+  "version": "0.47.0"
+}

@@ -1,0 +1,26 @@
+os_window_class kitty-osw-A
+os_window_name kitty-osw-A
+
+new_tab
+layout splits
+enabled_layouts splits
+cd /home/u
+
+launch 'kitty-unserialize-data={"id": 1}' --var=ksession_idx=0 --var=ksession_win=1 /bin/bash -l
+focus
+
+focus_tab 0
+
+new_os_window
+os_window_class kitty-osw-B
+os_window_name kitty-osw-B
+
+new_tab
+layout stack
+enabled_layouts splits,stack
+cd /tmp
+
+launch 'kitty-unserialize-data={"id": 2}' --var=ksession_idx=0 --var=ksession_win=2 /bin/bash -l
+focus
+
+focus_tab 0

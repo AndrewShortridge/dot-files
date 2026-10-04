@@ -1,0 +1,35 @@
+{
+  "tabs": [
+    {
+      "id": 1,
+      "title": "editing",
+      "windows": [
+        {
+          "id": 1,
+          "title": "main.rs",
+          "foreground": {
+            "text": "/home/u/.local/bin/nvim src/main.rs",
+            "exe": "nvim"
+          },
+          "cwd": "/home/u/project",
+          "env_vars": {
+            "NVIM_vim": "[\"&amp;modified\", true]"
+          }
+        },
+        {
+          "id": 2,
+          "title": "Cargo.toml",
+          "foreground": {
+            "text": "/home/u/.local/bin/nvim Cargo.toml",
+            "exe": "nvim"
+          },
+          "cwd": "/home/u/project",
+          "env_vars": {
+            "NVIM_vim": "[\"&amp;modified\", true]"
+          }
+        }
+      ]
+    }
+  ],
+  "version": "0.47.0"
+}

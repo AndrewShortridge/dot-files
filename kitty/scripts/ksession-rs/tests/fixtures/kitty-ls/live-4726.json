@@ -1,0 +1,321 @@
+[
+  {
+    "active_tab_history": [
+      1,
+      4
+    ],
+    "background_opacity": 1.0,
+    "id": 1,
+    "is_active": true,
+    "is_focused": false,
+    "last_focused": true,
+    "platform_window_id": null,
+    "tabs": [
+      {
+        "active_window_history": [
+          1
+        ],
+        "enabled_layouts": [
+          "splits",
+          "stack"
+        ],
+        "groups": [
+          {
+            "id": 1,
+            "windows": [
+              1
+            ]
+          }
+        ],
+        "id": 1,
+        "is_active": true,
+        "is_focused": false,
+        "layout": "splits",
+        "layout_opts": {
+          "default_axis_is_horizontal": true
+        },
+        "layout_state": {
+          "all_windows": {
+            "active_group_history": [
+              5,
+              8,
+              1
+            ],
+            "active_group_idx": 0,
+            "window_groups": [
+              {
+                "id": 1,
+                "window_ids": [
+                  1
+                ]
+              }
+            ]
+          },
+          "class": "Splits",
+          "opts": {
+            "default_axis_is_horizontal": true
+          },
+          "pairs": {
+            "horizontal": false,
+            "one": 1
+          }
+        },
+        "title": "\u2802 Build kitty terminal session state manager",
+        "title_overridden": false,
+        "windows": [
+          {
+            "at_prompt": false,
+            "cmdline": [
+              "/bin/bash",
+              "--posix"
+            ],
+            "columns": 105,
+            "created_at": 1779454620384576716,
+            "cwd": "/home/andrew/.config/kitty",
+            "env": {
+              "CLUTTER_IM_MODULE": "ibus",
+              "COLORTERM": "truecolor",
+              "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+              "DCONF_PROFILE": "/usr/share/dconf/profile/cosmic",
+              "DESKTOP_STARTUP_ID": "TRp4rJwXyFg0Etkp3M8tygCIIabr5Tkb",
+              "DISPLAY": ":1",
+              "DRI_PRIME": "pci-0000_06_00_0",
+              "ENV": "/home/andrew/.local/kitty.app/lib/kitty/shell-integration/bash/kitty.bash",
+              "GDK_BACKEND": "wayland,x11",
+              "GSM_SKIP_SSH_AGENT_WORKAROUND": "true",
+              "GTK_IM_MODULE": "ibus",
+              "GTK_MODULES": "gail:atk-bridge",
+              "HISTFILE": "/home/andrew/.bash_history",
+              "HOME": "/home/andrew",
+              "IM_CONFIG_CHECK_ENV": "1",
+              "IM_CONFIG_PHASE": "1",
+              "KITTY_BASH_INJECT": "1",
+              "KITTY_BASH_UNEXPORT_HISTFILE": "1",
+              "KITTY_INSTALLATION_DIR": "/home/andrew/.local/kitty.app/lib/kitty",
+              "KITTY_LISTEN_ON": "unix:/tmp/kitty-4726",
+              "KITTY_PID": "4726",
+              "KITTY_PUBLIC_KEY": "1:SbgI_E^cr20bY`YbFlYFC^dt7vY5kt)06YR8h1H6",
+              "KITTY_SHELL_INTEGRATION": "enabled",
+              "KITTY_WINDOW_ID": "1",
+              "LANG": "en_US.UTF-8",
+              "LIBVIRT_DEFAULT_URI": "qemu:///system",
+              "LOGNAME": "andrew",
+              "MANPATH": "/home/andrew/.local/kitty.app/share/man:",
+              "MOZ_ENABLE_WAYLAND": "1",
+              "PATH": "/home/andrew/.local/bin:/home/andrew/.cargo/bin:/home/andrew/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+              "PWD": "/home/andrew",
+              "QTWEBENGINE_DICTIONARIES_PATH": "/usr/share/hunspell-bdic/",
+              "QT_ACCESSIBILITY": "1",
+              "QT_AUTO_SCREEN_SCALE_FACTOR": "1",
+              "QT_ENABLE_HIGHDPI_SCALING": "1",
+              "QT_IM_MODULE": "ibus",
+              "QT_QPA_PLATFORM": "wayland;xcb",
+              "QT_QPA_PLATFORMTHEME": "qt6ct",
+              "SHELL": "/bin/bash",
+              "SHLVL": "0",
+              "SSH_AUTH_SOCK": "/run/user/1000/gcr/ssh",
+              "TERM": "xterm-kitty",
+              "TERMINFO": "/home/andrew/.local/kitty.app/lib/kitty/terminfo",
+              "USER": "andrew",
+              "WAYLAND_DISPLAY": "wayland-1",
+              "XDG_CURRENT_DESKTOP": "COSMIC",
+              "XDG_DATA_DIRS": "/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share",
+              "XDG_RUNTIME_DIR": "/run/user/1000",
+              "XDG_SEAT": "seat0",
+              "XDG_SESSION_DESKTOP": "COSMIC",
+              "XDG_SESSION_ID": "3",
+              "XDG_SESSION_TYPE": "wayland",
+              "XDG_VTNR": "1",
+              "XMODIFIERS": "@im=ibus",
+              "_JAVA_AWT_WM_NONREPARENTING": "1"
+            },
+            "foreground_processes": [
+              {
+                "cmdline": [
+                  "claude",
+                  "--dangerously-skip-permissions"
+                ],
+                "cwd": "/home/andrew/.config/kitty",
+                "pid": 6554
+              },
+              {
+                "cmdline": [
+                  "rust-analyzer"
+                ],
+                "cwd": "/home/andrew/.config/kitty",
+                "pid": 89179
+              }
+            ],
+            "has_activity_since_last_focus": false,
+            "id": 1,
+            "in_alternate_screen": false,
+            "is_active": true,
+            "is_focused": false,
+            "is_self": true,
+            "last_cmd_exit_status": 0,
+            "last_focused_at": 10382.412772644,
+            "last_reported_cmdline": "claude --dangerously-skip-permissions",
+            "lines": 50,
+            "needs_attention": false,
+            "neighbors": {},
+            "pid": 4744,
+            "session_name": "",
+            "title": "\u2802 Build kitty terminal session state manager",
+            "title_overridden": false,
+            "user_vars": {
+              "ksession_probe": "hello",
+              "probe": "50"
+            }
+          }
+        ]
+      },
+      {
+        "active_window_history": [
+          8
+        ],
+        "enabled_layouts": [
+          "splits",
+          "stack"
+        ],
+        "groups": [
+          {
+            "id": 6,
+            "windows": [
+              8
+            ]
+          }
+        ],
+        "id": 4,
+        "is_active": false,
+        "is_focused": false,
+        "layout": "splits",
+        "layout_opts": {
+          "default_axis_is_horizontal": true
+        },
+        "layout_state": {
+          "all_windows": {
+            "active_group_history": [
+              6
+            ],
+            "active_group_idx": 0,
+            "window_groups": [
+              {
+                "id": 6,
+                "window_ids": [
+                  8
+                ]
+              }
+            ]
+          },
+          "class": "Splits",
+          "opts": {
+            "default_axis_is_horizontal": true
+          },
+          "pairs": {
+            "one": 6
+          }
+        },
+        "title": "v RUST_PORT_PLAN.md ",
+        "title_overridden": false,
+        "windows": [
+          {
+            "at_prompt": false,
+            "cmdline": [
+              "/bin/bash",
+              "--posix"
+            ],
+            "columns": 105,
+            "created_at": 1779455843631984904,
+            "cwd": "/home/andrew/.config/kitty/scripts",
+            "env": {
+              "CLUTTER_IM_MODULE": "ibus",
+              "COLORTERM": "truecolor",
+              "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+              "DCONF_PROFILE": "/usr/share/dconf/profile/cosmic",
+              "DESKTOP_STARTUP_ID": "TRp4rJwXyFg0Etkp3M8tygCIIabr5Tkb",
+              "DISPLAY": ":1",
+              "DRI_PRIME": "pci-0000_06_00_0",
+              "ENV": "/home/andrew/.local/kitty.app/lib/kitty/shell-integration/bash/kitty.bash",
+              "GDK_BACKEND": "wayland,x11",
+              "GSM_SKIP_SSH_AGENT_WORKAROUND": "true",
+              "GTK_IM_MODULE": "ibus",
+              "GTK_MODULES": "gail:atk-bridge",
+              "HISTFILE": "/home/andrew/.bash_history",
+              "HOME": "/home/andrew",
+              "IM_CONFIG_CHECK_ENV": "1",
+              "IM_CONFIG_PHASE": "1",
+              "KITTY_BASH_INJECT": "1",
+              "KITTY_BASH_UNEXPORT_HISTFILE": "1",
+              "KITTY_INSTALLATION_DIR": "/home/andrew/.local/kitty.app/lib/kitty",
+              "KITTY_LISTEN_ON": "unix:/tmp/kitty-4726",
+              "KITTY_PID": "4726",
+              "KITTY_PUBLIC_KEY": "1:SbgI_E^cr20bY`YbFlYFC^dt7vY5kt)06YR8h1H6",
+              "KITTY_SHELL_INTEGRATION": "enabled",
+              "KITTY_WINDOW_ID": "8",
+              "LANG": "en_US.UTF-8",
+              "LIBVIRT_DEFAULT_URI": "qemu:///system",
+              "LOGNAME": "andrew",
+              "MANPATH": "/home/andrew/.local/kitty.app/share/man:",
+              "MOZ_ENABLE_WAYLAND": "1",
+              "PATH": "/home/andrew/.local/bin:/home/andrew/.cargo/bin:/home/andrew/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+              "PWD": "/home/andrew/.config/kitty",
+              "QTWEBENGINE_DICTIONARIES_PATH": "/usr/share/hunspell-bdic/",
+              "QT_ACCESSIBILITY": "1",
+              "QT_AUTO_SCREEN_SCALE_FACTOR": "1",
+              "QT_ENABLE_HIGHDPI_SCALING": "1",
+              "QT_IM_MODULE": "ibus",
+              "QT_QPA_PLATFORM": "wayland;xcb",
+              "QT_QPA_PLATFORMTHEME": "qt6ct",
+              "SHELL": "/bin/bash",
+              "SHLVL": "0",
+              "SSH_AUTH_SOCK": "/run/user/1000/gcr/ssh",
+              "TERM": "xterm-kitty",
+              "TERMINFO": "/home/andrew/.local/kitty.app/lib/kitty/terminfo",
+              "USER": "andrew",
+              "WAYLAND_DISPLAY": "wayland-1",
+              "XDG_CURRENT_DESKTOP": "COSMIC",
+              "XDG_DATA_DIRS": "/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share",
+              "XDG_RUNTIME_DIR": "/run/user/1000",
+              "XDG_SEAT": "seat0",
+              "XDG_SESSION_DESKTOP": "COSMIC",
+              "XDG_SESSION_ID": "3",
+              "XDG_SESSION_TYPE": "wayland",
+              "XDG_VTNR": "1",
+              "XMODIFIERS": "@im=ibus",
+              "_JAVA_AWT_WM_NONREPARENTING": "1"
+            },
+            "foreground_processes": [
+              {
+                "cmdline": [
+                  "nvim",
+                  "RUST_PORT_PLAN.md"
+                ],
+                "cwd": "/home/andrew/.config/kitty/scripts",
+                "pid": 88864
+              }
+            ],
+            "has_activity_since_last_focus": false,
+            "id": 8,
+            "in_alternate_screen": true,
+            "is_active": true,
+            "is_focused": false,
+            "is_self": false,
+            "last_cmd_exit_status": 0,
+            "last_focused_at": 8000.741894005,
+            "last_reported_cmdline": "v RUST_PORT_PLAN.md ",
+            "lines": 50,
+            "needs_attention": false,
+            "neighbors": {},
+            "pid": 16316,
+            "session_name": "",
+            "title": "v RUST_PORT_PLAN.md ",
+            "title_overridden": false,
+            "user_vars": {}
+          }
+        ]
+      }
+    ],
+    "wm_class": "kitty",
+    "wm_name": "kitty"
+  }
+]
