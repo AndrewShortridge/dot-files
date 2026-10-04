@@ -212,7 +212,8 @@ export FZF_DEFAULT_OPTS="--height 50% --layout=default --border \
 --color=fg+:#abb2bf,bg+:#393e48,hl+:#61afef:bold \
 --color=info:#e5c07b,prompt:#c678dd,pointer:#e06c75 \
 --color=marker:#98c379,spinner:#56b6c2,header:#56b6c2 \
---color=border:#393e48,gutter:#282c34"
+--color=border:#393e48,gutter:#282c34,query:#abb2bf \
+--color=separator:#393e48,scrollbar:#393e48,preview-border:#393e48,label:#979eab"
 
 export FZF_CTRL_T_OPTS="--preview 'bat --color=always -n --line-range :500 {}'"
 export FZF_ALT_C_OPTS="--preview 'eza --tree --color=always {} | head -200'"
