@@ -135,6 +135,11 @@ save prompt, `C-a f` pane picker. Same modal keys as the kitty pickers
 `i`, `q`/Esc). Bound and documented in `~/.config/tmux/tmux.conf`; full
 key table in `scripts/ksession-rs/README.md` ("tmux session manager").
 
+`C-a Space` opens a which-key menu for tmux (native `display-menu`, no
+plugin): groups `p`anes / `w`indows / `s`essions / `r`esize plus `/`, `?`,
+`C-r`. Item keys are the real `C-a` keys, `BSpace` goes back, Esc/`q`
+closes; the resize menu stays open so `h`/`j`/`k`/`l` repeat.
+
 ### Direct bindings — window navigation & splits
 
 Bare `ctrl+h/j/k/l` is intentionally **not** bound: those keys reach zsh
