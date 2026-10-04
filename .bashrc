@@ -233,6 +233,8 @@ eval "$(starship init bash)"
 
 # Setting the ledger file location through an export varialbe
 export LEDGER_FILE="~/finance-ledger/2026.journal"
-export MINIMAX_TOKEN_PLAN_KEY="***REMOVED***"
+
+# Secrets (API keys) live in ~/.secrets, which is not tracked in dot-files.
+[[ -f ~/.secrets ]] && source ~/.secrets
 
 alias j="just"

@@ -165,8 +165,8 @@ source ~/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
 # Setting the ledger file location through an export varialbe
 export LEDGER_FILE="~/finance-ledger/2026.ledger"
 
-# Secrets (API keys) live in ~/.zshrc.local, which is not tracked in dot-files.
-[[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
+# Secrets (API keys) live in ~/.secrets, which is not tracked in dot-files.
+[[ -f ~/.secrets ]] && source ~/.secrets
 
 # Flatpak .desktop files for rofi
 export XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/var/lib/flatpak/exports/share:$HOME/.local/share/flatpak/exports/share"
