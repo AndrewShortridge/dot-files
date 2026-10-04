@@ -125,6 +125,16 @@ the floor is the kitten's own spawn (~180ms).
 | `ctrl+space > v` | View this window's saved scrollback (ksession `.ansi` dump) in `less` |
 | `ctrl+space > o` | Load a project's session into the current kitty |
 
+tmux equivalents of `s` / `S` / `f`, backed by `ksession tmux …` (needs
+`make install` in `~/.config/kitty/scripts/ksession-rs` so
+`~/.local/bin/ksession` has the `tmux` subcommand): `C-a s` session picker
+(running + saved sessions; Enter switches/restores, `d` in normal mode
+kills/removes after y/N and is refused on the current session), `C-a S`
+save prompt, `C-a f` pane picker. Same modal keys as the kitty pickers
+(type to filter; Esc → normal: `j`/`k`, `g`/`G`, `ctrl-d`/`ctrl-u`, `d`,
+`i`, `q`/Esc). Bound and documented in `~/.config/tmux/tmux.conf`; full
+key table in `scripts/ksession-rs/README.md` ("tmux session manager").
+
 ### Direct bindings — window navigation & splits
 
 Bare `ctrl+h/j/k/l` is intentionally **not** bound: those keys reach zsh
