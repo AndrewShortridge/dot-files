@@ -135,9 +135,10 @@ save prompt, `C-a f` pane picker. Same modal keys as the kitty pickers
 `i`, `q`/Esc). Bound and documented in `~/.config/tmux/tmux.conf`; full
 key table in `scripts/ksession-rs/README.md` ("tmux session manager").
 
-`C-a Space` opens a which-key panel for tmux: a borderless popup across
-the bottom of the whole window (`scripts/whichkey.sh`, no plugin) with
-groups `p`anes / `w`indows / `s`essions / `r`esize plus `/`, `?`, `C-r`.
+Pausing ~0.4 s after `C-a` (or `C-a Space`) opens a which-key panel for
+tmux: a borderless popup across the bottom of the whole window
+(`scripts/whichkey.sh`, no plugin) with groups `p`anes / `w`indows /
+`s`essions / `r`esize plus `/`, `?`, `C-r`. Fast chords never show it.
 Item keys are the real `C-a` keys and are replayed as such, `BSpace` goes
 back, Esc/`q` closes; the resize panel stays open so `h`/`j`/`k`/`l` repeat.
 

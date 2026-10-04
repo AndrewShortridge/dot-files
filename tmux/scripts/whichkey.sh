@@ -1,21 +1,43 @@
 #!/usr/bin/env bash
-# whichkey.sh <menu>: a which-key panel for tmux, run inside
-#   display-popup -E -b none -x 0 -y S -w 100%
-# so it lies across the bottom of the whole window, over every pane.
+# whichkey.sh: a which-key panel for tmux, lying across the bottom of the
+# whole window over every pane (a borderless full-width display-popup).
+#
+#   whichkey.sh open <client> [menu]   open the panel on <client> now
+#   whichkey.sh prefix <client>        called from the prefix key binding:
+#                                      open the panel if the client is still
+#                                      in the prefix table after $WK_DELAY s
+#   whichkey.sh [menu]                 the panel itself (runs inside the popup)
 #
 # Menus are `key^label^action` tables below. Most actions are empty, which
-# means "replay the real binding": after the popup closes the key is fed to
-# the client as `C-a <key>` with `send-keys -K`, so the panel can never run
-# something other than what tmux.conf binds. Other actions:
+# means "replay the real binding": after the popup closes the client is put
+# in the prefix table and the key is fed to it with `send-keys -K`, so the
+# panel can never run something other than what tmux.conf binds. Others:
 #   >name    open sub-menu `name` in this panel
-#   @keys    replay these keys instead of `C-a <key>` (root-table bindings)
+#   @keys    replay these keys in the root table instead
 #   :cmd     run a tmux command after the popup closes
 #   =cmd     run a tmux command on the pane now and keep the panel open
 # Esc / q close; BSpace goes back to the root menu.
 #
-# Dependencies: bash, tmux, stty. Nothing is forked while the panel is open
-# except the tmux calls that actions ask for.
+# Dependencies: bash, tmux, stty, sleep. Nothing is forked while the panel
+# is open except the tmux calls that actions ask for.
 set -u
+
+WK_DELAY=${WK_DELAY:-0.4}
+
+# Palette from tmux.conf ($FG / $INACTIVE_BG); the popup is always RGB.
+open_panel() {
+  local client=$1 menu=${2:-root}
+  exec tmux display-popup -c "$client" -E -b none -x 0 -y S -w 100% -h 6 \
+    -s 'fg=#979eab,bg=#16191f' "$0 $menu"
+}
+
+case ${1:-} in
+  open) open_panel "$2" "${3:-}" ;;
+  prefix)
+    sleep "$WK_DELAY"
+    [[ $(tmux display -p -c "$2" '#{client_key_table}') == prefix ]] && open_panel "$2"
+    exit 0 ;;
+esac
 
 # ---- Menus (keys are the prefix keys from tmux.conf) ------------------------
 menu_root=(
@@ -154,6 +176,22 @@ defer() {
   tmux run-shell -b "sleep 0.05; $*"
 }
 
+# Replays keys on the client in the given table. When the panel was opened
+# by hesitating after the prefix, the client is still in the prefix table,
+# so always set the table explicitly instead of sending the prefix key.
+replay() {
+  local table=$1; shift
+  defer "tmux switch-client -c '$CLIENT' -T $table \\; send-keys -K -c '$CLIENT' -- $*"
+  exit 0
+}
+
+# Closing the panel must also leave the prefix table, or the next keystroke
+# would be taken as a prefix command.
+close() {
+  tmux switch-client -c "$CLIENT" -T root
+  exit 0
+}
+
 # ---- Main loop ---------------------------------------------------------------
 menu=${1:-root}
 while :; do
@@ -162,7 +200,7 @@ while :; do
   render "$title" "${items[@]}"
   read_key
   case $REPLY in
-    Escape | q) exit 0 ;;
+    Escape | q) close ;;
     BSpace) menu=root; continue ;;
   esac
   action=; found=
@@ -171,10 +209,10 @@ while :; do
   done
   [[ $found ]] || continue
   case $action in
-    '')   defer "tmux send-keys -K -c '$CLIENT' -- C-a '$REPLY'"; exit 0 ;;
+    '')   replay prefix "'$REPLY'" ;;
     '>'*) menu=${action#>} ;;
-    '@'*) defer "tmux send-keys -K -c '$CLIENT' -- '${action#@}'"; exit 0 ;;
-    ':'*) defer "tmux ${action#:}"; exit 0 ;;
+    '@'*) replay root "'${action#@}'" ;;
+    ':'*) tmux switch-client -c "$CLIENT" -T root; defer "tmux ${action#:}"; exit 0 ;;
     '='*) set -- ${action#=}; tmux "$1" -t "$PANE" "${@:2}" ;;
   esac
 done
