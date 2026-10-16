@@ -1,0 +1,60 @@
+# Zathura theme matching Obsidian's "Soft Paper" theme, light mode (.theme-light, Rosé Pine Light base)
+# Source: ~/Documents/Obsidian-Vault/.obsidian/themes/Soft Paper/theme.css
+#   base     #eee6dd  (--background-primary, page paper)
+#   mantle   #e6dbd1  (--background-secondary, sidebars / bars)
+#   crust    #ddd0c6  (--background-secondary-alt)
+#   surface1 #d1c9c2  (--background-modifier-border)
+#   text     #575279  (--text-normal, ink)
+#   sapphire #1a7da4  (--interactive-accent / --text-accent)
+#   yellow   #d19548  (--text-highlight-bg)
+#   red      #ba7184  (--text-error)
+# Page mapping mirrors .obsidian/snippets/soft-paper-pdf.css: paper -> base, ink -> text.
+
+# --- Page recoloring (paper -> base, ink -> text) ---
+set recolor                     true
+set recolor-lightcolor          "#eee6dd"
+set recolor-darkcolor           "#575279"
+set recolor-keephue             true
+set recolor-reverse-video       false
+
+# --- Window / page background ---
+set default-bg                  "#eee6dd"
+set default-fg                  "#575279"
+set render-loading              true
+set render-loading-bg           "#eee6dd"
+set render-loading-fg           "#575279"
+
+# --- Status bar (--background-secondary) ---
+set statusbar-bg                "#e6dbd1"
+set statusbar-fg                "#575279"
+
+# --- Input bar ---
+set inputbar-bg                 "#e6dbd1"
+set inputbar-fg                 "#575279"
+
+# --- Notifications ---
+set notification-bg             "#e6dbd1"
+set notification-fg             "#575279"
+set notification-warning-bg     "#d19548"
+set notification-warning-fg     "#eee6dd"
+set notification-error-bg       "#ba7184"
+set notification-error-fg       "#eee6dd"
+
+# --- Command completion ---
+set completion-bg               "#e6dbd1"
+set completion-fg               "#575279"
+set completion-group-bg         "#ddd0c6"
+set completion-group-fg         "#575279"
+set completion-highlight-bg     "#1a7da4"
+set completion-highlight-fg     "#eee6dd"
+
+# --- Index / table of contents ---
+set index-bg                    "#e6dbd1"
+set index-fg                    "#575279"
+set index-active-bg             "#1a7da4"
+set index-active-fg             "#eee6dd"
+
+# --- Search highlights (yellow = --text-highlight-bg, accent = selected match) ---
+set highlight-color             "rgba(209, 149, 72, 0.5)"
+set highlight-active-color      "rgba(26, 125, 164, 0.5)"
+set highlight-fg                "#575279"

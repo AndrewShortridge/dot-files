@@ -1,0 +1,54 @@
+# Zathura theme matching Foliate's active "Peach Puff" theme (light variant)
+# Source: ~/.config/com.github.johnfactotum.Foliate/themes/peachpuff.json
+#   fg   #2c1a0b   bg   #cf9e70   link #155e63
+#   Foliate selection/highlight color: rgb(98,160,234)
+#   Foliate sidebar toolbar = bg with 8% black overlay -> #be9167
+
+# --- Page recoloring (paper -> bg, ink -> fg) ---
+set recolor                     true
+set recolor-lightcolor          "#cf9e70"
+set recolor-darkcolor           "#2c1a0b"
+set recolor-keephue             true
+set recolor-reverse-video       false
+
+# --- Window / page background ---
+set default-bg                  "#cf9e70"
+set default-fg                  "#2c1a0b"
+set render-loading              true
+set render-loading-bg           "#cf9e70"
+set render-loading-fg           "#2c1a0b"
+
+# --- Status bar (Foliate toolbar shade) ---
+set statusbar-bg                "#be9167"
+set statusbar-fg                "#2c1a0b"
+
+# --- Input bar ---
+set inputbar-bg                 "#be9167"
+set inputbar-fg                 "#2c1a0b"
+
+# --- Notifications ---
+set notification-bg             "#be9167"
+set notification-fg             "#2c1a0b"
+set notification-warning-bg     "#be9167"
+set notification-warning-fg     "#2c1a0b"
+set notification-error-bg       "#155e63"
+set notification-error-fg       "#cf9e70"
+
+# --- Command completion ---
+set completion-bg               "#be9167"
+set completion-fg               "#2c1a0b"
+set completion-group-bg         "#cf9e70"
+set completion-group-fg         "#2c1a0b"
+set completion-highlight-bg     "#155e63"
+set completion-highlight-fg     "#cf9e70"
+
+# --- Index / table of contents ---
+set index-bg                    "#cf9e70"
+set index-fg                    "#2c1a0b"
+set index-active-bg             "#155e63"
+set index-active-fg             "#cf9e70"
+
+# --- Search highlights (Foliate selection blue, link color for active) ---
+set highlight-color             "rgba(98, 160, 234, 0.5)"
+set highlight-active-color      "rgba(21, 94, 99, 0.5)"
+set highlight-fg                "#2c1a0b"

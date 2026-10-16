@@ -1,0 +1,60 @@
+# Zathura theme matching Obsidian's "Soft Paper" theme, dark mode (.theme-dark, Frappé base)
+# Source: ~/Documents/Obsidian-Vault/.obsidian/themes/Soft Paper/theme.css
+#   base     #303446  (--background-primary, page paper)
+#   mantle   #292c3c  (--background-secondary, sidebars / bars)
+#   crust    #232634  (--background-secondary-alt)
+#   surface1 #51566c  (--background-modifier-border)
+#   text     #c6ceef  (--text-normal, ink)
+#   sapphire #11b7c5  (--interactive-accent / --text-accent)
+#   yellow   #c9be3e  (--text-highlight-bg)
+#   red      #e78284  (--text-error)
+# Page mapping mirrors .obsidian/snippets/soft-paper-pdf.css: paper -> base, ink -> text.
+
+# --- Page recoloring (paper -> base, ink -> text) ---
+set recolor                     true
+set recolor-lightcolor          "#303446"
+set recolor-darkcolor           "#c6ceef"
+set recolor-keephue             true
+set recolor-reverse-video       false
+
+# --- Window / page background ---
+set default-bg                  "#303446"
+set default-fg                  "#c6ceef"
+set render-loading              true
+set render-loading-bg           "#303446"
+set render-loading-fg           "#c6ceef"
+
+# --- Status bar (--background-secondary) ---
+set statusbar-bg                "#292c3c"
+set statusbar-fg                "#c6ceef"
+
+# --- Input bar ---
+set inputbar-bg                 "#292c3c"
+set inputbar-fg                 "#c6ceef"
+
+# --- Notifications ---
+set notification-bg             "#292c3c"
+set notification-fg             "#c6ceef"
+set notification-warning-bg     "#c9be3e"
+set notification-warning-fg     "#303446"
+set notification-error-bg       "#e78284"
+set notification-error-fg       "#303446"
+
+# --- Command completion ---
+set completion-bg               "#292c3c"
+set completion-fg               "#c6ceef"
+set completion-group-bg         "#232634"
+set completion-group-fg         "#c6ceef"
+set completion-highlight-bg     "#11b7c5"
+set completion-highlight-fg     "#303446"
+
+# --- Index / table of contents ---
+set index-bg                    "#292c3c"
+set index-fg                    "#c6ceef"
+set index-active-bg             "#11b7c5"
+set index-active-fg             "#303446"
+
+# --- Search highlights (yellow = --text-highlight-bg, accent = selected match) ---
+set highlight-color             "rgba(201, 190, 62, 0.5)"
+set highlight-active-color      "rgba(17, 183, 197, 0.5)"
+set highlight-fg                "#c6ceef"
