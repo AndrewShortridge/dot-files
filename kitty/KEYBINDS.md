@@ -46,6 +46,8 @@ Composition (physical `Shift` stacks on top of all of these):
 | `Caps + Shift + hjkl` | `Super+Shift+hjkl` | COSMIC: move window |
 | `Caps + 1…9` / `Shift+1…9` | `Super+N` / `Super+Shift+N` | COSMIC: go to / move window to workspace N |
 | `Caps + n` / `p` | `Super+n` / `Super+p` | COSMIC: next / previous workspace (custom) |
+| `Caps + [` / `]` | `Super+[` / `Super+]` | COSMIC: previous / next workspace on this monitor (custom) |
+| `Caps + Shift + [` / `]` | `Super+Shift+[` / `]` | COSMIC: move window to previous / next workspace on this monitor (custom) |
 | `Caps + q` / `m` / `s` / `g` / `o` | `Super+…` | COSMIC: close / maximize / stack / float / orientation |
 | `Caps + Enter` | `Super+Return` | COSMIC: launch kitty (custom) |
 | `Caps + Space` (tap) | `Super+space` | COSMIC: launcher (custom) |
@@ -64,7 +66,7 @@ Composition (physical `Shift` stacks on top of all of these):
 | `Tab + Space` (tap) | `Alt+space` | COSMIC: launcher (custom) |
 | `Tab + Space + key` | `Ctrl+key` | plain Ctrl, same as above |
 | `Caps + Tab` | `Super+Tab` | COSMIC: window switcher |
-| `Caps + Ctrl + hjkl` (physical Ctrl) | `Super+Ctrl+hjkl` | COSMIC: prev/next workspace |
+| `Caps + Ctrl + hjkl` (physical Ctrl only) | `Super+Ctrl+hjkl` | COSMIC: prev/next workspace. Unreachable via `Caps+Space`/`Caps+Enter`: `[caps+control]` emits plain Ctrl. Use `Caps+[`/`]` instead. |
 
 Notes:
 

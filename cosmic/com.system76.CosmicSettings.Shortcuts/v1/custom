@@ -64,6 +64,32 @@
     (
         modifiers: [
             Super,
+        ],
+        key: "bracketleft",
+    ): PreviousWorkspace,
+    (
+        modifiers: [
+            Super,
+        ],
+        key: "bracketright",
+    ): NextWorkspace,
+    (
+        modifiers: [
+            Super,
+            Shift,
+        ],
+        key: "bracketleft",
+    ): MoveToPreviousWorkspace,
+    (
+        modifiers: [
+            Super,
+            Shift,
+        ],
+        key: "bracketright",
+    ): MoveToNextWorkspace,
+    (
+        modifiers: [
+            Super,
             Shift,
         ],
         key: "b",

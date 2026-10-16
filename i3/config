@@ -133,6 +133,10 @@ bindsym $mod+Shift+bracketright move container to workspace $ws12; workspace $ws
 bindsym $mod+Shift+l workspace next
 bindsym $mod+Shift+h workspace prev
 
+# Move container to next/prev workspace and follow
+bindsym $mod+Ctrl+Shift+l move container to workspace next; workspace next
+bindsym $mod+Ctrl+Shift+h move container to workspace prev; workspace prev
+
 ############################
 # SCRATCHPAD
 ############################

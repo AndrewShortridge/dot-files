@@ -8,6 +8,7 @@
 #   screenctl night off             remove tint
 #   screenctl night toggle          on <-> off
 #   screenctl night status
+#   screenctl night watch           re-tint when a display is (re)enabled
 set -euo pipefail
 
 BUS=com.system76.CosmicSettingsDaemon
@@ -55,12 +56,42 @@ night() {
             else
                 pkexec "$NIGHT_HELPER" --off && rm -f "$NIGHT_STATE" && echo "night light off"
             fi ;;
-        *) echo "usage: screenctl night on [KELVIN] | off | toggle | status" >&2; exit 2 ;;
+        watch) night_watch ;;
+        *) echo "usage: screenctl night on [KELVIN] | off | toggle | status | watch" >&2; exit 2 ;;
     esac
+}
+
+# Outputs that currently have a live CRTC: "<connector>" per line, sorted.
+active_outputs() {
+    local d
+    for d in /sys/class/drm/card*-*/; do
+        [[ "$(<"$d/enabled")" == enabled && "$(<"$d/dpms")" == On ]] && basename "$d"
+    done | sort
+}
+
+# The cosmic-nightlight daemon only re-applies when its record of what is on
+# screen disagrees with the schedule. A display enabled after the last apply
+# (external GPU outputs at login, hotplug, DPMS wake) starts with a neutral
+# gamma, so mark the record neutral and the daemon re-tints every CRTC on its
+# next tick (15 s).
+night_watch() {
+    local record="${XDG_RUNTIME_DIR:?}/cosmic-nightlight-applied"
+    local prev cur added
+    prev=$(active_outputs)
+    echo "screenctl: watching for enabled displays (${prev//$'\n'/ })"
+    while sleep 5; do
+        cur=$(active_outputs)
+        added=$(comm -13 <(echo "$prev") <(echo "$cur"))
+        if [[ -n "$added" ]]; then
+            echo "screenctl: display enabled (${added//$'\n'/ }); asking nightlight to re-apply"
+            echo off > "$record"
+        fi
+        prev=$cur
+    done
 }
 
 case "${1:-}" in
     brightness|b) shift; brightness "$@" ;;
     night|n) shift; night "$@" ;;
-    *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

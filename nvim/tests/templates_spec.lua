@@ -231,8 +231,11 @@ test("concept.run writes Domains/<domain>/<title> with maturity from select", fu
   assert_contains(c, 'domain: "[[Shock Physics]]"')
   assert_contains(c, "maturity: Mature")
   assert_contains(c, "# Shock Compression")
-  assert_contains(c, "## Core Idea")
+  assert_contains(c, "## Introduction")
+  assert_contains(c, "### Related Concepts")
+  assert_contains(c, "### Related Papers")
   assert_contains(c, "## Open Questions")
+  assert_contains(c, "## Atomic Literature Notes")
 end)
 
 -- ---------------------------------------------------------------------------

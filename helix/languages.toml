@@ -70,3 +70,111 @@ args = ["test"]
 [task.fortran-all]
 cmd = "just"
 args = ["fortran-all"]
+
+# =============================================================================
+# TypeScript / JavaScript configuration
+# =============================================================================
+# Install tools:
+#   npm install -g typescript typescript-language-server
+# Server: typescript-language-server (wraps tsserver from the `typescript` pkg)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Language Server: typescript-language-server
+# -----------------------------------------------------------------------------
+[language-server.typescript-language-server]
+command = "typescript-language-server"
+args = ["--stdio"]
+
+# Inlay hints (shown when `editor.inlay-hints = true` is set in config.toml)
+[language-server.typescript-language-server.config.typescript.inlayHints]
+includeInlayParameterNameHints = "all"
+includeInlayParameterNameHintsWhenArgumentMatchesName = true
+includeInlayFunctionParameterTypeHints = true
+includeInlayVariableTypeHints = true
+includeInlayPropertyDeclarationTypeHints = true
+includeInlayFunctionLikeReturnTypeHints = true
+includeInlayEnumMemberValueHints = true
+
+[language-server.typescript-language-server.config.javascript.inlayHints]
+includeInlayParameterNameHints = "all"
+includeInlayParameterNameHintsWhenArgumentMatchesName = true
+includeInlayFunctionParameterTypeHints = true
+includeInlayVariableTypeHints = true
+includeInlayPropertyDeclarationTypeHints = true
+includeInlayFunctionLikeReturnTypeHints = true
+includeInlayEnumMemberValueHints = true
+
+# -----------------------------------------------------------------------------
+# Language definitions — attach the server to all TS/JS file types
+# -----------------------------------------------------------------------------
+[[language]]
+name = "typescript"
+language-servers = ["typescript-language-server"]
+
+[[language]]
+name = "tsx"
+language-servers = ["typescript-language-server"]
+
+[[language]]
+name = "javascript"
+language-servers = ["typescript-language-server"]
+
+[[language]]
+name = "jsx"
+language-servers = ["typescript-language-server"]
+
+# =============================================================================
+# Rust configuration
+# =============================================================================
+# Tools (all installed via the active toolchain):
+#   rustup component add rust-analyzer rustfmt clippy
+#   # debug adapter (lldb-dap) provided by lldb
+# =============================================================================
+
+# Use the rustup `rust-analyzer` proxy. It auto-selects the toolchain active in
+# each directory via rust-toolchain.toml (nightly inside pi_agent_rust, the
+# rustup default — stable — elsewhere) and shells out to the matching cargo/rustc.
+# Conda's bundled stable Rust was removed, so PATH no longer shadows rustup; the
+# rust-analyzer component is installed on both the stable and nightly toolchains.
+[language-server.rust-analyzer]
+command = "/home/andrew/.cargo/bin/rust-analyzer"
+
+# Use clippy instead of `cargo check` for richer lints on save
+[language-server.rust-analyzer.config.check]
+command = "clippy"
+
+# --- Indexing scope (tuned for fast symbol picker on this large crate) ---
+# This crate is big: ~780 deps, ~369k LOC, 324 tests + 23 examples + 8 benches.
+# The symbol picker only populates after rust-analyzer finishes indexing, so we
+# shrink what it indexes:
+#   allTargets = false  -> skip examples/tests/benches/fuzz (the lib + src/main.rs
+#                          still get full analysis; code *inside* test/example
+#                          files gets reduced analysis).
+#   features   = []      -> use default features only, not every feature ("all"
+#                          pulled in jemalloc/wasmtime/clipboard/etc.).
+[language-server.rust-analyzer.config.cargo]
+allTargets = false
+features = []
+buildScripts = { enable = true }
+
+# Prime the symbol index in parallel across physical cores so the picker is
+# ready sooner after open (you have 16 cores).
+[language-server.rust-analyzer.config.cachePriming]
+enable = true
+numThreads = "physical"
+
+# --- Workspace symbol picker (Space S) tuning ---
+#   scope = "workspace"   -> search only YOUR crate's symbols, skip all 780
+#                            dependencies + std (much faster; go-to-definition
+#                            still navigates INTO deps regardless of this).
+#   kind  = "all_symbols" -> include every symbol kind (types, functions,
+#                            methods, consts, statics, fields), not just types.
+[language-server.rust-analyzer.config.workspace.symbol.search]
+scope = "workspace"
+kind = "all_symbols"
+
+[[language]]
+name = "rust"
+auto-format = true
+language-servers = ["rust-analyzer"]
