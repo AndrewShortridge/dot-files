@@ -1,0 +1,11 @@
+{
+  "name": "Soft Paper",
+  "author": "andrew",
+  "version": "1.0.0",
+  "description": "Port of Nick Milo's Soft Paper Obsidian theme (v1.2.3): warm cream paper in light mode, Catppuccin Frappé in dark mode, sapphire accent.",
+  "modes": "both",
+  "preview": {
+    "light": "#1a7da4",
+    "dark": "#11b7c5"
+  }
+}
