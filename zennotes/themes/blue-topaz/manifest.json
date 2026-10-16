@@ -1,0 +1,11 @@
+{
+  "name": "Blue Topaz",
+  "author": "WhyI & Pkmer (port)",
+  "version": "1.0.0",
+  "description": "Blue Topaz by WhyI & Pkmer, stock light + dark palettes.",
+  "modes": "both",
+  "preview": {
+    "light": "#3b99e5",
+    "dark": "#2978bd"
+  }
+}

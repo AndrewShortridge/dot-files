@@ -1,0 +1,11 @@
+{
+  "name": "Atom",
+  "author": "kognise (port)",
+  "version": "1.0.0",
+  "description": "Atom by kognise, One Light / One Dark palettes.",
+  "modes": "both",
+  "preview": {
+    "light": "#637af0",
+    "dark": "#3d6ec8"
+  }
+}

@@ -1,0 +1,68 @@
+/* Atom: ZenNotes port of the Obsidian theme of the same name.
+ * Generated from browser-resolved Obsidian CSS variables; tokens are RGB triplets. */
+
+:root {
+  color-scheme: light;
+  --z-bg: 250 250 250;
+  --z-bg-softer: 234 234 235;
+  --z-bg-1: 234 234 235;
+  --z-bg-2: 226 226 228;
+  --z-bg-3: 219 219 220;
+  --z-bg-4: 189 189 190;
+  --z-fg: 66 68 75;
+  --z-fg-1: 56 58 66;
+  --z-fg-2: 142 142 144;
+  --z-grey-2: 142 142 144;
+  --z-grey-1: 148 148 148;
+  --z-grey-0: 153 153 153;
+  --z-grey-dim: 186 186 186;
+  --z-accent: 99 122 240;
+  --z-accent-soft: 79 103 227;
+  --z-accent-muted: 116 130 202;
+  --z-red: 233 49 71;
+  --z-green: 8 185 78;
+  --z-yellow: 224 172 0;
+  --z-blue: 8 109 221;
+  --z-purple: 120 82 238;
+  --z-aqua: 0 191 188;
+  --z-shadow: 34 35 40;
+  --z-glass-a1: 0.62;
+  --z-glass-a2: 0.5;
+  --z-glass-a3: 0.35;
+  --z-glass-a4: 0.25;
+}
+
+:root .cm-editor .cm-selectionBackground, :root .cm-editor ::selection { background: rgb(0 122 255 / 0.15) !important; }
+
+:root[data-theme-mode="dark"] {
+  color-scheme: dark;
+  --z-bg: 39 43 52;
+  --z-bg-softer: 32 36 43;
+  --z-bg-1: 32 36 43;
+  --z-bg-2: 49 54 66;
+  --z-bg-3: 66 73 88;
+  --z-bg-4: 73 79 93;
+  --z-fg: 210 211 212;
+  --z-fg-1: 220 221 222;
+  --z-fg-2: 136 136 136;
+  --z-grey-2: 136 136 136;
+  --z-grey-1: 108 111 118;
+  --z-grey-0: 81 86 99;
+  --z-grey-dim: 74 80 94;
+  --z-accent: 61 110 200;
+  --z-accent-soft: 45 94 185;
+  --z-accent-muted: 91 120 174;
+  --z-red: 251 70 76;
+  --z-green: 68 207 110;
+  --z-yellow: 224 222 113;
+  --z-blue: 2 122 255;
+  --z-purple: 168 130 255;
+  --z-aqua: 83 223 221;
+  --z-shadow: 0 0 0;
+  --z-glass-a1: 0.58;
+  --z-glass-a2: 0.46;
+  --z-glass-a3: 0.32;
+  --z-glass-a4: 0.22;
+}
+
+:root[data-theme-mode="dark"] .cm-editor .cm-selectionBackground, :root[data-theme-mode="dark"] .cm-editor ::selection { background: rgb(0 122 255 / 0.2) !important; }

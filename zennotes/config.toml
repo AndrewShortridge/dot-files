@@ -1,0 +1,115 @@
+config_version = 1
+
+[appearance]
+  content_align = "center"
+  dark_sidebar = true
+  pdf_export_use_theme = false
+  show_sidebar_chevrons = true
+  show_window_title_bar = true
+  theme_family = "custom"
+  theme_id = "custom-peach-puff"
+  theme_mode = "light"
+  unified_sidebar = true
+
+[editor]
+  auto_pair_quotes_in_prose = false
+  auto_pairs = true
+  completed_task_style = "none"
+  default_view_mode = "edit"
+  editor_max_width = 920
+  external_application_schemes = []
+  font_size = 16
+  harper_dialect = "american"
+  harper_enabled = false
+  hide_builtin_templates = false
+  ignored_keys = []
+  keep_view_mode_across_notes = false
+  line_height = 1.7
+  line_number_mode = "off"
+  line_number_position = "text"
+  list_indent_guides = true
+  live_preview = true
+  loose_math_delimiters = false
+  markdown_snippets = true
+  math_font_scale = 100
+  math_renderer = "katex"
+  pdf_embed_in_edit_mode = "compact"
+  persist_undo_history = false
+  preview_max_width = 920
+  preview_smooth_scroll = true
+  render_tables = true
+  scroll_off = 0
+  show_heading_level_labels = false
+  sync_title_heading_on_rename = true
+  tab_size = 4
+  tabs_enabled = true
+  text_replacements_enabled = true
+  time_format = "12h"
+  typst_tag_preambles = false
+  word_wrap = true
+  wrap_tabs = false
+
+[folder_labels]
+
+[kanban_column_titles]
+
+[keymaps]
+
+[mcp]
+  review_agent_edits = true
+
+[overrides]
+
+[privacy]
+  usage_count = true
+
+[saved_filters]
+
+[search]
+  backend = "auto"
+  fzf_path = ""
+  ripgrep_path = ""
+
+[text_replacements]
+  "->" = "→"
+
+[tweaks]
+
+[typography]
+  interface_font = ""
+  mono_font = ""
+  text_font = ""
+
+[view]
+  asset_sort_order = "name-asc"
+  atlas_enabled = true
+  auto_calendar_panel = true
+  auto_reveal = false
+  calendar_show_week_numbers = true
+  calendar_week_start = "monday"
+  group_by_kind = true
+  hidden_workflow_presets = []
+  kanban_card_sort = "manual"
+  kanban_folder_root = ""
+  kanban_group_by = "status"
+  kanban_statuses = []
+  keep_panels_across_notes = true
+  nested_tags = true
+  note_sort_order = "none"
+  quick_note_date_title = false
+  quick_note_title_prefix = "Quick Note"
+  show_archived_tasks = false
+  tasks_view_mode = "list"
+  view_settings_scope = "global"
+  workflow_event_triggers = true
+  workflows_enabled = false
+
+[vim]
+  block_ime_in_normal_mode = true
+  enabled = true
+  insert_escape = ""
+  which_key_hint_mode = "timed"
+  which_key_hint_timeout_ms = 900
+  which_key_hints = true
+  wrapped_line_motions = "display"
+  yank_to_clipboard = false

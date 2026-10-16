@@ -1,0 +1,11 @@
+{
+  "name": "Peach Puff",
+  "author": "andrew",
+  "version": "1.0.0",
+  "description": "Obsidian setup as configured: Peach Puff (zathura/Foliate palette) in light mode, One Dark snippet in dark mode.",
+  "modes": "both",
+  "preview": {
+    "light": "#155e63",
+    "dark": "#61afef"
+  }
+}

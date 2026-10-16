@@ -1,0 +1,80 @@
+/* Blue Topaz: ZenNotes port of the Obsidian theme of the same name.
+ * Generated from browser-resolved Obsidian CSS variables; tokens are RGB triplets. */
+
+:root {
+  color-scheme: light;
+  --z-bg: 255 255 255;
+  --z-bg-softer: 252 252 252;
+  --z-bg-1: 233 233 233;
+  --z-bg-2: 227 227 227;
+  --z-bg-3: 221 221 221;
+  --z-bg-4: 179 179 179;
+  --z-fg: 28 28 28;
+  --z-fg-1: 14 14 14;
+  --z-fg-2: 127 127 127;
+  --z-grey-2: 127 127 127;
+  --z-grey-1: 127 127 127;
+  --z-grey-0: 127 127 127;
+  --z-grey-dim: 174 174 174;
+  --z-accent: 59 153 229;
+  --z-accent-soft: 70 159 231;
+  --z-accent-muted: 86 143 188;
+  --z-red: 233 49 71;
+  --z-green: 8 185 78;
+  --z-yellow: 224 172 0;
+  --z-blue: 8 109 221;
+  --z-purple: 120 82 238;
+  --z-aqua: 0 191 188;
+  --z-shadow: 8 8 8;
+  --z-glass-a1: 0.62;
+  --z-glass-a2: 0.5;
+  --z-glass-a3: 0.35;
+  --z-glass-a4: 0.25;
+}
+
+:root .cm-editor .tok-heading1, :root .prose-zen h1 { color: rgb(8 55 125); }
+:root .cm-editor .tok-heading2, :root .prose-zen h2 { color: rgb(0 79 168); }
+:root .cm-editor .tok-heading3, :root .prose-zen h3 { color: rgb(14 99 185); }
+:root .cm-editor .tok-heading4, :root .prose-zen h4 { color: rgb(52 130 197); }
+:root .cm-editor .tok-heading5, :root .prose-zen h5 { color: rgb(90 160 226); }
+:root .cm-editor .tok-heading6, :root .prose-zen h6 { color: rgb(137 185 230); }
+:root .cm-editor .cm-selectionBackground, :root .cm-editor ::selection { background: rgb(169 209 200 / 0.35) !important; }
+
+:root[data-theme-mode="dark"] {
+  color-scheme: dark;
+  --z-bg: 32 32 32;
+  --z-bg-softer: 21 21 21;
+  --z-bg-1: 68 68 68;
+  --z-bg-2: 60 60 60;
+  --z-bg-3: 52 52 52;
+  --z-bg-4: 83 83 83;
+  --z-fg: 191 191 191;
+  --z-fg-1: 198 198 198;
+  --z-fg-2: 138 138 138;
+  --z-grey-2: 138 138 138;
+  --z-grey-1: 130 130 130;
+  --z-grey-0: 121 121 121;
+  --z-grey-dim: 86 86 86;
+  --z-accent: 41 120 189;
+  --z-accent-soft: 58 140 212;
+  --z-accent-muted: 80 127 169;
+  --z-red: 251 70 76;
+  --z-green: 68 207 110;
+  --z-yellow: 224 222 113;
+  --z-blue: 2 122 255;
+  --z-purple: 168 130 255;
+  --z-aqua: 83 223 221;
+  --z-shadow: 0 0 0;
+  --z-glass-a1: 0.58;
+  --z-glass-a2: 0.46;
+  --z-glass-a3: 0.32;
+  --z-glass-a4: 0.22;
+}
+
+:root[data-theme-mode="dark"] .cm-editor .tok-heading1, :root[data-theme-mode="dark"] .prose-zen h1 { color: rgb(150 194 46); }
+:root[data-theme-mode="dark"] .cm-editor .tok-heading2, :root[data-theme-mode="dark"] .prose-zen h2 { color: rgb(76 177 72); }
+:root[data-theme-mode="dark"] .cm-editor .tok-heading3, :root[data-theme-mode="dark"] .prose-zen h3 { color: rgb(58 187 187); }
+:root[data-theme-mode="dark"] .cm-editor .tok-heading4, :root[data-theme-mode="dark"] .prose-zen h4 { color: rgb(117 162 230); }
+:root[data-theme-mode="dark"] .cm-editor .tok-heading5, :root[data-theme-mode="dark"] .prose-zen h5 { color: rgb(178 150 243); }
+:root[data-theme-mode="dark"] .cm-editor .tok-heading6, :root[data-theme-mode="dark"] .prose-zen h6 { color: rgb(234 165 248); }
+:root[data-theme-mode="dark"] .cm-editor .cm-selectionBackground, :root[data-theme-mode="dark"] .cm-editor ::selection { background: rgb(59 118 113 / 0.376) !important; }
