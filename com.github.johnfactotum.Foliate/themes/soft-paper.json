@@ -1,0 +1,5 @@
+{
+    "label": "Soft Paper",
+    "light": { "fg": "#575279", "bg": "#eee6dd", "link": "#1a7da4" },
+    "dark":  { "fg": "#c6ceef", "bg": "#303446", "link": "#11b7c5" }
+}
