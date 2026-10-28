@@ -6,10 +6,28 @@ local embed_images = require("andrew.vault.embed_images")
 local callout_utils = require("andrew.vault.callout_utils")
 local file_cache = require("andrew.vault.file_cache")
 local pat = require("andrew.vault.patterns")
+local frontmatter_parser = require("andrew.vault.frontmatter_parser")
 
 local M = {}
 
 local formats = { "pdf", "docx", "html" }
+
+--- Resolve the `pandoc-defaults` frontmatter value to a defaults-file path.
+--- Accepts absolute, `~`-prefixed, note-relative, or vault-relative paths.
+---@param value string
+---@param buf_dir string directory of the buffer being exported
+---@return string
+local function resolve_defaults(value, buf_dir)
+  local expanded = vim.fn.expand(value)
+  if expanded:sub(1, 1) == "/" then
+    return expanded
+  end
+  local note_relative = buf_dir .. "/" .. expanded
+  if vim.uv.fs_stat(note_relative) then
+    return note_relative
+  end
+  return engine.vault_path .. "/" .. expanded
+end
 
 --- Resolve the filesystem path for an attachment/image embed.
 --- Looks in the vault-level `attachments/` directory first, then falls back
@@ -331,6 +349,15 @@ function M.export(fmt)
       "--resource-path=" .. dir .. ":" .. engine.vault_path,
     }
 
+    -- `pandoc-defaults: Methods/manuscript-export/manuscript.yaml` in frontmatter
+    -- routes the export through a pandoc defaults file (citeproc, CSL, reference-doc,
+    -- filters). Command-line flags above still win over the defaults file.
+    local defaults = frontmatter_parser.buf_field(0, "pandoc-defaults")
+    if type(defaults) == "string" and defaults ~= "" then
+      table.insert(cmd, "-d")
+      table.insert(cmd, resolve_defaults(defaults, dir))
+    end
+
     if format == "pdf" then
       table.insert(cmd, "--pdf-engine=tectonic")
       -- US Letter with 1-inch margins, 12pt Times New Roman (matches Word default)
@@ -342,7 +369,10 @@ function M.export(fmt)
       table.insert(cmd, 'mainfont=Times New Roman')
     end
 
+    -- cwd = note directory so relative `bibliography:` paths in frontmatter resolve
+    -- the same way as in the Obsidian pandoc plugin.
     vim.fn.jobstart(cmd, {
+      cwd = dir,
       on_exit = function(_, code)
         -- Clean up temp file regardless of success/failure
         os.remove(tmpfile)

@@ -982,7 +982,7 @@ Renders Dataview-like query blocks written in vault query syntax:
 | n | `<leader>veR` | Rename preview (dry-run) | See what would change without actually renaming |
 | n | `<leader>vet` | Rename tag vault-wide | Rename a tag across all notes |
 | v | `<leader>vex` | Extract selection to new note | Select text, extract it into a new note with a link left behind |
-| n | `<leader>vep` | Export to PDF/HTML (pandoc) | Export current note using pandoc |
+| n | `<leader>vep` | Export to PDF/HTML (pandoc) | Export current note using pandoc; honours `pandoc-defaults:` frontmatter (defaults file with citeproc/CSL/reference-doc) and runs pandoc in the note's folder |
 
 ### Tasks (`<leader>vx`)
 

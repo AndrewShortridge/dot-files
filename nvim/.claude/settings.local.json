@@ -18,7 +18,13 @@
       "Bash(xargs:*)",
       "Bash(timeout 10 cat:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:www.fortran90.org)"
+      "WebFetch(domain:www.fortran90.org)",
+      "Bash(wc:*)",
+      "Bash(cat:*)",
+      "WebFetch(domain:blacksmithgu.github.io)",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:kdheepak.com)",
+      "Bash(echo Rust not found in PATH:*)"
     ]
   }
 }

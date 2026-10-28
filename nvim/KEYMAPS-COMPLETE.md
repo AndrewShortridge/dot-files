@@ -848,7 +848,7 @@ Source: `lua/andrew/vault/rename.lua`, `lua/andrew/vault/preview.lua` — Prefix
 | `<leader>veR` | Normal | Preview rename | Preview rename (dry-run) |
 | `<leader>vet` | Normal | Rename tag | Rename tag across vault |
 | `<leader>vE` | Normal | Edit in float | Edit linked note in floating window |
-| `<leader>vep` | Normal | Export note | Export note via Pandoc |
+| `<leader>vep` | Normal | Export note | Export note via Pandoc (honours `pandoc-defaults:` frontmatter) |
 | `<leader>vex` | Visual | Extract to note | Extract selection to new note |
 
 ### Preview Float Keys

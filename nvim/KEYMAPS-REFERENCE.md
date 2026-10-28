@@ -1125,7 +1125,7 @@ Custom commands defined across the configuration, usable with `:CommandName`.
 | `:VaultWeeklyPrev` | vault/navigate.lua | Go to previous weekly review |
 | `:VaultWeeklyNext` | vault/navigate.lua | Go to next weekly review |
 | `:VaultReviews` | vault/navigate.lua | Find all reviews |
-| `:VaultExport` | vault/export.lua | Export note via pandoc |
+| `:VaultExport` | vault/export.lua | Export note via pandoc (`-d <pandoc-defaults>` from frontmatter) |
 | `:VaultStickyProject` | vault/pickers.lua | Show/set sticky project |
 | `:VaultStickyClear` | vault/pickers.lua | Clear sticky project |
 
