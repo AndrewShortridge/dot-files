@@ -134,7 +134,7 @@ return {
         fortran_free = { "lsp", "snippets", "path", "buffer" },
         f90 = { "lsp", "snippets", "path", "buffer" },
         f95 = { "lsp", "snippets", "path", "buffer" },
-        markdown = { "latex_math", "wikilinks", "vault_tags", "vault_frontmatter", "vault_inline_fields", "lsp", "snippets", "path", "buffer", "spell" },
+        markdown = { "latex_math", "citations", "wikilinks", "vault_tags", "vault_frontmatter", "vault_inline_fields", "lsp", "snippets", "path", "buffer", "spell" },
         -- .tex had no entry and fell through to `default`; listed so the LaTeX
         -- command source is offered there too (its enabled() is unconditional
         -- for tex, math-zone-gated for markdown).
@@ -176,6 +176,19 @@ return {
           min_keyword_length = 0,
           score_offset = 12,
           fallbacks = {},
+        },
+        -- pandoc citekeys after `@` ([@key], [@a; @b], [-@key], in-text @key).
+        -- Keys come from the note's `bibliography:` CSL-JSON plus the vault
+        -- databases below (enl2csl.py output beside the EndNote .enl); each key
+        -- is matched to its Library/ note by DOI or title. Gated off for
+        -- e-mail addresses, frontmatter and code (andrew.vault.completion_citations).
+        citations = {
+          name = "Cite",
+          module = "andrew.vault.completion_citations",
+          min_keyword_length = 0,
+          score_offset = 13,
+          fallbacks = {},
+          opts = { databases = { "temporary/*.json" } },
         },
         wikilinks = {
           name = "Wikilinks",

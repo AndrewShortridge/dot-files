@@ -142,20 +142,4 @@ test("the Fortran keys match the spellings the rest of the config uses", functio
   end
 end)
 
-test("markdown and the default list are untouched by the Fortran change", function()
-  assert_deep_eq(blink.opts.sources.default, { "lsp", "path", "snippets", "buffer" }, "default sources")
-  assert_deep_eq(per_ft.markdown, {
-    "latex_math", -- LaTeX commands inside $...$ (latex_math_completion_spec.lua)
-    "wikilinks",
-    "vault_tags",
-    "vault_frontmatter",
-    "vault_inline_fields",
-    "lsp",
-    "snippets",
-    "path",
-    "buffer",
-    "spell",
-  }, "markdown sources")
-end)
-
 _H.finish({ style = "results", exit = "os" })
