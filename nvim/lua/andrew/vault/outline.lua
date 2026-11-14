@@ -1,4 +1,5 @@
 local M = {}
+local fzf_look = require("andrew.utils.fzf_look")
 local notify = require("andrew.vault.notify")
 local pat = require("andrew.vault.patterns")
 
@@ -61,8 +62,7 @@ function M.outline()
   end
 
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(entries, {
-    prompt = "Outline> ",
+  fzf.fzf_exec(entries, fzf_look.titled("Outline", {
     previewer = "builtin",
     fzf_opts = {
       ["--no-multi"] = "",
@@ -80,7 +80,7 @@ function M.outline()
         end
       end,
     },
-  })
+  }))
 end
 
 --- Called by event_dispatch.lua on FileType markdown.

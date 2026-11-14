@@ -8,6 +8,7 @@
 --- for lines whose text hasn't changed (Lua string interning makes == O(1)).
 
 local pat = require("andrew.vault.patterns")
+local config = require("andrew.vault.config")
 
 local M = {}
 
@@ -19,8 +20,21 @@ local M = {}
 ---@field subtype? string e.g. "embed_image", "footnote_def"
 ---@field captures? table type-specific parsed fields
 
----@type table<number, { tick: number, lines: table<number, LineToken[]>, texts: table<number, string> }>
+---@type table<number, { tick: number, lines: table<number, LineToken[]>, texts: table<number, string>, token_counters: table<string, number>, sorted_line_nrs: number[]? }>
 local _cache = {}
+
+--- Add per-type token counts for a line's token list into `counters`.
+--- `sign` is +1 (line added/retokenized) or -1 (line removed/superseded).
+---@param counters table<string, number>
+---@param tokens LineToken[]|nil
+---@param sign number +1 or -1
+local function adjust_counters(counters, tokens, sign)
+  if not tokens then return end
+  for ti = 1, #tokens do
+    local t = tokens[ti].type
+    counters[t] = (counters[t] or 0) + sign
+  end
+end
 
 --- Tags must be preceded by whitespace, start of line, or certain punctuation.
 ---@param line string
@@ -543,8 +557,7 @@ end
 ---@param code_excl fun(row: number, col: number): boolean
 ---@return LineToken[]
 function M.tokenize_line(line_text, line_nr, code_excl)
-  local cfg = require("andrew.vault.config")
-  local use_lpeg = cfg.pipeline and cfg.pipeline.use_lpeg
+  local use_lpeg = config.pipeline and config.pipeline.use_lpeg
   if use_lpeg == nil then use_lpeg = true end
   if use_lpeg and has_lpeg then
     return tokenize_line_lpeg(line_text, line_nr, code_excl)
@@ -555,8 +568,7 @@ end
 --- Report which tokenizer mode is active.
 ---@return string "lpeg" or "legacy"
 function M.tokenizer_mode()
-  local cfg = require("andrew.vault.config")
-  local use_lpeg = cfg.pipeline and cfg.pipeline.use_lpeg
+  local use_lpeg = config.pipeline and config.pipeline.use_lpeg
   if use_lpeg == nil then use_lpeg = true end
   if use_lpeg and has_lpeg then return "lpeg" end
   return "legacy"
@@ -607,14 +619,19 @@ local function evict_if_needed(buf_cache, bufnr, max_lines)
     return math.abs(a - center) > math.abs(b - center)
   end)
 
-  -- Evict until under limit (both tokens and texts)
+  -- Evict until under limit (both tokens and texts); keep counters in sync.
   local to_evict = count - max_lines
+  local counters = buf_cache.token_counters
   for i = 1, to_evict do
     local ln = line_nrs[i]
+    if counters then adjust_counters(counters, buf_cache.lines[ln], -1) end
     buf_cache.lines[ln] = nil
     if buf_cache.texts then
       buf_cache.texts[ln] = nil
     end
+  end
+  if to_evict > 0 then
+    buf_cache.sorted_line_nrs = nil
   end
 end
 
@@ -629,28 +646,39 @@ end
 function M.update(bufnr, line_nrs, code_excl)
   local buf_cache = _cache[bufnr]
   if not buf_cache then
-    buf_cache = { tick = 0, lines = {}, texts = {} }
+    buf_cache = { tick = 0, lines = {}, texts = {}, token_counters = {} }
     _cache[bufnr] = buf_cache
   end
   -- Ensure texts table exists (upgrade from old cache format)
   if not buf_cache.texts then
     buf_cache.texts = {}
   end
+  -- Ensure token_counters exists (upgrade from old cache format)
+  if not buf_cache.token_counters then
+    buf_cache.token_counters = {}
+  end
   buf_cache.tick = vim.api.nvim_buf_get_changedtick(bufnr)
+  local counters = buf_cache.token_counters
 
-  local cfg = require("andrew.vault.config")
-  local dedup = cfg.pipeline and cfg.pipeline.content_dedup
+  local dedup = config.pipeline and config.pipeline.content_dedup
   if dedup == nil then dedup = true end
 
   local reparse_count = 0
 
+  -- Track whether the set of cached line keys changed; the sorted line-number
+  -- list used by iter_tokens only needs recomputing when keys are added/removed.
+  local keyset_changed = false
+
   if not line_nrs then
-    -- Full parse: get all lines
+    -- Full parse: get all lines. Recount token presence from scratch.
     local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local new_lines = {}
     local new_texts = {}
+    counters = {}
+    buf_cache.token_counters = counters
     for i, text in ipairs(all_lines) do
       local ln = i - 1
+      if buf_cache.lines[ln] == nil then keyset_changed = true end
       if dedup and buf_cache.texts[ln] == text then
         -- Content unchanged: reuse cached tokens
         new_lines[ln] = buf_cache.lines[ln]
@@ -658,7 +686,12 @@ function M.update(bufnr, line_nrs, code_excl)
         new_lines[ln] = M.tokenize_line(text, ln, code_excl)
         reparse_count = reparse_count + 1
       end
+      adjust_counters(counters, new_lines[ln], 1)
       new_texts[ln] = text
+    end
+    -- A full parse drops any cached lines beyond the new buffer length.
+    for ln in pairs(buf_cache.lines) do
+      if new_lines[ln] == nil then keyset_changed = true; break end
     end
     buf_cache.lines = new_lines
     buf_cache.texts = new_texts
@@ -668,13 +701,19 @@ function M.update(bufnr, line_nrs, code_excl)
       local text = vim.api.nvim_buf_get_lines(bufnr, ln, ln + 1, false)[1]
       if text then
         if dedup and buf_cache.texts[ln] == text then
-          -- Content unchanged: skip tokenization entirely
+          -- Content unchanged: skip tokenization entirely (counters intact)
           goto continue
         end
+        if buf_cache.lines[ln] == nil then keyset_changed = true end
+        -- Replace this line's contribution to the counters.
+        adjust_counters(counters, buf_cache.lines[ln], -1)
         buf_cache.lines[ln] = M.tokenize_line(text, ln, code_excl)
+        adjust_counters(counters, buf_cache.lines[ln], 1)
         buf_cache.texts[ln] = text
         reparse_count = reparse_count + 1
       else
+        if buf_cache.lines[ln] ~= nil then keyset_changed = true end
+        adjust_counters(counters, buf_cache.lines[ln], -1)
         buf_cache.lines[ln] = nil
         buf_cache.texts[ln] = nil
       end
@@ -682,8 +721,13 @@ function M.update(bufnr, line_nrs, code_excl)
     end
   end
 
+  -- Invalidate the sorted line-number cache only when the key set changed.
+  if keyset_changed then
+    buf_cache.sorted_line_nrs = nil
+  end
+
   -- Evict overflow lines (outside visible range) when cache exceeds max size
-  local max = cfg.pipeline and cfg.pipeline.line_cache_max or 10000
+  local max = config.pipeline and config.pipeline.line_cache_max or 10000
   evict_if_needed(buf_cache, bufnr, max)
 
   -- Update stats for debug reporting
@@ -693,6 +737,60 @@ function M.update(bufnr, line_nrs, code_excl)
   M._stats.skipped = M._stats.skipped + (total_dirty - reparse_count)
 
   return reparse_count
+end
+
+--- Renumber line-keyed cache entries after an insert/delete of `delta` rows
+--- at `start_row`. Keeps the lines/texts caches consistent with the buffer so
+--- only the bounded edited region needs re-tokenization (Layer 1 incremental).
+--- For delta>0 (insert) keys >= start_row shift up; for delta<0 (delete) keys
+--- >= start_row shift down and the vacated range is dropped.
+---@param bufnr number
+---@param start_row number 0-indexed row where the shift begins (post-edit)
+---@param delta number net rows inserted (>0) or deleted (<0)
+function M.shift_lines(bufnr, start_row, delta)
+  if delta == 0 then return end
+  local buf_cache = _cache[bufnr]
+  if not buf_cache then return end
+  local lines, texts = buf_cache.lines, buf_cache.texts
+
+  -- Line keys are renumbered below; the sorted line-number cache is stale.
+  buf_cache.sorted_line_nrs = nil
+
+  -- Snapshot affected keys first to avoid mutating-while-iterating.
+  local keys = {}
+  for ln in pairs(lines) do
+    if ln >= start_row then keys[#keys + 1] = ln end
+  end
+
+  if delta > 0 then
+    -- Insert: shift highest keys first so we never overwrite a not-yet-moved key.
+    table.sort(keys, function(a, b) return a > b end)
+    for _, ln in ipairs(keys) do
+      lines[ln + delta] = lines[ln]
+      lines[ln] = nil
+      if texts then
+        texts[ln + delta] = texts[ln]
+        texts[ln] = nil
+      end
+    end
+  else
+    -- Delete: shift lowest keys first; entries in [start_row, start_row-delta)
+    -- are vacated and must be dropped (they fall below the new positions).
+    local counters = buf_cache.token_counters
+    table.sort(keys, function(a, b) return a < b end)
+    for _, ln in ipairs(keys) do
+      local dst = ln + delta -- delta < 0
+      if dst >= start_row then
+        lines[dst] = lines[ln]
+        if texts then texts[dst] = texts[ln] end
+      else
+        -- Vacated line is dropped entirely: remove its token contribution.
+        if counters then adjust_counters(counters, lines[ln], -1) end
+      end
+      lines[ln] = nil
+      if texts then texts[ln] = nil end
+    end
+  end
 end
 
 --- Invalidate all cached data for a buffer.
@@ -709,8 +807,16 @@ function M.iter_tokens(bufnr, token_type)
   local buf_cache = _cache[bufnr]
   if not buf_cache then return function() end end
 
-  local line_nrs = vim.tbl_keys(buf_cache.lines)
-  table.sort(line_nrs)
+  -- Reuse the sorted line-number list while the cache key set is unchanged.
+  -- update()/shift_lines()/evict explicitly nil this whenever a line key is
+  -- added or removed, so a non-nil list is always current. Avoids tbl_keys +
+  -- sort on a warm cache — the common per-keystroke / per-render case.
+  local line_nrs = buf_cache.sorted_line_nrs
+  if not line_nrs then
+    line_nrs = vim.tbl_keys(buf_cache.lines)
+    table.sort(line_nrs)
+    buf_cache.sorted_line_nrs = line_nrs
+  end
   local li, ti = 1, 0
 
   return function()
@@ -749,6 +855,46 @@ function M.pipeline_token_iter(bufnr, token_type)
   local cache_data = parse_cache._get_cache()
   if not cache_data[bufnr] then return nil end
   return parse_cache.iter_tokens(bufnr, token_type)
+end
+
+--- Cheaply report whether the pipeline parse cache holds any token of a given
+--- type for `bufnr`, without reading the buffer or building a signature. Returns
+--- (cache_present, has_token): callers should only trust `has_token` when
+--- `cache_present` is true (a cold cache yields false, false). Reads a
+--- per-type token-presence counter maintained incrementally by update() /
+--- shift_lines() — O(1), no token scan.
+---@param bufnr number buffer handle
+---@param token_type string e.g. "footnote"
+---@return boolean cache_present whether the pipeline cache is warm for this buffer
+---@return boolean has_token whether any token of `token_type` is cached
+function M.has_token(bufnr, token_type)
+  local p_ok, pipeline = pcall(require, "andrew.vault.transform_pipeline")
+  if not p_ok then return false, false end
+  local parse_cache = pipeline.get_parse_cache()
+  local cache_data = parse_cache._get_cache()
+  local buf_cache = cache_data[bufnr]
+  if not buf_cache then return false, false end
+  local counters = buf_cache.token_counters
+  return true, (counters ~= nil and (counters[token_type] or 0) > 0)
+end
+
+--- Read-only access to the warm per-line text cache for `bufnr`, used by callers
+--- that need to rebuild a line-derived signature without re-reading the buffer.
+--- Returns (texts, count) where `texts` maps 0-indexed line numbers to their last
+--- cached text and `count` is the number of cached lines. Returns nil when the
+--- cache is cold so callers fall back to an authoritative buffer read. Callers
+--- MUST compare `count` against the live buffer line count: eviction
+--- (config.pipeline.line_cache_max) can leave the cache spanning only part of a
+--- very large buffer, in which case the cached set is incomplete.
+---@param bufnr number buffer handle
+---@return table<number, string>|nil texts 0-indexed line -> text, or nil if cold
+---@return number count number of cached lines
+function M.get_line_texts(bufnr)
+  local buf_cache = _cache[bufnr]
+  if not buf_cache or not buf_cache.texts then return nil, 0 end
+  local count = 0
+  for _ in pairs(buf_cache.texts) do count = count + 1 end
+  return buf_cache.texts, count
 end
 
 return M

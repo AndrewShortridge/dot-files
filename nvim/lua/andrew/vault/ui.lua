@@ -1,5 +1,6 @@
 local cleanup = require("andrew.vault.resource_cleanup")
 local config = require("andrew.vault.config")
+local hl_util = require("andrew.vault.hl_util")
 local log = require("andrew.vault.vault_log").scope("ui")
 
 local M = {}
@@ -87,7 +88,9 @@ function M.create_float_input(opts)
 end
 
 --- Create a centered floating display window (read-only).
---- @param opts { title: string|table, lines: string[], width?: number, height?: number, enter?: boolean, cursor_line?: boolean, relative?: string, row?: number, col?: number, filetype?: string, close_keymaps?: boolean }
+--- @param opts { title: string|table, lines: string[], width?: number, height?: number, enter?: boolean, cursor_line?: boolean|number, relative?: string, row?: number, col?: number, filetype?: string, close_keymaps?: boolean }
+--- cursor_line accepts a boolean (toggle the 'cursorline' window option) or a
+--- number (enable 'cursorline' AND place the cursor on that 1-based buffer row).
 --- @return { buf: number, win: number, close: fun() }
 function M.create_float_display(opts)
   local ui = M.get_screen_dims()
@@ -139,7 +142,15 @@ function M.create_float_display(opts)
     title_pos = "center",
   })
 
-  if opts.cursor_line ~= nil then
+  if type(opts.cursor_line) == "number" then
+    -- Numeric form: enable 'cursorline' and park the cursor on that row.
+    -- Assigning the number straight to the boolean option would throw
+    -- ("Invalid value for option 'cursorline': expected boolean, got number").
+    vim.wo[win].cursorline = true
+    local line_count = math.max(#opts.lines, 1)
+    local row_target = math.min(math.max(math.floor(opts.cursor_line), 1), line_count)
+    pcall(vim.api.nvim_win_set_cursor, win, { row_target, 0 })
+  elseif opts.cursor_line ~= nil then
     vim.wo[win].cursorline = opts.cursor_line
   end
   vim.wo[win].wrap = false
@@ -180,6 +191,10 @@ function M.setup_markdown_float_opts(win)
   vim.wo[win].conceallevel = 2
   vim.wo[win].wrap = true
   vim.wo[win].linebreak = true
+  -- Match the main markdown buffer (ftplugin/markdown.lua), otherwise a preview
+  -- float re-wraps its own content differently from the note it is previewing.
+  vim.wo[win].breakindent = true
+  vim.wo[win].breakindentopt = "list:-1"
   vim.wo[win].foldenable = false
 end
 
@@ -201,7 +216,7 @@ function M.apply_incremental_render(buf, ns_id, prev_lines, lines, highlights)
         vim.api.nvim_buf_clear_namespace(buf, ns_id, i - 1, i)
         for _, hl in ipairs(highlights) do
           if hl[2] == i - 1 then
-            pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, hl[1], hl[2], hl[3], hl[4])
+            hl_util.add_safe(buf, ns_id, hl[1], hl[2], hl[3], hl[4])
           end
         end
       end
@@ -211,7 +226,7 @@ function M.apply_incremental_render(buf, ns_id, prev_lines, lines, highlights)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
     for _, hl in ipairs(highlights) do
-      pcall(vim.api.nvim_buf_add_highlight, buf, ns_id, hl[1], hl[2], hl[3], hl[4])
+      hl_util.add_safe(buf, ns_id, hl[1], hl[2], hl[3], hl[4])
     end
   end
   return lines

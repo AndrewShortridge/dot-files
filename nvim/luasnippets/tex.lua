@@ -11,7 +11,7 @@ local math_snips, math_auto = tex.math_snippets()
 
 -- TeX-specific regular snippets
 local snippets = {
-  s({ trig = "beg", desc = "\\begin{} / \\end{}" }, fmta(
+  s({ trig = ";beg", desc = "\\begin{} / \\end{}" }, fmta(
     [[
     \begin{<>}
     	<>
@@ -19,10 +19,10 @@ local snippets = {
     ]],
     { i(1), i(0), rep(1) }
   )),
-  s({ trig = "sec", desc = "Section" }, fmta("\\section{<>}", { i(1) })),
-  s({ trig = "ssec", desc = "Subsection" }, fmta("\\subsection{<>}", { i(1) })),
-  s({ trig = "sssec", desc = "Subsubsection" }, fmta("\\subsubsection{<>}", { i(1) })),
-  s({ trig = "eq", desc = "Equation" }, fmta(
+  s({ trig = ";sec", desc = "Section" }, fmta("\\section{<>}", { i(1) })),
+  s({ trig = ";ssec", desc = "Subsection" }, fmta("\\subsection{<>}", { i(1) })),
+  s({ trig = ";sssec", desc = "Subsubsection" }, fmta("\\subsubsection{<>}", { i(1) })),
+  s({ trig = ";eq", desc = "Equation" }, fmta(
     [[
     \begin{equation}
     	<>
@@ -30,7 +30,7 @@ local snippets = {
     ]],
     { i(1) }
   )),
-  s({ trig = "ali", desc = "Align*" }, fmta(
+  s({ trig = ";ali", desc = "Align*" }, fmta(
     [[
     \begin{align*}
     	<>
@@ -38,7 +38,7 @@ local snippets = {
     ]],
     { i(1) }
   )),
-  s({ trig = "enum", desc = "Enumerate" }, fmta(
+  s({ trig = ";enum", desc = "Enumerate" }, fmta(
     [[
     \begin{enumerate}
     	\item <>
@@ -46,7 +46,7 @@ local snippets = {
     ]],
     { i(1) }
   )),
-  s({ trig = "item", desc = "Itemize" }, fmta(
+  s({ trig = ";item", desc = "Itemize" }, fmta(
     [[
     \begin{itemize}
     	\item <>
@@ -54,7 +54,7 @@ local snippets = {
     ]],
     { i(1) }
   )),
-  s({ trig = "fig", desc = "Figure" }, fmta(
+  s({ trig = ";fig", desc = "Figure" }, fmta(
     [[
     \begin{figure}[<>]
     	\centering

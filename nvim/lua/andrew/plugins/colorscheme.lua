@@ -33,11 +33,15 @@ return {
       -- Override specific highlight groups to match our preferences
 
       highlights = {
-        -- Normal buffer background: dark gray-blue
-        Normal = { bg = "#1E222A" },
+        -- Normal buffer background: dark gray-blue.
+        -- `extend = true` is required: without it onedarkpro REPLACES the group
+        -- (lib/compile.lua:80 only merges into the existing highlight when
+        -- `extend` is set), so Normal would lose its foreground colour entirely.
+        Normal = { bg = "#1E222A", extend = true },
 
-        -- Floating window background: slightly darker
-        NormalFloat = { bg = "#17191d" },
+        -- Floating window background: slightly darker (see the note above about
+        -- `extend` -- without it NormalFloat loses its foreground too).
+        NormalFloat = { bg = "#17191d", extend = true },
 
         -- Floating window border: gray foreground with dark background
         FloatBorder = { fg = "#E06C75", bg = "#1E222A" },

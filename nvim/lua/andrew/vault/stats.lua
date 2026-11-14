@@ -1,11 +1,14 @@
 local config = require("andrew.vault.config")
 local filter_utils = require("andrew.vault.filter_utils")
+local hl_util = require("andrew.vault.hl_util")
 local link_utils = require("andrew.vault.link_utils")
 local notify = require("andrew.vault.notify")
 local string_intern = require("andrew.vault.string_intern")
 local ui = require("andrew.vault.ui")
 
 local _lowercase_pool = string_intern.new(5000)
+
+local ns = vim.api.nvim_create_namespace("vault_stats")
 
 local M = {}
 
@@ -458,7 +461,7 @@ function M.show()
 
   -- Apply highlights
   for _, hl in ipairs(highlights) do
-    vim.api.nvim_buf_add_highlight(float.buf, -1, hl.hl, hl.line, hl.col_start, hl.col_end)
+    hl_util.add(float.buf, ns, hl.hl, hl.line, hl.col_start, hl.col_end)
   end
 end
 

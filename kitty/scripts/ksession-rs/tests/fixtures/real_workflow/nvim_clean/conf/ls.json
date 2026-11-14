@@ -1,0 +1,20 @@
+{
+  "tabs": [
+    {
+      "id": 1,
+      "title": "nvim",
+      "windows": [
+        {
+          "id": 1,
+          "title": "nvim",
+          "foreground": {
+            "text": "/home/u/.local/bin/nvim",
+            "exe": "nvim"
+          },
+          "cwd": "/home/u"
+        }
+      ]
+    }
+  ],
+  "version": "0.47.0"
+}

@@ -1,6 +1,7 @@
 local engine = require("andrew.vault.engine")
 local config = require("andrew.vault.config")
 local fm_parser = require("andrew.vault.frontmatter_parser")
+local fzf_look = require("andrew.utils.fzf_look")
 local link_utils = require("andrew.vault.link_utils")
 local notify = require("andrew.vault.notify")
 local log = require("andrew.vault.vault_log").scope("navigate")
@@ -155,7 +156,9 @@ local function get_weekly_reviews_sorted(callback)
     return
   end
 
-  find_by_subtype("weekly%-review", function(files)
+  -- A plain value: find_by_subtype() puts it in a ripgrep regex, where the
+  -- Lua-pattern spelling "weekly%-review" matches nothing.
+  find_by_subtype("weekly-review", function(files)
     local entries = {}
     for _, fpath in ipairs(files) do
       local week_of = fm_parser.file_field(fpath, "week_of")
@@ -281,11 +284,10 @@ function M.weekly_list()
     end
 
     local fzf = require("fzf-lua")
-    fzf.fzf_exec(display, {
-      prompt = "Weekly reviews> ",
+    fzf.fzf_exec(display, fzf_look.titled("Weekly reviews", {
       previewer = "builtin",
       actions = make_file_actions(path_map),
-    })
+    }))
   end)
 end
 
@@ -421,11 +423,10 @@ function M.review_list()
         end
 
         local fzf = require("fzf-lua")
-        fzf.fzf_exec(display, {
-          prompt = "All reviews> ",
+        fzf.fzf_exec(display, fzf_look.titled("All reviews", {
           previewer = "builtin",
           actions = make_file_actions(path_map),
-        })
+        }))
       end)
     end)
   end)
@@ -534,6 +535,19 @@ function M.setup()
     M.review_list()
   end, { desc = "Find: all reviews list", silent = true })
 
+  -- Daily: today / tomorrow / yesterday (prompt to create if missing)
+  vim.keymap.set("n", "<leader>vdt", function()
+    open_daily(engine.today())
+  end, { desc = "Vault: today's daily log", silent = true })
+
+  vim.keymap.set("n", "<leader>vdT", function()
+    open_daily(engine.date_offset_from(engine.today(), 1))
+  end, { desc = "Vault: tomorrow's daily log", silent = true })
+
+  vim.keymap.set("n", "<leader>vdy", function()
+    open_daily(engine.date_offset_from(engine.today(), -1))
+  end, { desc = "Vault: yesterday's daily log", silent = true })
+
   -- FileType autocmd removed: now dispatched via event_dispatch.lua
 
   -- Palette registrations
@@ -542,6 +556,18 @@ function M.setup()
   palette.register_command("VaultDailyPrev", "Navigate to previous daily log", "Navigate", M.daily_prev, "<leader>v[")
   palette.register_command("VaultDailyNext", "Navigate to next daily log", "Navigate", M.daily_next, "<leader>v]")
   palette.register_command("VaultDailyToday", "Open today's daily log", "Navigate", M.daily_today)
+  -- These three are keymap-only: no :VaultDailyTodayPrompt / :VaultDailyTomorrow
+  -- / :VaultDailyYesterday user command exists, so registering them as commands
+  -- advertised (and dispatched) a command that would fail. Register the keymaps.
+  palette.register_keymap("<leader>vdt", "Open today's daily log (prompt to create)", "Navigate", function()
+    open_daily(engine.today())
+  end)
+  palette.register_keymap("<leader>vdT", "Open tomorrow's daily log (prompt to create)", "Navigate", function()
+    open_daily(engine.date_offset_from(engine.today(), 1))
+  end)
+  palette.register_keymap("<leader>vdy", "Open yesterday's daily log (prompt to create)", "Navigate", function()
+    open_daily(engine.date_offset_from(engine.today(), -1))
+  end)
   palette.register_command("VaultDailyList", "List all daily logs", "Navigate", M.daily_list, "<leader>vfd")
   palette.register_command("VaultCarryForward", "Carry forward incomplete tasks into current daily log", "Navigate", function()
     require("andrew.vault.templates.daily_log").carry_forward_into_buffer(0)

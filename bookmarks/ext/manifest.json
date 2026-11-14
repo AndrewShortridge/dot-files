@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "bsession",
+  "version": "0.2.0",
+  "description": "Project browser sessions backed by ~/.config/bookmarks (native host: bsession)",
+  "permissions": [
+    "nativeMessaging",
+    "tabs",
+    "tabGroups",
+    "alarms"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "service_worker": "background.js"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "bsession@andrew.local",
+      "strict_min_version": "139.0"
+    }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0F0RDWZ718sOP/WwaT/nesZiqvn87zTCJPtMXeMTRk+V55XT2ovpGA6ueeldT1K7mesaQUyBn0z0D32ccHSH+lTBrT/DuW/QgDvctqWb8MAYHKP/WoveCP8ihbjyE+qBcY88uvuCtcuEquSfQpPc8US8UvxXILCLR9ObIPqJBNtqdMg5fIr0X9TEHccWBs5cRaHnoIDYPeio7HSvUMNMtY0INRlZ54pFBNF0o2l1ADqWEL+CpwrSRp5chdrsOntx9HqHqWnuTV2Fz33uPyrv1+LnZ2reWjcgbEfH4y00XO/9K9MgWomOBYU9AOCfn9pI50y+5qJ0n6awBMqZgUWObQIDAQAB"
+}

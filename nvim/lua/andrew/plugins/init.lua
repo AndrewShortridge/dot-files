@@ -83,9 +83,9 @@ return {
   -- Shows indentation levels with vertical lines
   require("andrew.plugins.indent-blankline"),
 
-  -- Tab/buffer line for managing multiple tabs
-  -- Shows open tabs with close buttons and status indicators
-  require("andrew.plugins.bufferline"),
+  -- Window labels: file icon and name at the top-right of every split
+  -- (the tabline itself is andrew/utils/tabline.lua, set up from init.lua)
+  require("andrew.plugins.incline"),
 
   -- Highlight and search for TODO, FIXME, HACK, etc. comments
   -- Keybindings: ]t (next), [t (previous), <leader>ft (fuzzy search)
@@ -96,15 +96,11 @@ return {
   require("andrew.plugins.trouble"),
 
   -- Maximize/restore the current split window
-  -- Keybinding: <leader>sm (toggle maximization)
+  -- Keybinding: <leader>wm (toggle maximization)
   require("andrew.plugins.vim-maximizer"),
 
-  -- Improved UI for vim.ui.input and vim.ui.select
-  -- Provides: better looking prompts and file pickers
-  require("andrew.plugins.dressing"),
-
   -- Substitute motion: replace text with ease
-  -- Keybindings: s (motion), ss (line), S (to EOL), x (visual)
+  -- Keybindings: gs (motion), gss (line), gS (to EOL), x gs (visual)
   require("andrew.plugins.substitute"),
 
   -- Add/change/delete surrounding pairs

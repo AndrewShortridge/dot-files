@@ -164,6 +164,16 @@ local function is_excluded(url)
   return false
 end
 
+--- True when the URL is configured to be skipped entirely.
+--- Exposed so callers can drop excluded URLs before queuing a batch: an
+--- excluded URL resolves its callback SYNCHRONOUSLY and is never cached, so a
+--- caller that re-runs itself from the callback would recurse forever.
+---@param url string
+---@return boolean
+function M.is_excluded(url)
+  return is_excluded(url)
+end
+
 
 -- ---------------------------------------------------------------------------
 -- Cache management

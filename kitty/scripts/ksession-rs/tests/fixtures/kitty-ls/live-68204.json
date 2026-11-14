@@ -1,0 +1,330 @@
+[
+  {
+    "active_tab_history": [
+      1
+    ],
+    "background_opacity": 1.0,
+    "id": 1,
+    "is_active": true,
+    "is_focused": true,
+    "last_focused": true,
+    "platform_window_id": null,
+    "tabs": [
+      {
+        "active_window_history": [
+          1
+        ],
+        "enabled_layouts": [
+          "splits",
+          "stack"
+        ],
+        "groups": [
+          {
+            "id": 1,
+            "windows": [
+              1
+            ]
+          }
+        ],
+        "id": 1,
+        "is_active": false,
+        "is_focused": false,
+        "layout": "splits",
+        "layout_opts": {
+          "default_axis_is_horizontal": true
+        },
+        "layout_state": {
+          "all_windows": {
+            "active_group_history": [
+              1
+            ],
+            "active_group_idx": 0,
+            "window_groups": [
+              {
+                "id": 1,
+                "window_ids": [
+                  1
+                ]
+              }
+            ]
+          },
+          "class": "Splits",
+          "opts": {
+            "default_axis_is_horizontal": true
+          },
+          "pairs": {
+            "one": 1
+          }
+        },
+        "title": "~",
+        "title_overridden": false,
+        "windows": [
+          {
+            "at_prompt": true,
+            "cmdline": [
+              "/bin/bash",
+              "--posix"
+            ],
+            "columns": 211,
+            "created_at": 1779459502833575853,
+            "cwd": "/home/andrew",
+            "env": {
+              "CLUTTER_IM_MODULE": "ibus",
+              "COLORTERM": "truecolor",
+              "COSMIC_PANEL_ANCHOR": "Bottom",
+              "COSMIC_PANEL_BACKGROUND": "ThemeDefault",
+              "COSMIC_PANEL_NAME": "Dock",
+              "COSMIC_PANEL_OUTPUT": "HDMI-A-1",
+              "COSMIC_PANEL_PADDING_OVERLAP": "0.5",
+              "COSMIC_PANEL_SIZE": "L",
+              "COSMIC_PANEL_SPACING": "0",
+              "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+              "DCONF_PROFILE": "/usr/share/dconf/profile/cosmic",
+              "DESKTOP_STARTUP_ID": "30au9Sc8u8ttTEdXA7XvS2HGkfvSIghW",
+              "DISPLAY": ":1",
+              "ENV": "/home/andrew/.local/kitty.app/lib/kitty/shell-integration/bash/kitty.bash",
+              "GDK_BACKEND": "wayland,x11",
+              "GSM_SKIP_SSH_AGENT_WORKAROUND": "true",
+              "GTK_IM_MODULE": "ibus",
+              "GTK_MODULES": "gail:atk-bridge",
+              "HISTFILE": "/home/andrew/.bash_history",
+              "HOME": "/home/andrew",
+              "IM_CONFIG_CHECK_ENV": "1",
+              "IM_CONFIG_PHASE": "1",
+              "KITTY_BASH_INJECT": "1",
+              "KITTY_BASH_UNEXPORT_HISTFILE": "1",
+              "KITTY_INSTALLATION_DIR": "/home/andrew/.local/kitty.app/lib/kitty",
+              "KITTY_LISTEN_ON": "unix:/tmp/kitty-68204",
+              "KITTY_PID": "68204",
+              "KITTY_PUBLIC_KEY": "1:`qx(Zp;~yfkPR&##rV&q^;Mh7&Y)ZhE}`4}FP(=P",
+              "KITTY_SHELL_INTEGRATION": "enabled",
+              "KITTY_WINDOW_ID": "1",
+              "LANG": "en_US.UTF-8",
+              "LIBVIRT_DEFAULT_URI": "qemu:///system",
+              "LOGNAME": "andrew",
+              "MANPATH": "/home/andrew/.local/kitty.app/share/man:",
+              "MOZ_ENABLE_WAYLAND": "1",
+              "PANEL_NOTIFICATIONS_FD": "21",
+              "PATH": "/home/andrew/.local/bin:/home/andrew/.cargo/bin:/home/andrew/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+              "PWD": "/home/andrew",
+              "QTWEBENGINE_DICTIONARIES_PATH": "/usr/share/hunspell-bdic/",
+              "QT_ACCESSIBILITY": "1",
+              "QT_AUTO_SCREEN_SCALE_FACTOR": "1",
+              "QT_ENABLE_HIGHDPI_SCALING": "1",
+              "QT_IM_MODULE": "ibus",
+              "QT_QPA_PLATFORM": "wayland;xcb",
+              "QT_QPA_PLATFORMTHEME": "qt6ct",
+              "SHELL": "/bin/bash",
+              "SHLVL": "0",
+              "SSH_AUTH_SOCK": "/run/user/1000/gcr/ssh",
+              "TERM": "xterm-kitty",
+              "TERMINFO": "/home/andrew/.local/kitty.app/lib/kitty/terminfo",
+              "USER": "andrew",
+              "WAYLAND_DISPLAY": "wayland-1",
+              "XDG_CURRENT_DESKTOP": "COSMIC",
+              "XDG_DATA_DIRS": "/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share",
+              "XDG_RUNTIME_DIR": "/run/user/1000",
+              "XDG_SEAT": "seat0",
+              "XDG_SESSION_DESKTOP": "COSMIC",
+              "XDG_SESSION_ID": "3",
+              "XDG_SESSION_TYPE": "wayland",
+              "XDG_VTNR": "1",
+              "XMODIFIERS": "@im=ibus",
+              "X_MINIMIZE_APPLET": "false",
+              "X_PRIVILEGED_WAYLAND_SOCKET": "331",
+              "_JAVA_AWT_WM_NONREPARENTING": "1"
+            },
+            "foreground_processes": [
+              {
+                "cmdline": [
+                  "/bin/bash",
+                  "--posix"
+                ],
+                "cwd": "/home/andrew",
+                "pid": 68224
+              }
+            ],
+            "has_activity_since_last_focus": false,
+            "id": 1,
+            "in_alternate_screen": false,
+            "is_active": true,
+            "is_focused": true,
+            "is_self": true,
+            "last_cmd_exit_status": 0,
+            "last_focused_at": 5673.592759604,
+            "last_reported_cmdline": "",
+            "lines": 50,
+            "needs_attention": false,
+            "neighbors": {},
+            "pid": 68224,
+            "session_name": "",
+            "title": "~",
+            "title_overridden": false,
+            "user_vars": {}
+          }
+        ]
+      },
+      {
+        "active_window_history": [
+          7
+        ],
+        "enabled_layouts": [
+          "splits",
+          "stack"
+        ],
+        "groups": [
+          {
+            "id": 3,
+            "windows": [
+              7
+            ]
+          }
+        ],
+        "id": 2,
+        "is_active": true,
+        "is_focused": true,
+        "layout": "splits",
+        "layout_opts": {
+          "default_axis_is_horizontal": true
+        },
+        "layout_state": {
+          "all_windows": {
+            "active_group_history": [
+              2,
+              3
+            ],
+            "active_group_idx": 0,
+            "window_groups": [
+              {
+                "id": 3,
+                "window_ids": [
+                  7
+                ]
+              }
+            ]
+          },
+          "class": "Splits",
+          "opts": {
+            "default_axis_is_horizontal": true
+          },
+          "pairs": {
+            "one": 3
+          }
+        },
+        "title": "ksession-save-prompt.sh",
+        "title_overridden": true,
+        "windows": [
+          {
+            "at_prompt": false,
+            "cmdline": [
+              "/bin/bash",
+              "--posix",
+              "-l"
+            ],
+            "columns": 211,
+            "created_at": 1779465180626532914,
+            "cwd": "/home/andrew/finance-ledger/03_Combined-Ledger/01_Combine-Ledgers",
+            "env": {
+              "CLUTTER_IM_MODULE": "ibus",
+              "COLORTERM": "truecolor",
+              "COSMIC_PANEL_ANCHOR": "Bottom",
+              "COSMIC_PANEL_BACKGROUND": "ThemeDefault",
+              "COSMIC_PANEL_NAME": "Dock",
+              "COSMIC_PANEL_OUTPUT": "HDMI-A-1",
+              "COSMIC_PANEL_PADDING_OVERLAP": "0.5",
+              "COSMIC_PANEL_SIZE": "L",
+              "COSMIC_PANEL_SPACING": "0",
+              "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+              "DCONF_PROFILE": "/usr/share/dconf/profile/cosmic",
+              "DESKTOP_STARTUP_ID": "30au9Sc8u8ttTEdXA7XvS2HGkfvSIghW",
+              "DISPLAY": ":1",
+              "ENV": "/home/andrew/.local/kitty.app/lib/kitty/shell-integration/bash/kitty.bash",
+              "GDK_BACKEND": "wayland,x11",
+              "GSM_SKIP_SSH_AGENT_WORKAROUND": "true",
+              "GTK_IM_MODULE": "ibus",
+              "GTK_MODULES": "gail:atk-bridge",
+              "HISTFILE": "/home/andrew/.bash_history",
+              "HOME": "/home/andrew",
+              "IM_CONFIG_CHECK_ENV": "1",
+              "IM_CONFIG_PHASE": "1",
+              "KITTY_BASH_INJECT": "1",
+              "KITTY_BASH_UNEXPORT_HISTFILE": "1",
+              "KITTY_INSTALLATION_DIR": "/home/andrew/.local/kitty.app/lib/kitty",
+              "KITTY_LISTEN_ON": "unix:/tmp/kitty-68204",
+              "KITTY_PID": "68204",
+              "KITTY_PUBLIC_KEY": "1:`qx(Zp;~yfkPR&##rV&q^;Mh7&Y)ZhE}`4}FP(=P",
+              "KITTY_SHELL_INTEGRATION": "enabled",
+              "KITTY_WINDOW_ID": "7",
+              "LANG": "en_US.UTF-8",
+              "LIBVIRT_DEFAULT_URI": "qemu:///system",
+              "LOGNAME": "andrew",
+              "MANPATH": "/home/andrew/.local/kitty.app/share/man:",
+              "MOZ_ENABLE_WAYLAND": "1",
+              "PANEL_NOTIFICATIONS_FD": "21",
+              "PATH": "/home/andrew/.local/bin:/home/andrew/.cargo/bin:/home/andrew/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+              "PWD": "/home/andrew/finance-ledger",
+              "QTWEBENGINE_DICTIONARIES_PATH": "/usr/share/hunspell-bdic/",
+              "QT_ACCESSIBILITY": "1",
+              "QT_AUTO_SCREEN_SCALE_FACTOR": "1",
+              "QT_ENABLE_HIGHDPI_SCALING": "1",
+              "QT_IM_MODULE": "ibus",
+              "QT_QPA_PLATFORM": "wayland;xcb",
+              "QT_QPA_PLATFORMTHEME": "qt6ct",
+              "SHELL": "/bin/bash",
+              "SHLVL": "0",
+              "SSH_AUTH_SOCK": "/run/user/1000/gcr/ssh",
+              "TERM": "xterm-kitty",
+              "TERMINFO": "/home/andrew/.local/kitty.app/lib/kitty/terminfo",
+              "USER": "andrew",
+              "WAYLAND_DISPLAY": "wayland-1",
+              "XDG_CURRENT_DESKTOP": "COSMIC",
+              "XDG_DATA_DIRS": "/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/home/andrew/.local/share/flatpak/exports/share",
+              "XDG_RUNTIME_DIR": "/run/user/1000",
+              "XDG_SEAT": "seat0",
+              "XDG_SESSION_DESKTOP": "COSMIC",
+              "XDG_SESSION_ID": "3",
+              "XDG_SESSION_TYPE": "wayland",
+              "XDG_VTNR": "1",
+              "XMODIFIERS": "@im=ibus",
+              "X_MINIMIZE_APPLET": "false",
+              "X_PRIVILEGED_WAYLAND_SOCKET": "331",
+              "_JAVA_AWT_WM_NONREPARENTING": "1"
+            },
+            "foreground_processes": [
+              {
+                "cmdline": [
+                  "nvim",
+                  "combine.py"
+                ],
+                "cwd": "/home/andrew/finance-ledger/03_Combined-Ledger/01_Combine-Ledgers",
+                "pid": 99208
+              }
+            ],
+            "has_activity_since_last_focus": false,
+            "id": 7,
+            "in_alternate_screen": true,
+            "is_active": true,
+            "is_focused": true,
+            "is_self": false,
+            "last_cmd_exit_status": 0,
+            "last_focused_at": 5706.347054211,
+            "last_reported_cmdline": "v combine.py ",
+            "lines": 50,
+            "needs_attention": false,
+            "neighbors": {},
+            "pid": 97221,
+            "session_name": "",
+            "title": "v combine.py ",
+            "title_overridden": false,
+            "user_vars": {
+              "ksession_idx": "1",
+              "ksession_win": "7"
+            }
+          }
+        ]
+      }
+    ],
+    "wm_class": "kitty",
+    "wm_name": "kitty"
+  }
+]

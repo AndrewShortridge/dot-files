@@ -16,12 +16,17 @@ local M = {}
 
 function M.search()
   track("", "all", "grep")
-  require("fzf-lua").live_grep(engine.vault_fzf_opts("Vault search"))
+  -- The one vault grep over every file type, so it runs on fzf-lua's general
+  -- rg_opts (plugins/fzf-lua.lua) instead of rg_base_opts(). Those carry
+  -- --hidden for code projects; `hidden = false` has fzf-lua strip it again,
+  -- which keeps .trash/ and other dot-directories out of vault results.
+  -- search_history.lua re-runs this search and must pass the same.
+  require("fzf-lua").live_grep(engine.vault_search_fzf_opts("Vault search", { hidden = false }))
 end
 
 function M.search_notes()
   track("", "all", "grep")
-  require("fzf-lua").live_grep(engine.vault_fzf_opts("Vault notes", {
+  require("fzf-lua").live_grep(engine.vault_search_fzf_opts("Vault notes", {
     rg_opts = engine.rg_base_opts(),
   }))
 end
@@ -53,7 +58,7 @@ function M.search_filtered()
 
     track("", selected.key, "grep")
 
-    require("fzf-lua").live_grep(engine.vault_fzf_opts("Vault [" .. selected.label .. "]", {
+    require("fzf-lua").live_grep(engine.vault_search_fzf_opts("Vault [" .. selected.label .. "]", {
       rg_opts = engine.rg_base_opts(selected.glob),
     }))
   end)
@@ -69,7 +74,7 @@ function M.search_by_type()
 
     track(choice, "all", "type")
 
-    require("fzf-lua").grep(engine.vault_fzf_opts("Vault type [" .. choice .. "]", {
+    require("fzf-lua").grep(engine.vault_search_fzf_opts("Vault type [" .. choice .. "]", {
       search = "^type:\\s+" .. choice,
       no_esc = true,
       rg_opts = engine.rg_base_opts(),

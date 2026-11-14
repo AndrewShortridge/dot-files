@@ -164,14 +164,24 @@ return {
       local root_markers = { ".git", ".fortls", "code" }
       local path = vim.fn.expand("%:p:h")
 
-      while path ~= "/" do
+      -- Terminate on a FIXED POINT, not just on "/". link_utils.lua_dirname
+      -- returns its argument unchanged when the pattern finds no parent, and it
+      -- does that at the first level below root: lua_dirname("/tmp") == "/tmp".
+      -- The old `while path ~= "/"` therefore span forever for any file with no
+      -- marker anywhere above it (e.g. /tmp/scratch/foo.f90), hanging nvim hard.
+      -- Latent until the linter actually started running.
+      while path ~= "/" and path ~= "" do
         for _, marker in ipairs(root_markers) do
           local marker_path = path .. "/" .. marker
           if vim.fn.isdirectory(marker_path) == 1 or vim.fn.filereadable(marker_path) == 1 then
             return path
           end
         end
-        path = lua_dirname(path)
+        local parent = lua_dirname(path)
+        if parent == path then
+          break
+        end
+        path = parent
       end
       return vim.fn.expand("%:p:h")
     end

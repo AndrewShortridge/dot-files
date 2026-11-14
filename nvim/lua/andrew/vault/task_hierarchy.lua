@@ -4,6 +4,7 @@
 local engine = require("andrew.vault.engine")
 local config = require("andrew.vault.config")
 local cleanup = require("andrew.vault.resource_cleanup")
+local hl_util = require("andrew.vault.hl_util")
 local filter_utils = require("andrew.vault.filter_utils")
 local notify = require("andrew.vault.notify")
 local ui = require("andrew.vault.ui")
@@ -156,16 +157,9 @@ function M.render_completion_vtext(bufnr)
         local root_line_0 = root.line - 1 -- 0-indexed
         local last_line_0 = last_descendant_line(root) - 1 -- 0-indexed
         if tracker:has_invalid_in_range(root_line_0, last_line_0 + 1) then
-          -- Clear existing extmark at root line before re-rendering
-          local existing = vim.api.nvim_buf_get_extmarks(
-            bufnr, ns,
-            { root_line_0, 0 },
-            { root_line_0, -1 },
-            {}
-          )
-          for _, mark in ipairs(existing) do
-            vim.api.nvim_buf_del_extmark(bufnr, ns, mark[1])
-          end
+          -- Clear existing extmark on the root line before re-rendering.
+          -- Whole-line clear (end exclusive) matches the prior get+del loop.
+          vim.api.nvim_buf_clear_namespace(bufnr, ns, root_line_0, root_line_0 + 1)
 
           local done, total = M.completion_stats(root)
           local label, hl
@@ -377,7 +371,7 @@ local function apply_highlights(buf, highlights)
   for _, hl in ipairs(highlights) do
     local row, col_start, col_end, group = hl[1], hl[2], hl[3], hl[4]
     if row < vim.api.nvim_buf_line_count(buf) then
-      vim.api.nvim_buf_add_highlight(buf, ns, group, row, col_start, col_end)
+      hl_util.add(buf, ns, group, row, col_start, col_end)
     end
   end
 end

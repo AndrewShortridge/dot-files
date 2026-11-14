@@ -1,4 +1,5 @@
 local engine = require("andrew.vault.engine")
+local hl_util = require("andrew.vault.hl_util")
 local notify = require("andrew.vault.notify")
 local ui = require("andrew.vault.ui")
 local config = require("andrew.vault.config")
@@ -35,6 +36,8 @@ function M.local_graph()
     notify.not_vault_file()
     return
   end
+
+  local buf_path = vim.api.nvim_buf_get_name(0)
 
   local state = graph_filter.state
   local predicate = graph_filter.build_predicate(state)
@@ -109,7 +112,7 @@ function M.local_graph()
   for _, hl in ipairs(highlights) do
     local row, col_start, col_end, group = hl[1], hl[2], hl[3], hl[4]
     if row < #rendered_lines then
-      local ok, err = pcall(vim.api.nvim_buf_add_highlight, buf, ns, group, row, col_start, col_end)
+      local ok, err = hl_util.add_safe(buf, ns, group, row, col_start, col_end)
       if not ok then log.debug("highlight failed at row %d: %s", row, err) end
     end
   end

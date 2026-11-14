@@ -12,9 +12,14 @@ local line_tracker = require("andrew.vault.line_tracker")
 local line_parse = require("andrew.vault.line_parse_cache")
 local semantic = require("andrew.vault.semantic_resolution")
 local render = require("andrew.vault.render_diff")
+local render_arena = require("andrew.vault.render_arena")
+local viewport = require("andrew.vault.viewport")
 local config = require("andrew.vault.config")
 local log = require("andrew.vault.vault_log").scope("pipeline")
 local profiler = require("andrew.vault.memory_profiler")
+-- vault_index does NOT require any pipeline module, so a top-level require is
+-- non-circular (the per-run lazy require was over-cautious).
+local vault_index = require("andrew.vault.vault_index")
 
 local M = {}
 
@@ -32,6 +37,13 @@ local _consumers_registered = false
 --- Register a render consumer (replaces per-module buffer scanning).
 ---@param consumer RenderConsumer
 function M.register_consumer(consumer)
+  -- Precompute the token-type lookup set once (token_types never changes) so
+  -- the per-line consumer loop can skip rebuilding it on every run.
+  local type_set = {}
+  for _, tt in ipairs(consumer.token_types or {}) do
+    type_set[tt] = true
+  end
+  consumer._type_set = type_set
   _consumers[#_consumers + 1] = consumer
   table.sort(_consumers, function(a, b) return (a.priority or 50) < (b.priority or 50) end)
 end
@@ -57,12 +69,24 @@ function M.run(bufnr, code_excl, opts)
   local stop = profiler.start_timer("pipeline.run")
   ensure_consumers()
 
-  -- Lazy-require vault_index to avoid circular deps at load time
-  local vault_index = require("andrew.vault.vault_index")
-
   -- Layer 0: determine what changed
-  local dirty_lines = line_tracker.consume(bufnr)
+  local dirty_lines, shifts = line_tracker.consume(bufnr)
   local index = vault_index.current()
+  local index_gen = index and index._generation or 0
+
+  -- Apply any pending row-shifts (insert/delete edits) to the line-keyed
+  -- caches BEFORE re-parsing, so off-screen cache entries stay correctly
+  -- numbered and only the bounded dirty region is re-tokenized. Shifts are
+  -- applied in arrival order. Guarded so partial rollout stays safe.
+  if shifts then
+    for _, s in ipairs(shifts) do
+      if line_parse.shift_lines then line_parse.shift_lines(bufnr, s.start_row, s.delta) end
+      if semantic.shift_lines then semantic.shift_lines(bufnr, s.start_row, s.delta) end
+      -- render needs old_end_row: extmarks on the directly-replaced span are not
+      -- auto-tracked by delta, so they must be recreated rather than renumbered.
+      if render.shift_lines then render.shift_lines(bufnr, s.start_row, s.delta, s.old_end_row) end
+    end
+  end
 
   -- When opts.full is set (e.g., toggle-on, manual refresh), force full reparse/render
   if opts and opts.full then
@@ -77,11 +101,29 @@ function M.run(bufnr, code_excl, opts)
     end
   end
 
+  -- No-op scroll fast path: an attached buffer with no pending edit yields an
+  -- EMPTY (non-nil) dirty list and nil shifts. When the semantic cache is also
+  -- current (index unchanged), there is nothing to reparse/resolve/render — the
+  -- newly-visible region on large buffers is handled by run_prefetch, not here.
+  -- Skip the O(N) line_parse.update / semantic.resolve / apply_diff walks.
+  -- Gated by config.pipeline.skip_empty_runs (default true) so it can be disabled.
+  local skip_empty = config.pipeline.skip_empty_runs
+  if skip_empty == nil then skip_empty = true end
+  if skip_empty
+    and not (opts and opts.full)
+    and dirty_lines
+    and #dirty_lines == 0
+    and shifts == nil
+    and not semantic.is_stale(bufnr, index_gen)
+  then
+    stop()
+    return
+  end
+
   -- Layer 1: re-parse changed lines (or all if dirty_lines is nil)
   line_parse.update(bufnr, dirty_lines, code_excl)
 
   -- Layer 2: re-resolve changed tokens
-  local index_gen = index and index._generation or 0
   if semantic.is_stale(bufnr, index_gen) then
     -- Index changed: re-resolve everything
     semantic.resolve(bufnr, nil, line_parse, index)
@@ -95,41 +137,86 @@ function M.run(bufnr, code_excl, opts)
   if dirty_lines then
     for _, ln in ipairs(dirty_lines) do line_set[ln] = true end
   else
-    -- Full: all cached lines are "changed" for diffing purposes
+    -- Full: render all lines for small buffers, but restrict large buffers to
+    -- the viewport + margin. apply_diff only touches extmarks whose line is in
+    -- line_set, so off-screen highlights persist until scroll/prefetch
+    -- re-renders them lazily — no missed highlights within the viewport.
     local total = vim.api.nvim_buf_line_count(bufnr)
-    for i = 0, total - 1 do line_set[i] = true end
+    local threshold = config.viewport.full_buffer_threshold or 200
+    if total <= threshold then
+      for i = 0, total - 1 do line_set[i] = true end
+    else
+      -- get_margin_range returns 0-indexed start, exclusive end; for a
+      -- non-current window it returns 0,total (i.e. full).
+      local s, e = viewport.get_margin_range(bufnr)
+      local last = math.min(e - 1, total - 1)
+      for i = s, last do line_set[i] = true end
+    end
   end
 
+  local arena = opts and opts.arena
   local all_specs = {}
-  for _, consumer in ipairs(_consumers) do
-    -- Build a set of token types this consumer handles for fast lookup
-    local type_set = {}
-    for _, tt in ipairs(consumer.token_types) do
-      type_set[tt] = true
-    end
-
-    for ln in pairs(line_set) do
-      local resolved = semantic.get_resolved(bufnr, ln)
-      -- Filter to token types this consumer handles
-      local relevant = {}
-      for _, rt in ipairs(resolved) do
-        if type_set[rt.token.type] then
-          relevant[#relevant + 1] = rt
-        end
-      end
-
-      if #relevant > 0 then
-        local ok, specs = pcall(consumer.render, ln, relevant)
-        if ok and specs then
-          for _, spec in ipairs(specs) do
-            spec.ns = consumer.ns
-            all_specs[#all_specs + 1] = spec
+  -- Line-outer / consumer-inner: resolve each line ONCE (semantic.get_resolved
+  -- was previously called once per (line x consumer) = ~4x redundant). Lines
+  -- with no resolved tokens (blank/plain — the common case) get a single
+  -- get_resolved call returning the shared EMPTY sentinel and are skipped
+  -- before the consumer loop. Consumer dispatch order is preserved because
+  -- _consumers is sorted by priority once at registration, so iterating it in
+  -- inner position yields the same per-line dispatch order as before.
+  for ln in pairs(line_set) do
+    local resolved = semantic.get_resolved(bufnr, ln)
+    -- resolved lists are always built as sequences, so [1] == nil means empty.
+    if resolved[1] ~= nil then
+      for _, consumer in ipairs(_consumers) do
+        -- type_set was precomputed at registration (token_types never changes).
+        local type_set = consumer._type_set
+        -- Filter to token types this consumer handles. Allocate `relevant`
+        -- lazily on the first match (arena-pooled when available) so lines with
+        -- no matching tokens cost no table allocation.
+        local relevant
+        for _, rt in ipairs(resolved) do
+          if type_set[rt.token.type] then
+            if not relevant then
+              relevant = arena and render_arena.alloc_table(arena) or {}
+            end
+            relevant[#relevant + 1] = rt
           end
-        elseif not ok then
-          log.warn("consumer %s render error on line %d: %s", consumer.name, ln, specs)
+        end
+
+        if relevant then
+          local ok, specs = pcall(consumer.render, ln, relevant)
+          if ok and specs then
+            for _, spec in ipairs(specs) do
+              spec.ns = consumer.ns
+              all_specs[#all_specs + 1] = spec
+            end
+          elseif not ok then
+            log.warn("consumer %s render error on line %d: %s", consumer.name, ln, specs)
+          end
         end
       end
     end
+  end
+
+  -- A `full` run is an explicit "repaint from scratch" (highlight toggle-on,
+  -- :Vault*HLRefresh, colorscheme change). Those callers may have cleared a
+  -- consumer namespace out of band (hl_coord.make_toggle wipes mod.ns directly),
+  -- which leaves render_diff's shadow copy claiming those extmarks still exist —
+  -- the diff then sees "no change" and re-paints NOTHING, so toggling a highlight
+  -- group back on never restored it. Drop the shadow and wipe the namespaces over
+  -- the range we are about to re-render so the specs below are applied fresh.
+  if opts and opts.full then
+    local lo, hi
+    for ln in pairs(line_set) do
+      if not lo or ln < lo then lo = ln end
+      if not hi or ln > hi then hi = ln end
+    end
+    if lo then
+      for _, consumer in ipairs(_consumers) do
+        pcall(vim.api.nvim_buf_clear_namespace, bufnr, consumer.ns, lo, hi + 1)
+      end
+    end
+    render.invalidate(bufnr)
   end
 
   render.apply_diff(bufnr, all_specs, line_set)

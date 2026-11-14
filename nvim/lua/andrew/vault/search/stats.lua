@@ -121,6 +121,15 @@ function M.warn_unknown_fields(ast, idx)
       vim.list_extend(known, fm_keys)
     end
   end
+  -- Add inline field keys observed in the index (parity with frontmatter):
+  -- prevents valid inline field names from being "corrected" away and lets
+  -- them be suggested.
+  if idx and idx.all_inline_field_keys then
+    local inline_keys = idx:all_inline_field_keys()
+    if inline_keys then
+      vim.list_extend(known, inline_keys)
+    end
+  end
 
   local field_nodes = M.collect_field_nodes(ast)
   local known_set = {}
@@ -190,7 +199,9 @@ function M.aggregate_field_values(field_name)
     end
 
     if val ~= nil then
-      -- Handle list values (e.g., tags stored as arrays)
+      -- Frontmatter AND inline_fields values are scalar-or-list: a string when
+      -- the key appeared once, a string[] when it appeared 2+ times. Enumerate
+      -- each element as its own candidate value; never insert the table itself.
       if type(val) == "table" then
         for _, v in ipairs(val) do
           local sv = tostring(v)

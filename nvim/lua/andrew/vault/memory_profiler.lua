@@ -41,6 +41,16 @@ local function noop_guard()
   return not _enabled
 end
 
+--- Whether the profiler is actually collecting.
+--- Public so command wrappers can report "disabled" instead of claiming success
+--- for a call that silently no-ops. Reads the live flag rather than
+--- `config.profiler.enable`, which is only a *request*: it is copied into
+--- `_enabled` by setup(), and setup() may not have run at all.
+---@return boolean
+function M.is_enabled()
+  return _enabled
+end
+
 -- ───────────────────────────────────────────────────────────────────────────
 -- Initialization
 -- ───────────────────────────────────────────────────────────────────────────
@@ -211,7 +221,7 @@ function M.diff()
         size_delta = curr_c.size - prev_c.size,
         new_hits = curr_c.hits - prev_c.hits,
         new_misses = curr_c.misses - prev_c.misses,
-        new_evictions = curr_c.evictions - prev_c.evictions,
+        new_evictions = (curr_c.evictions or 0) - (prev_c.evictions or 0),
         bytes_delta = (curr_c.bytes or 0) - (prev_c.bytes or 0),
       }
     end
@@ -309,7 +319,7 @@ function M.render_dashboard()
     local misses = spec.get_misses()
     local total = hits + misses
     local hit_pct = total > 0 and string.format("%.1f%%", (hits / total) * 100) or "-"
-    local evictions = spec.get_evictions()
+    local evictions = spec.get_evictions() or 0
     local gen = spec.get_generation and spec.get_generation()
     local bytes = spec.get_bytes and spec.get_bytes()
     local max_bytes = spec.get_max_bytes and spec.get_max_bytes()
@@ -319,7 +329,7 @@ function M.render_dashboard()
     if bytes and max_bytes and max_bytes > 0 then
       bytes_str = string.format("%.1f/%.1fM", bytes / (1024 * 1024), max_bytes / (1024 * 1024))
     end
-    add("%-24s %5d/%-6s %8s %10d %12s %5s", name, size, cap_str, hit_pct, evictions, bytes_str, gen_str)
+    add("%-24s %5d/%-6s %8s %10d %12s %5s", name, size or 0, cap_str, hit_pct, evictions or 0, bytes_str, gen_str)
   end
   sep()
 

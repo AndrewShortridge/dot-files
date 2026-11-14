@@ -25,6 +25,29 @@ local math_types = {
   math_environment = true,
 }
 
+-- Argument groups that follow a command token / `\begin{name}`.
+-- The latex grammar puts an OPTIONAL arg inside the `begin` node
+-- (`\begin{figure}[htbp]`) but leaves a REQUIRED one as a SIBLING of `begin`
+-- (`\begin{tabular}` + `{c|c}`), so `ie` has to walk past those siblings or the
+-- column spec ends up inside the "inner" range.
+local arg_group_types = {
+  brack_group = true,
+  brack_group_argc = true,
+  brack_group_key_value = true,
+  brack_group_text = true,
+  curly_group = true,
+  curly_group_author_list = true,
+  curly_group_glob_pattern = true,
+  curly_group_impl = true,
+  curly_group_key_value = true,
+  curly_group_path = true,
+  curly_group_path_list = true,
+  curly_group_spec = true,
+  curly_group_text = true,
+  curly_group_text_list = true,
+  curly_group_uri = true,
+}
+
 -- =============================================================================
 -- TreeSitter helpers
 -- =============================================================================
@@ -75,6 +98,14 @@ end
 local function select_range(sr, sc, er, ec)
   if sr > er or (sr == er and sc > ec) then
     return
+  end
+  -- `normal! v` below TOGGLES visual mode, so when this runs from an existing
+  -- visual selection (`vil`, `vac`, ...) it would EXIT visual mode instead of
+  -- starting a fresh one. Leave visual mode first so the `v` always enters it.
+  -- Operator-pending mode ("no" / "nov" / "noV" / "no^V") must NOT be escaped:
+  -- the pending operator needs the range this function is about to build.
+  if vim.fn.mode():find("^[vV\22]") then
+    vim.cmd("normal! \27")
   end
   vim.api.nvim_win_set_cursor(0, { sr + 1, sc })
   vim.cmd("normal! v")
@@ -170,6 +201,18 @@ function M.inside_env(target)
   local _, _, br, bc = begin_node:range() -- bc is exclusive end col of \begin{...}
   local er, ec = end_node:range() -- er,ec is start of \end{...}
 
+  -- Skip the environment's REQUIRED argument groups, which the grammar emits as
+  -- siblings of `begin` rather than children (`\begin{tabular}` + `{c|c}`).
+  -- Only absorb groups that butt directly against what we have consumed so far,
+  -- so a body that merely STARTS with a group (on the next line, or after a
+  -- space) is left inside the selection.
+  for child in node:iter_children() do
+    local csr, csc, cer, cec = child:range()
+    if arg_group_types[child:type()] and csr == br and csc == bc then
+      br, bc = cer, cec
+    end
+  end
+
   -- If \begin{...} ends at EOL, start inner range on next line
   local begin_line = vim.api.nvim_buf_get_lines(0, br, br + 1, false)[1] or ""
   if bc >= #begin_line then
@@ -239,20 +282,79 @@ function M.inside_math()
   end
 end
 
---- "around command": select full \cmd{...} including command name and arguments.
-function M.around_cmd()
+--- Range of the command token plus its contiguous argument groups, or nil when
+--- `node` is not a command.
+---
+--- Only `\foo{...}` gets its own `generic_command` node; the grammar gives every
+--- command it KNOWS a dedicated node type instead (`section`, `caption`,
+--- `label`, `class_include`, ...), and for the sectioning ones that node spans
+--- the whole section body. Detect a command structurally -- the first child is
+--- either a `command_name` (generic) or a literal `\foo` token -- and stop at
+--- the last argument group that butts against the token, so `ac` on
+--- `\section{Sec}` selects the command, not the rest of the document.
+local function command_range(node)
+  local nt = node:type()
+  -- `\begin{...}` / `\end{...}` are structurally commands but belong to `ae`/`ie`.
+  if nt == "begin" or nt == "end" then
+    return nil
+  end
+  local first = node:child(0)
+  if not first then
+    return nil
+  end
+  local ft = first:type()
+  if ft ~= "command_name" and ft:sub(1, 1) ~= "\\" then
+    return nil
+  end
+  local sr, sc = node:range()
+  local _, _, er, ec = first:range()
+  local idx = 1
+  while true do
+    local child = node:child(idx)
+    if not child or not arg_group_types[child:type()] then
+      break
+    end
+    local csr, csc, cer, cec = child:range()
+    if csr ~= er or csc ~= ec then
+      break
+    end
+    er, ec = cer, cec
+    idx = idx + 1
+  end
+  return sr, sc, er, ec
+end
+
+--- Nearest ancestor command whose token+arguments actually CONTAIN the cursor.
+--- The containment test matters because `section` spans its whole body: without
+--- it, `ac` in ordinary prose would select the heading far above.
+--- Returns node, sr, sc, er, ec (ec exclusive) or nil.
+local function enclosing_command()
   local ok, node = pcall(vim.treesitter.get_node, { bufnr = 0 })
   if not ok or not node then
-    return
+    return nil
   end
+  local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+  row = row - 1
   while node do
-    if node:type() == "generic_command" then
-      local sr, sc, er, ec = node:range()
-      select_range(sr, sc, er, ec - 1)
-      return
+    local sr, sc, er, ec = command_range(node)
+    if sr then
+      local after_start = row > sr or (row == sr and col >= sc)
+      local before_end = row < er or (row == er and col < ec)
+      if after_start and before_end then
+        return node, sr, sc, er, ec
+      end
     end
     node = node:parent()
   end
+end
+
+--- "around command": select full \cmd{...} including command name and arguments.
+function M.around_cmd()
+  local _, sr, sc, er, ec = enclosing_command()
+  if not sr then
+    return
+  end
+  select_range(sr, sc, er, ec - 1)
 end
 
 --- "inside command": select content within the nearest curly_group of a command.
@@ -263,16 +365,30 @@ function M.inside_cmd()
     return
   end
   while node do
+    -- `curly_group` is only ever a command argument: `\begin{itemize}` /
+    -- `\end{itemize}` use `curly_group_text`, so they stay excluded without
+    -- having to whitelist the parent's node type (which would drop `\section`,
+    -- `\caption`, ... -- they are not `generic_command`).
     if node:type() == "curly_group" then
-      local parent = node:parent()
-      -- Only match curly_group inside commands, not inside \begin{...}/\end{...}
-      if parent and parent:type() == "generic_command" then
-        local sr, sc, er, ec = node:range()
-        select_range(sr, sc + 1, er, ec - 2) -- skip { and }
-        return
-      end
+      local sr, sc, er, ec = node:range()
+      select_range(sr, sc + 1, er, ec - 2) -- skip { and }
+      return
     end
     node = node:parent()
+  end
+
+  -- Cursor is on the command NAME rather than inside an argument
+  -- (`\sec|tion{Sec}`): fall back to that command's first argument group.
+  local cmd = enclosing_command()
+  if not cmd then
+    return
+  end
+  for child in cmd:iter_children() do
+    if child:type() == "curly_group" then
+      local sr, sc, er, ec = child:range()
+      select_range(sr, sc + 1, er, ec - 2)
+      return
+    end
   end
 end
 
@@ -307,7 +423,11 @@ local function find_inline_math(line, col)
   -- Pair them up and find which pair contains col
   for j = 1, #dollars - 1, 2 do
     local open, close = dollars[j], dollars[j + 1]
-    if col > open and col < close then
+    -- Inclusive of both `$`: `am`/`im` in .tex work with the cursor sitting on
+    -- `\[` or `\]` (the treesitter node covers the delimiters), so markdown must
+    -- not silently no-op when the cursor is on a `$`. Adjacent zones stay
+    -- unambiguous because the delimiters are distinct characters.
+    if col >= open and col <= close then
       return open, close
     end
   end
@@ -337,6 +457,18 @@ local function find_display_math(row)
     local l = vim.api.nvim_buf_get_lines(0, r, r + 1, false)[1] or ""
     if l:match("^%s*%$%$$") then
       return open_row, r
+    end
+  end
+
+  -- The cursor line is itself a `$$` with no `$$` after it: it is the CLOSING
+  -- delimiter, not the opening one. Retry upward so `am`/`im` also work from the
+  -- closing line (from the opening line the loop above already succeeds).
+  if open_row == row then
+    for r = row - 1, 0, -1 do
+      local l = vim.api.nvim_buf_get_lines(0, r, r + 1, false)[1] or ""
+      if l:match("^%s*%$%$$") then
+        return r, row
+      end
     end
   end
   return nil

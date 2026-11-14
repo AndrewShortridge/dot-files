@@ -6,6 +6,8 @@ local config = wezterm.config_builder()
 
 -- Setting the leader key to "CTRL+a"
 config.leader = { key = "a", mods = "CTRL", timeout_milliseconds = 1000 }
+-- config.leader = { key = "a", mods = "CTRL|SHIFT", timeout_milliseconds = 1000 }
+-- config.leader = { key = "a", mods = "ALT|SHIFT", timeout_milliseconds = 1000 }
 
 -- For example, changing the initial geometry for new windows:
 config.initial_cols = 120
@@ -30,6 +32,7 @@ config.automatically_reload_config = true
 
 -- Remove the tab bar from the top
 config.enable_tab_bar = true
+config.hide_tab_bar_if_only_one_tab = true
 
 -- Allow resizable borders
 config.window_decorations = "RESIZE"

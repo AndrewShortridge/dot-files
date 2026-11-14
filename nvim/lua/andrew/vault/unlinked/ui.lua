@@ -2,6 +2,7 @@ local engine = require("andrew.vault.engine")
 local wrapper = require("andrew.vault.unlinked.wrapper")
 local notify = require("andrew.vault.notify")
 local fzf = require("fzf-lua")
+local fzf_look = require("andrew.utils.fzf_look")
 
 local M = {}
 
@@ -60,7 +61,7 @@ end
 --- unlinked_mentions, and vault_unlinked_mentions.
 ---@param entries string[]
 ---@param entry_map table<string, table>
----@param opts { prompt: string, multi?: boolean, all_results?: table[], with_wikilinks?: boolean }
+---@param opts { label: string, multi?: boolean, all_results?: table[], with_wikilinks?: boolean }
 function M.open_vault_picker(entries, entry_map, opts)
   local fzf_opts = {
     ["--no-sort"] = "",
@@ -94,13 +95,12 @@ function M.open_vault_picker(entries, entry_map, opts)
     end
   end
 
-  fzf.fzf_exec(entries, {
-    prompt = opts.prompt,
+  fzf.fzf_exec(entries, fzf_look.titled(opts.label, {
     previewer = "builtin",
     cwd = engine.vault_path,
     fzf_opts = fzf_opts,
     actions = actions,
-  })
+  }))
 end
 
 --- Open a buffer-level fzf picker for auto-linking.
@@ -118,8 +118,7 @@ function M.open_buffer_picker(bufnr, buffer_matches)
     entry_map[entry] = m
   end
 
-  fzf.fzf_exec(entries, {
-    prompt = "Auto-link buffer (" .. #buffer_matches .. " mentions)> ",
+  fzf.fzf_exec(entries, fzf_look.titled("Auto-link buffer (" .. #buffer_matches .. " mentions)", {
     fzf_opts = { ["--multi"] = "" },
     actions = {
       ["default"] = function(selected)
@@ -139,7 +138,7 @@ function M.open_buffer_picker(bufnr, buffer_matches)
         notify_wrapped(wrapped, true)
       end,
     },
-  })
+  }))
 end
 
 return M

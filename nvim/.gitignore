@@ -1,1 +1,11 @@
 lazy/
+# Compiled spell files (auto-generated from .add files)
+spell/*.spl
+
+# Vault index cache (auto-generated)
+.vault-index/
+**/.vault-index/
+
+# Apptainer images: 1.5GB build artifacts, rebuilt via container/build.sh
+container/*.sif
+container/*.sif.*

@@ -23,6 +23,8 @@ function M.Index.new(vault_path)
   local self = setmetatable({}, M.Index)
   self.vault_path = vault_path:gsub("/$", "") -- strip trailing slash
   self.pages = {}                              -- rel_path -> page
+  self._tag_index = {}                         -- tag (+ slash-bounded prefixes) -> rel_path[]
+  self._folder_index = {}                      -- folder (+ ancestor prefixes) -> rel_path[]
   return self
 end
 
@@ -51,6 +53,10 @@ function M.Index:build_from_vault_index()
     -- Populate inlinks from vault_index (single source of truth for resolution)
     self:_populate_inlinks_from_vi(vi)
   end
+
+  -- Build the tag/folder source indexes so FROM #tag / FROM "folder" resolve
+  -- without scanning every page on each query execution.
+  self:_rebuild_source_indexes()
 
   return self
 end
@@ -123,6 +129,11 @@ function M.Index:_entry_to_page(entry)
   end
 
   if entry.inline_fields then
+    -- inline_fields[k] is scalar-or-list (string | string[]): a string when the
+    -- key appeared once, a string[] when it appeared 2+ times. _parse_scalar_from_vi
+    -- handles both — re-parsing a scalar into a typed value, or re-parsing every
+    -- element of a list (preserving list semantics for Dataview contains()/etc.,
+    -- with each element typed consistently). Mirrors the frontmatter merge above.
     for k, v in pairs(entry.inline_fields) do
       page[k] = self:_parse_scalar_from_vi(v)
     end
@@ -131,6 +142,16 @@ function M.Index:_entry_to_page(entry)
   -- Aliases are stored at page level (used by query expressions)
   if entry.aliases and #entry.aliases > 0 then
     page.aliases = entry.aliases
+  end
+
+  -- Dataview exposes the note's tags under the bare name `tags` as well as
+  -- `file.tags`, and `TABLE tags` / `FLATTEN tags AS t` are everyday queries.
+  -- The frontmatter merge above deliberately skips the "tags" key (the index's
+  -- normalised list is authoritative), which left page.tags nil so every such
+  -- query rendered an em dash / zero rows. Fill it from the index list unless a
+  -- `tags::` inline field already claimed the name.
+  if page.tags == nil then
+    page.tags = file.tags
   end
 
   return page
@@ -179,10 +200,74 @@ function M.Index:_parse_scalar_from_vi(val)
   return val
 end
 
---- Incrementally update the index by rebuilding from the vault index.
+--- Incrementally update the index from the vault index.
+--- When a partial invalidation context is supplied (a small batch of changed/
+--- added/deleted files), only the affected pages are re-converted via
+--- _entry_to_page — the dominant cost (frontmatter/inline scalar re-parse,
+--- outlink Link conversion). Inlinks are then re-read from the vault index for
+--- every page; the vault index is the single source of truth for inlink
+--- resolution and maintains them incrementally, so reading them back is cheap
+--- (Link allocation only) and yields a result byte-identical to a full rebuild.
+--- A "full" tier (or missing ctx) falls back to a complete rebuild.
+---@param vi? table VaultIndex instance (defaults to vault_index.current())
+---@param ctx? table InvalidationContext with changed/added/deleted_paths + tier
 ---@return table self
-function M.Index:update_incremental()
+function M.Index:update_incremental(vi, ctx)
+  if ctx and ctx.tier ~= "full" then
+    return self:apply_partial(vi, ctx)
+  end
   return self:build_from_vault_index()
+end
+
+--- Apply a partial (scoped) update for a small batch of changed files.
+--- Re-converts only the touched pages and removes deleted ones, then refreshes
+--- inlinks for ALL pages from the vault index (which already maintains them
+--- incrementally). Producing the same inlinks as a full rebuild requires
+--- reading every page's inlinks, because a changed file's link target — an
+--- otherwise untouched page — also gains/loses an inlink in the vault index.
+---@param vi table VaultIndex instance
+---@param ctx table InvalidationContext
+---@return table self
+function M.Index:apply_partial(vi, ctx)
+  vi = vi or vault_index.current()
+  if not (vi and vi:is_ready()) then
+    return self:build_from_vault_index()
+  end
+
+  self.pages = self.pages or {}
+  self._mtimes = self._mtimes or {}
+
+  -- Remove deleted pages.
+  for _, rel_path in ipairs(ctx.deleted_paths or {}) do
+    self.pages[rel_path] = nil
+    self._mtimes[rel_path] = nil
+  end
+
+  -- Re-convert changed and added pages from their (now-current) entries.
+  local files = vi:snapshot_files()
+  for _, list in ipairs({ ctx.changed_paths, ctx.added_paths }) do
+    for _, rel_path in ipairs(list or {}) do
+      local entry = files[rel_path]
+      if entry then
+        self.pages[rel_path] = self:_entry_to_page(entry)
+        self._mtimes[rel_path] = entry.mtime
+      end
+      -- Entry-less touched paths are skipped; a later full rebuild reconciles.
+    end
+  end
+
+  -- Refresh inlinks for every page. The vault index keeps _inlinks correct
+  -- incrementally, but link targets of changed files (untouched pages) may have
+  -- gained/lost inlinks, so all pages must be re-read to stay identical to a
+  -- full rebuild.
+  self:_populate_inlinks_from_vi(vi)
+
+  -- A full rebuild of the source indexes keeps them perfectly consistent with
+  -- self.pages at negligible cost (O(total tags + folders)); the dominant
+  -- partial-update cost is the per-page _entry_to_page / inlink work above.
+  self:_rebuild_source_indexes()
+
+  return self
 end
 
 --- Get a page by its vault-relative path.
@@ -202,20 +287,95 @@ function M.Index:all_pages()
   return result
 end
 
+--- Rebuild the tag and folder source indexes from self.pages.
+---
+--- These inverted maps let pages_in_folder / pages_with_tag resolve a candidate
+--- rel_path set in O(matches) instead of scanning every page on each query.
+---
+--- The maps are built so a lookup reproduces the OLD linear-scan semantics
+--- byte-for-byte:
+---  * Folders: a page in folder F is matched by FROM "X" iff F == X or F starts
+---    with "X/". Equivalently, the page is a result for every slash-bounded
+---    ancestor-prefix of F (and F itself). So we register the page's rel_path
+---    under F and each ancestor prefix. Root pages (folder == "") register under
+---    key "" only.
+---  * Tags: case-sensitive parent matching (mirrors vault_index.tag_matches with
+---    no opts). A tag query T matches a page tagged t iff t == T or t starts with
+---    T.."/". So we register the page under every slash-bounded prefix of each of
+---    its tags (the tag itself plus each ancestor prefix). We do NOT register bare
+---    non-prefix segments and do NOT lowercase — those would alter match
+---    semantics versus tag_matches.
+--- Per-key dedup is by rel_path so a page registered via two tags/prefixes that
+--- collapse to the same key appears once.
+function M.Index:_rebuild_source_indexes()
+  local tag_index = {}
+  local folder_index = {}
+
+  -- Register rel_path under key in `index`, deduping by rel_path.
+  local function register(index, key, rel_path)
+    local bucket = index[key]
+    if not bucket then
+      index[key] = { rel_path }
+    else
+      -- Dedup: a page can map to the same key via multiple source values
+      -- (e.g. tags "project" and "project/active" both yield key "project").
+      for i = 1, #bucket do
+        if bucket[i] == rel_path then return end
+      end
+      bucket[#bucket + 1] = rel_path
+    end
+  end
+
+  for rel_path, page in pairs(self.pages) do
+    local file = page.file
+
+    -- Folder + every ancestor prefix.
+    local folder = file.folder or ""
+    register(folder_index, folder, rel_path)
+    local slash = folder:find("/", 1, true)
+    while slash do
+      register(folder_index, folder:sub(1, slash - 1), rel_path)
+      slash = folder:find("/", slash + 1, true)
+    end
+
+    -- Each tag + each of its slash-bounded prefixes.
+    for _, t in ipairs(file.tags or {}) do
+      register(tag_index, t, rel_path)
+      local s = t:find("/", 1, true)
+      while s do
+        register(tag_index, t:sub(1, s - 1), rel_path)
+        s = t:find("/", s + 1, true)
+      end
+    end
+  end
+
+  self._tag_index = tag_index
+  self._folder_index = folder_index
+end
+
+--- Map a list of rel_paths to their pages, skipping any that are absent.
+---@param rel_paths string[]|nil
+---@return table[] list of pages
+function M.Index:_pages_from_rel_paths(rel_paths)
+  local result = {}
+  if not rel_paths then return result end
+  for _, rp in ipairs(rel_paths) do
+    local page = self.pages[rp]
+    if page then result[#result + 1] = page end
+  end
+  return result
+end
+
 --- Return pages whose file.folder starts with the given folder prefix.
 ---@param folder string e.g. "Projects"
 ---@return table[] list of pages
 function M.Index:pages_in_folder(folder)
   -- Normalise: strip trailing slash
   folder = folder:gsub("/$", "")
-  local result = {}
-  for _, page in pairs(self.pages) do
-    local pf = page.file.folder
-    if pf == folder or pf:sub(1, #folder + 1) == folder .. "/" then
-      result[#result + 1] = page
-    end
-  end
-  return result
+  -- _folder_index is initialised in new() and rebuilt on every (re)build, so a
+  -- lookup against it is always available (empty before the first build, which
+  -- matches the empty self.pages at that point).
+  return self:_pages_from_rel_paths(self._folder_index[folder])
 end
 
 --- Return pages that have the given tag (without #).
@@ -224,13 +384,10 @@ end
 ---@param tag string tag without # prefix
 ---@return table[] list of pages
 function M.Index:pages_with_tag(tag)
-  local result = {}
-  for _, page in pairs(self.pages) do
-    if vault_index.tag_matches(page.file.tags, tag) then
-      result[#result + 1] = page
-    end
-  end
-  return result
+  -- _tag_index is initialised in new() and rebuilt on every (re)build, so a
+  -- lookup against it is always available (empty before the first build, which
+  -- matches the empty self.pages at that point).
+  return self:_pages_from_rel_paths(self._tag_index[tag])
 end
 
 --- Resolve a source AST node from the Dataview parser into a list of pages.
@@ -384,15 +541,27 @@ end
 ---@param vi table VaultIndex instance
 function M.Index:_populate_inlinks_from_vi(vi)
   for rel_path, page in pairs(self.pages) do
-    local vi_inlinks = vi:get_inlinks(rel_path)
-    local inlinks = {}
-    for _, il in ipairs(vi_inlinks) do
-      local link = Link.new(il.path, il.display, il.embed or false)
-      link.path_lower = il.path_lower
-      inlinks[#inlinks + 1] = link
-    end
-    page.file.inlinks = inlinks
+    self:_populate_inlinks_for(vi, rel_path, page)
   end
+end
+
+--- Populate inlinks for a single page from the vault index.
+--- Extracted from _populate_inlinks_from_vi so a single page can be refreshed
+--- without iterating every page.
+---@param vi table VaultIndex instance
+---@param rel_path string vault-relative path of the page
+---@param page? table the page (defaults to self.pages[rel_path])
+function M.Index:_populate_inlinks_for(vi, rel_path, page)
+  page = page or self.pages[rel_path]
+  if not page then return end
+  local vi_inlinks = vi:get_inlinks(rel_path)
+  local inlinks = {}
+  for _, il in ipairs(vi_inlinks) do
+    local link = Link.new(il.path, il.display, il.embed or false)
+    link.path_lower = il.path_lower
+    inlinks[#inlinks + 1] = link
+  end
+  page.file.inlinks = inlinks
 end
 
 return M

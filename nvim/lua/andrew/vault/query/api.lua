@@ -75,7 +75,35 @@ PageArray.__index = function(self, key)
   if key == "length" then
     return rawget(self, "_len")
   end
-  return PageArray[key]
+  local method = PageArray[key]
+  if method ~= nil then return method end
+  -- Dataview DataArray "implicit field access": reading an unknown named key
+  -- maps that field over every item and flattens one level, so
+  -- `dv.pages(...).file.tasks` yields every task of every page (the canonical
+  -- `dv.taskList(...)` input). Numeric keys never reach here (they are raw
+  -- table slots), and "_"-prefixed keys stay non-magic so internal bookkeeping
+  -- such as `_len` / `_char_bag` still reads as nil.
+  if type(key) ~= "string" or key:sub(1, 1) == "_" then return nil end
+  local out = {}
+  for i = 1, rawget(self, "_len") or 0 do
+    local item = rawget(self, i)
+    local v = nil
+    if type(item) == "table" then
+      local ok, got = pcall(function() return item[key] end)
+      if ok then v = got end
+    end
+    if v ~= nil then
+      if type(v) == "table" and getmetatable(v) == nil and v[1] ~= nil then
+        -- plain array value: flatten one level
+        for _, e in ipairs(v) do out[#out + 1] = e end
+      elseif getmetatable(v) == PageArray then
+        for j = 1, rawget(v, "_len") or 0 do out[#out + 1] = rawget(v, j) end
+      else
+        out[#out + 1] = v
+      end
+    end
+  end
+  return PageArray.new(out)
 end
 
 --- Length operator returns the stored count.
@@ -115,7 +143,13 @@ PageArray.filter = PageArray.where
 
 --- Sort items.
 ---
---- If `fn_or_field` is a function it is used as a less-than comparator.
+--- If `fn_or_field` is a function its ARITY decides how it is used:
+---   * 1 parameter  -> Dataview `DataArray.sort(p => key)` key extractor; items
+---                     are ordered by `types.compare()` of the extracted keys
+---                     (honouring `dir`).
+---   * 2 parameters -> comparator `(a, b)`; a number result is read JS-style
+---                     (`< 0` means a before b), a boolean result is used as a
+---                     plain Lua less-than predicate.
 --- If it is a string the items are sorted by that field (dot-paths like
 --- `"file.name"` are supported).  `dir` may be `"asc"` (default) or `"desc"`.
 ---
@@ -130,7 +164,24 @@ function PageArray:sort(fn_or_field, dir)
   end
 
   if type(fn_or_field) == "function" then
-    table.sort(copy, fn_or_field)
+    local nparams = 2
+    local ok_info, info = pcall(debug.getinfo, fn_or_field, "u")
+    if ok_info and info and info.nparams then nparams = info.nparams end
+    if nparams == 1 then
+      -- Key extractor (Dataview DataArray.sort semantics)
+      local descending = dir == "desc"
+      table.sort(copy, function(a, b)
+        local cmp = types.compare(fn_or_field(a), fn_or_field(b))
+        if descending then return cmp > 0 end
+        return cmp < 0
+      end)
+    else
+      table.sort(copy, function(a, b)
+        local r = fn_or_field(a, b)
+        if type(r) == "number" then return r < 0 end
+        return r and true or false
+      end)
+    end
   elseif type(fn_or_field) == "string" then
     local field = fn_or_field
     local descending = dir == "desc"
@@ -530,6 +581,68 @@ function M.create_env(index, current_file_path)
     output:add({ type = "list", items = items })
   end
 
+  --- Render a task list (checkbox list).
+  ---
+  --- Accepts a flat array of tasks, a `PageArray`, or a grouped array
+  --- (`{ { name = string, tasks = {...} }, ... }`).  Each task is coerced to a
+  --- record with `text` (string) and `completed` (strict boolean).  `nil`
+  --- input renders an empty task list.
+  ---@param tasks table|nil
+  function dv.taskList(tasks)
+    -- Normalise a single task-like value into { text, completed }.
+    local function coerce_task(t)
+      if type(t) == "table" then
+        return {
+          text = tostring(t.text ~= nil and t.text or (t.line ~= nil and t.line or "")),
+          completed = t.completed == true or t.checked == true,
+        }
+      end
+      return { text = tostring(t), completed = false }
+    end
+
+    -- Unwrap a PageArray (or any array) into a plain Lua array.
+    local function to_array(v)
+      if type(v) == "table" and getmetatable(v) == PageArray then
+        return v:array()
+      end
+      return v
+    end
+
+    local groups = {}
+
+    if tasks ~= nil then
+      local arr = to_array(tasks)
+      if type(arr) == "table" then
+        -- Detect grouped input: every element has a `tasks` field.
+        local is_grouped = #arr > 0
+        for _, g in ipairs(arr) do
+          if type(g) ~= "table" or g.tasks == nil then
+            is_grouped = false
+            break
+          end
+        end
+
+        if is_grouped then
+          for _, g in ipairs(arr) do
+            local out_tasks = {}
+            for _, t in ipairs(to_array(g.tasks) or {}) do
+              out_tasks[#out_tasks + 1] = coerce_task(t)
+            end
+            groups[#groups + 1] = { name = tostring(g.name or ""), tasks = out_tasks }
+          end
+        else
+          local out_tasks = {}
+          for _, t in ipairs(arr) do
+            out_tasks[#out_tasks + 1] = coerce_task(t)
+          end
+          groups[#groups + 1] = { name = "", tasks = out_tasks }
+        end
+      end
+    end
+
+    output:add({ type = "task_list", groups = groups })
+  end
+
   --- Render a paragraph of text.
   ---@param text string
   function dv.paragraph(text)
@@ -689,6 +802,33 @@ function M.create_env(index, current_file_path)
     ---@return number
     count = function(list)
       return #list
+    end,
+
+    --- Runtime implementation of the JS `+` operator (overloaded). When either
+    --- operand is a string, concatenate (coercing the other via tostring);
+    --- otherwise perform numeric addition. The transpiler rewrites every JS `+`
+    --- into a call to this helper (see js2lua/expression.lua).
+    ---@param a any
+    ---@param b any
+    ---@return string|number
+    __js_add = function(a, b)
+      if type(a) == "string" or type(b) == "string" then
+        return tostring(a) .. tostring(b)
+      end
+      return a + b
+    end,
+
+    --- Runtime implementation of JS optional chaining `?.`. The transpiler
+    --- rewrites `obj?.prop` into `__index_safe(obj, "prop")` (and computed
+    --- `obj?.[expr]` into `__index_safe(obj, expr)`). The LHS is passed as a
+    --- single already-evaluated argument, so it is evaluated exactly once at the
+    --- call site. Returns nil when the LHS is nil instead of erroring.
+    ---@param obj any
+    ---@param key any
+    ---@return any
+    __index_safe = function(obj, key)
+      if obj == nil then return nil end
+      return obj[key]
     end,
   }
 

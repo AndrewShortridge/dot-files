@@ -14,6 +14,7 @@ local log = require("andrew.vault.vault_log").scope("summary_tree")
 --- @field tag_counts table<string, number>
 --- @field tag_file_counts table<string, number>
 --- @field fm_key_counts table<string, number>
+--- @field inline_key_counts table<string, number>
 --- @field task_count number
 --- @field task_status_counts table<string, number>
 --- @field link_count number
@@ -55,6 +56,13 @@ local function entry_to_summary(entry)
     end
   end
 
+  local inline_key_counts = {}
+  if entry.inline_fields then
+    for key, _ in pairs(entry.inline_fields) do
+      inline_key_counts[key] = 1
+    end
+  end
+
   local task_status_counts = {}
   for _, task in ipairs(entry.tasks or {}) do
     local mark = task.status or " "
@@ -66,6 +74,7 @@ local function entry_to_summary(entry)
     tag_counts = tag_counts,
     tag_file_counts = tag_file_counts,
     fm_key_counts = fm_key_counts,
+    inline_key_counts = inline_key_counts,
     task_count = #(entry.tasks or {}),
     task_status_counts = task_status_counts,
     link_count = #(entry.outlinks or {}),
@@ -84,6 +93,7 @@ local function compose_summaries(children)
     tag_counts = {},
     tag_file_counts = {},
     fm_key_counts = {},
+    inline_key_counts = {},
     task_count = 0,
     task_status_counts = {},
     link_count = 0,
@@ -107,6 +117,9 @@ local function compose_summaries(children)
     for key, count in pairs(child.fm_key_counts) do
       summary.fm_key_counts[key] = (summary.fm_key_counts[key] or 0) + count
     end
+    for key, count in pairs(child.inline_key_counts) do
+      summary.inline_key_counts[key] = (summary.inline_key_counts[key] or 0) + count
+    end
     for mark, count in pairs(child.task_status_counts) do
       summary.task_status_counts[mark] = (summary.task_status_counts[mark] or 0) + count
     end
@@ -122,6 +135,7 @@ local function make_dir_node(path)
     tag_counts = {},
     tag_file_counts = {},
     fm_key_counts = {},
+    inline_key_counts = {},
     task_count = 0,
     task_status_counts = {},
     link_count = 0,
@@ -175,6 +189,7 @@ function SummaryTree:_recompute_ancestors(segments)
     dir_node.tag_counts = composed.tag_counts
     dir_node.tag_file_counts = composed.tag_file_counts
     dir_node.fm_key_counts = composed.fm_key_counts
+    dir_node.inline_key_counts = composed.inline_key_counts
     dir_node.task_count = composed.task_count
     dir_node.task_status_counts = composed.task_status_counts
     dir_node.link_count = composed.link_count
@@ -228,6 +243,7 @@ function SummaryTree:_recompute_node(path)
   node.tag_counts = composed.tag_counts
   node.tag_file_counts = composed.tag_file_counts
   node.fm_key_counts = composed.fm_key_counts
+  node.inline_key_counts = composed.inline_key_counts
   node.task_count = composed.task_count
   node.task_status_counts = composed.task_status_counts
   node.link_count = composed.link_count
@@ -268,6 +284,93 @@ function SummaryTree:remove(rel_path)
   parent.children[filename] = nil
   self:_recompute_ancestors(segments)
   self:_prune_empty(segments)
+end
+
+-- Scalar summary fields summed up the ancestor chain.
+local SCALAR_FIELDS = {
+  "file_count",
+  "task_count",
+  "link_count",
+  "heading_count",
+  "alias_count",
+  "block_id_count",
+}
+-- Map summary fields accumulated (and bucket-pruned) up the ancestor chain.
+local MAP_FIELDS = {
+  "tag_counts",
+  "tag_file_counts",
+  "fm_key_counts",
+  "inline_key_counts",
+  "task_status_counts",
+}
+
+--- Apply a +new -old summary delta to one ancestor directory node in place.
+--- Buckets that drop to 0 are pruned so vim.tbl_keys() stays accurate (a tag
+--- whose count reaches 0 must vanish from all_tags()).
+--- @param node SummaryNode
+--- @param old_summary table|nil leaf summary being removed (nil for an add)
+--- @param new_summary table|nil leaf summary being added (nil for a remove)
+local function apply_node_delta(node, old_summary, new_summary)
+  for _, field in ipairs(SCALAR_FIELDS) do
+    node[field] = node[field]
+      + (new_summary and new_summary[field] or 0)
+      - (old_summary and old_summary[field] or 0)
+  end
+  for _, field in ipairs(MAP_FIELDS) do
+    local bucket = node[field]
+    if old_summary then
+      for k, count in pairs(old_summary[field]) do
+        local v = (bucket[k] or 0) - count
+        bucket[k] = v ~= 0 and v or nil
+      end
+    end
+    if new_summary then
+      for k, count in pairs(new_summary[field]) do
+        local v = (bucket[k] or 0) + count
+        bucket[k] = v ~= 0 and v or nil
+      end
+    end
+  end
+end
+
+--- Incrementally update a single file's contribution to every ancestor.
+--- Replaces the leaf and applies a per-field +new -old delta along the ancestor
+--- chain (O(depth * fields-changed)) instead of re-merging every sibling at each
+--- ancestor like update()/remove() — avoids an O(N-vault) sweep per save.
+--- @param rel_path string Relative file path
+--- @param old_entry table|nil previous vault index entry (nil if newly added)
+--- @param new_entry table|nil new vault index entry (nil if deleted)
+function SummaryTree:apply_delta(rel_path, old_entry, new_entry)
+  local segments, filename = split_path(rel_path)
+  if not filename then
+    log.warn("apply_delta called with directory path: " .. rel_path)
+    return
+  end
+
+  local old_summary = old_entry and entry_to_summary(old_entry)
+  local new_summary = new_entry and entry_to_summary(new_entry)
+
+  -- Place/replace/remove the leaf node.
+  local parent = self:_ensure_dirs(segments)
+  if new_entry then
+    new_summary.path = rel_path
+    new_summary.is_leaf = true
+    new_summary.children = nil
+    parent.children[filename] = new_summary
+  else
+    if not parent.children[filename] then return end
+    parent.children[filename] = nil
+  end
+
+  -- Walk root->leaf-parent and apply the delta to each ancestor dir node.
+  local node = self.root
+  apply_node_delta(node, old_summary, new_summary)
+  for _, seg in ipairs(segments) do
+    node = node.children[seg]
+    apply_node_delta(node, old_summary, new_summary)
+  end
+
+  if not new_entry then self:_prune_empty(segments) end
 end
 
 --- Begin a batch update. Defers ancestor recomputation until batch_end().
@@ -378,6 +481,7 @@ function SummaryTree:_snapshot(node)
     tag_counts = node.tag_counts,
     tag_file_counts = node.tag_file_counts,
     fm_key_counts = node.fm_key_counts,
+    inline_key_counts = node.inline_key_counts,
     task_count = node.task_count,
     task_status_counts = node.task_status_counts,
     link_count = node.link_count,

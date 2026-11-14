@@ -8,20 +8,30 @@ local vault_queries = require("andrew.vault.frontmatter_editor.vault_queries")
 
 local M = {}
 
---- Create a prefix-matching completion function from a list of candidates.
----@param candidates string[]
----@return function
-local function make_prefix_completion(candidates)
-  return function(_, line, _)
-    local matches = {}
-    local prefix = line:lower()
-    for _, v in ipairs(candidates) do
-      if v:lower():find(prefix, 1, true) == 1 then
-        matches[#matches + 1] = v
-      end
+--- Prefix-matching completion for vim.ui.input.
+--- `vim.ui.input({ completion = ... })` takes a `:h command-completion` STRING,
+--- not a Lua function (snacks.input feeds it straight to `getcompletion()`;
+--- dressing.nvim used to throw on a function). The candidates are parked in a
+--- module-level table and served through a `customlist,` global so the string
+--- form can reach them.
+local pending_candidates = {}
+
+function _G.__vault_fm_prefix_complete(arg_lead)
+  local matches = {}
+  local prefix = (arg_lead or ""):lower()
+  for _, v in ipairs(pending_candidates) do
+    if v:lower():find(prefix, 1, true) == 1 then
+      matches[#matches + 1] = v
     end
-    return matches
   end
+  return matches
+end
+
+---@param candidates string[]
+---@return string completion `customlist,...` spec for vim.ui.input
+local function make_prefix_completion(candidates)
+  pending_candidates = candidates
+  return "customlist,v:lua.__vault_fm_prefix_complete"
 end
 
 --- Select a value from a cycle field's allowed values.

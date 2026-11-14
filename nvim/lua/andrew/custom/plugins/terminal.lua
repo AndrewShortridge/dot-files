@@ -5,7 +5,10 @@
 -- Features:
 -- - Toggle visibility with <leader>tt
 -- - Preserves terminal session when hiding (session restoration)
--- - Auto-hides on terminal exit (configurable)
+-- - Auto-hides on terminal exit (configurable); the next toggle starts a fresh
+--   shell, since a terminal whose job has exited has no session to restore
+-- - Toggle reads the real window, so closing the float any other way
+--   (<C-w>c, <leader>wd, :q) still leaves <leader>tt working on one press
 -- - Rounded border with "Scratch Terminal" title
 -- - Exit terminal mode with <C-\><C-n> or jk
 --
@@ -128,12 +131,26 @@ function floating_terminal.open()
     -- Start terminal process
     floating_terminal.termpid = vim.fn.jobstart(floating_terminal.options.shell, { term = true })
 
-    -- Auto-hide on terminal exit (preserve session for reopening)
+    -- Auto-hide on terminal exit.
+    --
+    -- The window goes away immediately; the now-dead buffer is dropped on the
+    -- next tick so the NEXT toggle starts a fresh shell. Keeping it (which is
+    -- what this used to do) meant `<leader>tt` reopened a terminal whose job
+    -- had exited: it looked alive, accepted nothing, and the first keypress
+    -- made Neovim wipe the finished terminal buffer out from under the module,
+    -- after which the toggle needed two more presses to recover. There is no
+    -- session left to restore once the shell is gone -- that is what the
+    -- hide()/open() path above is for, and it never kills the job.
     if floating_terminal.options.hide_on_exit then
       vim.api.nvim_create_autocmd("TermClose", {
         buffer = floating_terminal.bufnr,
         callback = function()
           floating_terminal.hide()
+          -- Deferred: nvim_buf_delete on the buffer whose TermClose is firing
+          -- is not allowed from inside the callback.
+          vim.schedule(function()
+            floating_terminal.close()
+          end)
         end,
       })
     end
@@ -149,8 +166,10 @@ function floating_terminal.open()
   vim.wo[winid].cursorline = false
   vim.wo[winid].winblend = floating_terminal.options.winblend
 
-  -- Enter insert mode if not already in it
-  if not vim.opt_local.insertmode:get() then
+  -- Enter insert mode if not already in it. The old test read 'insertmode',
+  -- which was removed from Neovim (the option stub always reports false), so
+  -- ask the actual mode instead: "t" means we are already in terminal-insert.
+  if vim.api.nvim_get_mode().mode ~= "t" then
     vim.cmd("startinsert")
   end
 
@@ -190,8 +209,9 @@ function floating_terminal.close()
   end
 
   -- Terminate terminal process
-  if floating_terminal.termpid and vim.fn.jobwait({ floating_terminal.termpid }, 0) == 0 then
-    vim.fn.jobclose(floating_terminal.termpid)
+  local job_status = floating_terminal.termpid and vim.fn.jobwait({ floating_terminal.termpid }, 0)[1] or nil
+  if job_status == -1 then
+    vim.fn.jobstop(floating_terminal.termpid)
   end
 
   -- Delete buffer
@@ -205,10 +225,22 @@ function floating_terminal.close()
   floating_terminal.is_visible = false
 end
 
+-- Is the floating window actually on screen right now?
+--
+-- Asked of the window instead of trusting the cached `is_visible` flag: the
+-- float can be closed by anything Neovim offers -- `<C-w>c`, `<leader>wd`,
+-- `:q`, `:only` -- and none of those routes through hide(), so the flag stayed
+-- true while no window existed. toggle() then "hid" nothing and the terminal
+-- took TWO presses of <leader>tt to come back.
+-- @returns boolean
+function floating_terminal.is_open()
+  return floating_terminal.winid ~= nil and vim.api.nvim_win_is_valid(floating_terminal.winid)
+end
+
 -- Toggle terminal visibility
 -- Opens if hidden, hides if visible
 function floating_terminal.toggle()
-  if floating_terminal.is_visible then
+  if floating_terminal.is_open() then
     floating_terminal.hide()
   else
     floating_terminal.open()
@@ -225,11 +257,20 @@ function floating_terminal.restart()
 end
 
 -- Send text to the terminal
+--
+-- Gated on the JOB being alive, not on the window being visible: a hidden
+-- terminal is still running and its output accumulates in the buffer, so
+-- `:FloatingTerminal send make` after hiding the float is a reasonable thing to
+-- do. It used to require visibility and otherwise do nothing at all, with no
+-- message -- indistinguishable from the command being broken.
 -- @param input (string): Text to send followed by newline
 function floating_terminal.send_input(input)
-  if floating_terminal.is_visible and floating_terminal.termpid then
-    vim.fn.chansend(floating_terminal.termpid, input .. "\n")
+  local job = floating_terminal.termpid
+  if not job or vim.fn.jobwait({ job }, 0)[1] ~= -1 then
+    vim.notify("FloatingTerminal: no terminal running", vim.log.levels.WARN)
+    return
   end
+  vim.fn.chansend(job, input .. "\n")
 end
 
 -- =============================================================================
@@ -264,11 +305,17 @@ vim.api.nvim_create_user_command("FloatingTerminal", function(opts)
   end
 end, {
   nargs = "*",
-  complete = function(_, line)
+  -- Complete the SUBCOMMAND, so match against ArgLead (the word being typed)
+  -- and anchor at position 1. The old version took the second parameter
+  -- (CmdLine -- the whole ":FloatingTerminal o" line) and searched for THAT
+  -- inside each subcommand name, which can never match: `("open"):find(
+  -- "FloatingTerminal o", 1, true)` is nil. The result was a completion
+  -- function that always returned {}, so <Tab> offered nothing at all.
+  complete = function(arg_lead)
     local cmds = { "open", "close", "hide", "toggle", "restart", "send" }
     local matches = {}
     for _, cmd in ipairs(cmds) do
-      if cmd:find(line, 1, true) then
+      if arg_lead == "" or cmd:find(arg_lead, 1, true) == 1 then
         table.insert(matches, cmd)
       end
     end
@@ -284,3 +331,14 @@ end, {
 vim.keymap.set("n", "<leader>tt", function()
   floating_terminal.toggle()
 end, { desc = "Toggle floating terminal" })
+
+-- Toggle floating terminal with <C-/> (quick access, normal + terminal mode).
+-- <C-_> is the byte sequence many terminal emulators actually send for Ctrl-/,
+-- so map both for compatibility. Terminal-mode mapping lets <C-/> toggle the
+-- terminal back off from inside it.
+vim.keymap.set({ "n", "t" }, "<C-/>", function()
+  floating_terminal.toggle()
+end, { desc = "Toggle floating terminal" })
+vim.keymap.set({ "n", "t" }, "<C-_>", function()
+  floating_terminal.toggle()
+end, { desc = "which_key_ignore" })

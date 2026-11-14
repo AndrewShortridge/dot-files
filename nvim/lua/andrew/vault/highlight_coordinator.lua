@@ -106,23 +106,6 @@ local function cached_positions(cache_table, bufnr, scan_fn)
   return positions
 end
 
---- Get an arbitrary value from a changedtick-validated cache, computing on miss.
---- Generic version of cached_positions() for non-position data (e.g. footnote maps).
----@param cache_table table bufnr -> { tick, value } cache
----@param bufnr number
----@param compute_fn fun(bufnr: number): any function that computes the cached value
----@return any value
-function M.cached_value(cache_table, bufnr, compute_fn)
-  local tick = vim.api.nvim_buf_get_changedtick(bufnr)
-  local cached = cache_table[bufnr]
-  if cached and cached.tick == tick then
-    return cached.value
-  end
-  local value = compute_fn(bufnr)
-  cache_table[bufnr] = { tick = tick, value = value }
-  return value
-end
-
 --- Register a BufDelete autocmd that clears extmarks and optional caches.
 ---@param group number augroup id
 ---@param ns number namespace id
@@ -218,7 +201,7 @@ local _hl_handles = {} -- bufnr -> handle
 ---@return table record { bufnr, channel, cache }
 local function get_hl_state(bufnr)
   return _hl_entities:get_or_insert(bufnr, _hl_handles, function(b)
-    return { bufnr = b, channel = nil, cache = nil }
+    return { bufnr = b, channel = nil, cache = nil, scroll_timer = nil }
   end)
 end
 
@@ -400,6 +383,53 @@ local function run_prefetch(bufnr, start_line, end_line)
   if not ok then log.warn("run_prefetch failed: %s", err) end
 end
 
+--- Called by event_dispatch.lua on WinScrolled for vault markdown buffers.
+--- Viewport-only render on scroll (Phase 1: visible, Phase 2: prefetch zones).
+--- Receives precomputed ctx so it does NOT re-read buf/win or re-check is_vault.
+--- @param ctx { bufnr: number, winid: number }
+function M.on_win_scrolled(ctx)
+  local bufnr, winid = ctx.bufnr, ctx.winid
+
+  -- Phase 1: Visible zone (throttled ~scroll_throttle_ms to avoid per-tick re-render)
+  local st = get_hl_state(bufnr)
+  st.scroll_timer = cleanup.debounce(st.scroll_timer, config.viewport.scroll_throttle_ms, function()
+    if not vim.api.nvim_buf_is_valid(bufnr) then return end
+    M.schedule(bufnr, { full = false })
+  end)
+
+  -- Phase 2: Prefetch zones.
+  -- Advance viewport ranges SYNCHRONOUSLY each tick (cheap + memoized): embed's
+  -- on_win_scrolled runs after us on the same tick and reads _ranges/_prev_ranges
+  -- via newly_visible(); deferring this would break that ordering invariant.
+  viewport.refresh(winid)
+
+  -- Throttle the zone diff + prefetch dispatch (zone math runs once per
+  -- scroll_zone_throttle_ms window instead of every raw tick). The actual
+  -- prefetch is additionally prefetch_debounce_ms-debounced inside
+  -- schedule_prefetch, so the only observable change is fewer redundant zone
+  -- computations during continuous scroll; the settled tick dispatches identically.
+  st.prefetch_zone_timer = cleanup.debounce(st.prefetch_zone_timer, config.viewport.scroll_zone_throttle_ms, function()
+    if not vim.api.nvim_win_is_valid(winid) then return end
+    if not vim.api.nvim_buf_is_valid(bufnr) then return end
+
+    local zones = viewport.get_zones(winid)
+    local above_changed, below_changed =
+      viewport.prefetch_zones_changed(bufnr, winid, zones)
+
+    if above_changed and zones.above.end_line >= zones.above.start_line then
+      viewport.schedule_prefetch(bufnr, winid, "above", function()
+        run_prefetch(bufnr, zones.above.start_line, zones.above.end_line)
+      end)
+    end
+
+    if below_changed and zones.below.end_line >= zones.below.start_line then
+      viewport.schedule_prefetch(bufnr, winid, "below", function()
+        run_prefetch(bufnr, zones.below.start_line, zones.below.end_line)
+      end)
+    end
+  end)
+end
+
 -- Deferred profiler registration (safe: profiler may not be loaded yet)
 do
   local ok, profiler = pcall(require, "andrew.vault.memory_profiler")
@@ -433,6 +463,14 @@ local function cleanup_hl_state(bufnr, st)
   if st.channel then
     st.channel.handle.close()
   end
+  if st.scroll_timer then
+    cleanup.close_timer(st.scroll_timer)
+    st.scroll_timer = nil
+  end
+  if st.prefetch_zone_timer then
+    cleanup.close_timer(st.prefetch_zone_timer)
+    st.prefetch_zone_timer = nil
+  end
   viewport.clear_state(bufnr)
 end
 
@@ -452,37 +490,7 @@ function M.setup()
     end,
   })
 
-  -- Viewport-only render on scroll (Phase 1: visible, Phase 2: prefetch zones)
-  vim.api.nvim_create_autocmd("WinScrolled", {
-    group = _augroup,
-    callback = function()
-      local bufnr = vim.api.nvim_get_current_buf()
-      if vim.bo[bufnr].filetype == "markdown"
-        and engine.is_vault_buf(bufnr)
-      then
-        -- Phase 1: Visible zone (existing behavior, 200ms debounce)
-        M.schedule(bufnr, { full = false })
-
-        -- Phase 2: Prefetch zones (400ms debounce, both zones equal priority)
-        local winid = vim.api.nvim_get_current_win()
-        local zones = viewport.get_zones(winid)
-        local above_changed, below_changed =
-          viewport.prefetch_zones_changed(bufnr, winid, zones)
-
-        if above_changed and zones.above.end_line >= zones.above.start_line then
-          viewport.schedule_prefetch(bufnr, winid, "above", function()
-            run_prefetch(bufnr, zones.above.start_line, zones.above.end_line)
-          end)
-        end
-
-        if below_changed and zones.below.end_line >= zones.below.start_line then
-          viewport.schedule_prefetch(bufnr, winid, "below", function()
-            run_prefetch(bufnr, zones.below.start_line, zones.below.end_line)
-          end)
-        end
-      end
-    end,
-  })
+  -- WinScrolled dispatched via event_dispatch.lua (M.on_win_scrolled below).
 
   -- Re-render on cache invalidation
   vim.api.nvim_create_autocmd("User", {

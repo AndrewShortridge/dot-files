@@ -50,6 +50,10 @@ return {
   -- All trouble commands are prefixed with <leader>x
 
   keys = {
+    -- NOTE <leader>cs / <leader>cS are NOT here. LazyVim points them at Trouble's
+    -- symbols and LSP views; this config uses the fzf-lua symbol pickers for
+    -- both instead (andrew.lsp_keymaps). Trouble keeps the <leader>x group.
+
     -- Workspace diagnostics (all files)
     {
       "<leader>xw",

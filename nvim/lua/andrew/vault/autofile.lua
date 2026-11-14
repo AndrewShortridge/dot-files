@@ -22,9 +22,17 @@ M.type_map = {
 
 local project_types = { task = true, meeting = true, simulation = true, analysis = true, finding = true, ["project-dashboard"] = true }
 
-function M.get_expected_dir(note_type, fm)
+function M.get_expected_dir(note_type, fm, filepath)
   local base = M.type_map[note_type]
   if not base then return nil end
+
+  -- Literature notes get a per-paper folder so the PDF can sit beside the note
+  if note_type == "literature" and filepath then
+    local stem = link_utils.get_tail(filepath):gsub("%.md$", "")
+    if stem ~= "" then
+      return base .. "/" .. stem
+    end
+  end
 
   local project = fm["parent-project"] and link_utils.wikilink_display_name(tostring(fm["parent-project"]))
   if project and project ~= "" and project_types[note_type] then
@@ -61,7 +69,7 @@ function M.move(bufnr)
 
   local result = fm_parser.parse_buffer_cached(bufnr)
   local fm = result and result.fields or {}
-  local expected = fm["type"] and M.get_expected_dir(fm["type"], fm)
+  local expected = fm["type"] and M.get_expected_dir(fm["type"], fm, filepath)
   if not expected then return end
   if already_correct(filepath, expected) then
     notify.info("already in correct directory")
@@ -97,7 +105,7 @@ function M.suggest(bufnr)
 
   local result = fm_parser.parse_buffer_cached(bufnr)
   local fm = result and result.fields or {}
-  local expected = fm["type"] and M.get_expected_dir(fm["type"], fm)
+  local expected = fm["type"] and M.get_expected_dir(fm["type"], fm, filepath)
   if not expected then return end
   if already_correct(filepath, expected) then return end
 

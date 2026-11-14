@@ -1,0 +1,5 @@
+{
+    "label": "Peach Puff",
+    "light": { "fg": "#2c1a0b", "bg": "#cf9e70", "link": "#155e63" },
+    "dark":  { "fg": "#f0cdb0", "bg": "#2b2019", "link": "#e8a06a" }
+}

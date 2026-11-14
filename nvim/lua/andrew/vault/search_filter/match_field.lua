@@ -2,6 +2,7 @@
 
 local M = {}
 
+local bloom_filter = require("andrew.vault.bloom_filter")
 local config = require("andrew.vault.config")
 local date_utils = require("andrew.vault.date_utils")
 local file_cache = require("andrew.vault.file_cache")
@@ -23,6 +24,7 @@ local get_generic_field = match_helpers.get_generic_field
 local in_num_range = match_helpers.in_num_range
 local parse_entry_date = filter_utils.get_entry_timestamp
 local tonumber_cached = match_helpers.tonumber_cached
+local to_list = match_helpers.to_list
 local same_day = date_utils.same_day
 
 --- Get or cache a lowered string value on an AST node.
@@ -265,6 +267,78 @@ local function resolve_date_cached(val, ctx)
   return date_utils.resolve_date(val)
 end
 
+--- Collect candidate timestamps for a date-typed special field (created/
+--- modified/day), drawing from the index-derived timestamp PLUS any inline
+--- `[field:: value]` entries (scalar or list). Inline values are parsed as ISO
+--- datetimes. This widens the value SOURCE so an inline date can satisfy the
+--- query when frontmatter/index lacks one, while preserving the existing
+--- index-derived behavior (that timestamp is always the first candidate).
+---@param entry table VaultIndexEntry
+---@param field "created"|"modified"|"day"
+---@return number[] candidate timestamps
+local function collect_date_candidates(entry, field)
+  local out = {}
+  local idx_ts = parse_entry_date(entry, field)
+  if idx_ts then out[#out + 1] = idx_ts end
+  local inline = entry.inline_fields
+  if inline and inline[field] ~= nil then
+    for _, raw in ipairs(to_list(inline[field])) do
+      local ts = date_utils.parse_iso_datetime(tostring(raw))
+      if ts then out[#out + 1] = ts end
+    end
+  end
+  return out
+end
+
+--- Match a single candidate field value against the operator/filter.
+--- Applies identical typed coercion (numeric → ISO date → lexicographic) used
+--- by the generic-field branch. Factored out so list-valued fields can test
+--- each element through the same logic as a scalar value.
+---@param node table AST node (used for cached_lower storage)
+---@param entry_val any single candidate value (scalar)
+---@param op string comparison operator
+---@param filter_val string raw filter value
+---@param filter_val2 string|nil second filter value (for ranges)
+---@param num_filter number|nil pre-converted numeric filter value
+---@param ctx table|nil FilterContext
+---@return boolean
+local function match_generic_value(node, entry_val, op, filter_val, filter_val2, num_filter, ctx)
+  local num_entry = tonumber(entry_val)
+
+  if op == ".." then
+    if num_entry and num_filter then
+      local num_filter2 = tonumber_cached(filter_val2, ctx)
+      if not num_filter2 then return false end
+      return in_num_range(num_entry, num_filter, num_filter2)
+    end
+    -- String range: lexicographic, case-insensitive
+    local lo = cached_lower(node, "_range_lo_lower", filter_val)
+    local hi = cached_lower(node, "_range_hi_lower", filter_val2 or "")
+    local s = tostring(entry_val):lower()
+    return lo <= s and s <= hi
+  end
+
+  if op == "=" then
+    if num_entry and num_filter then
+      return num_entry == num_filter
+    end
+    local fv = cached_lower(node, "_generic_eq_lower", filter_val)
+    return tostring(entry_val):lower() == fv
+  end
+
+  -- Ordered comparisons: try numeric first, then date, then fail
+  if num_entry and num_filter then
+    return compare_num(num_entry, op, num_filter)
+  end
+  local entry_ts = date_utils.parse_iso_datetime(tostring(entry_val))
+  local filter_ts = resolve_date_cached(filter_val, ctx)
+  if entry_ts and filter_ts then
+    return compare_date(entry_ts, op, filter_ts, filter_val)
+  end
+
+  return false
+end
+
 --- Match a field AST node against an entry.
 ---@param node table field AST node { name, op, value, value2 }
 ---@param entry table VaultIndexEntry
@@ -284,11 +358,14 @@ function M.match_field(node, entry, index, ctx)
 
   -- ── type ──
   if name == "type" then
-    local entry_val = entry.frontmatter and entry.frontmatter.type
-    if op == "=" then
-      local fv = cached_lower(node, "_type_val_lower", filter_val)
-      local ev = entry_val and tostring(entry_val):lower() or nil
-      return ev == fv
+    if op ~= "=" then return false end
+    -- Frontmatter first, then inline_fields fallback; value may be scalar or list.
+    local raw = (entry.frontmatter and entry.frontmatter.type)
+      or (entry.inline_fields and entry.inline_fields.type)
+    if raw == nil then return false end
+    local fv = cached_lower(node, "_type_val_lower", filter_val)
+    for _, entry_val in ipairs(to_list(raw)) do
+      if tostring(entry_val):lower() == fv then return true end
     end
     return false
   end
@@ -304,13 +381,12 @@ function M.match_field(node, entry, index, ctx)
       if blooms then
         local bloom = blooms[entry.rel_path]
         if bloom then
-          local bloom_mod = require("andrew.vault.bloom_filter")
           local check_tag = cached_lower(node, "_tag_bloom_lower", filter_val)
           -- Strip exclude markers for bloom check (only check first include tag)
           local first = check_tag:match("^([^!,]+)")
           if first then
             first = vim.trim(first)
-            if not bloom_mod.maybe_contains(bloom, first) then
+            if not bloom_filter.maybe_contains(bloom, first) then
               return false
             end
           end
@@ -474,11 +550,20 @@ function M.match_field(node, entry, index, ctx)
   -- ── alias ──
   if name == "alias" then
     if op ~= "=" then return false end
-    if not entry.aliases or #entry.aliases == 0 then return false end
     local lower_val = cached_lower(node, "_alias_val_lower", filter_val)
-    for _, a in ipairs(entry.aliases) do
+    -- Derived aliases are pre-lowered by the index.
+    for _, a in ipairs(entry.aliases or {}) do
       if a == lower_val then
         return true
+      end
+    end
+    -- Inline fallback: [alias:: x] / [aliases:: x]; scalar or list, case-insensitive.
+    local inline = entry.inline_fields
+    if inline then
+      for _, raw in ipairs({ inline.alias, inline.aliases }) do
+        for _, a in ipairs(to_list(raw)) do
+          if tostring(a):lower() == lower_val then return true end
+        end
       end
     end
     return false
@@ -513,88 +598,107 @@ function M.match_field(node, entry, index, ctx)
 
   -- ── created / modified ──
   if name == "created" or name == "modified" then
-    local entry_ts = parse_entry_date(entry, name)
-    if not entry_ts then return false end
+    -- Candidates: index-derived timestamp + inline [created::]/[modified::]
+    -- entries (scalar or list). Match if ANY candidate satisfies the operator.
+    local candidates = collect_date_candidates(entry, name)
+    if #candidates == 0 then return false end
     if op == "=" then
-      local range_match = date_utils.in_keyword_range(entry_ts, filter_val)
-      if range_match ~= nil then return range_match end
-      local filter_ts = resolve_date_cached(filter_val, ctx)
-      if not filter_ts then return false end
-      return same_day(entry_ts, filter_ts)
+      local filter_ts = nil
+      for _, entry_ts in ipairs(candidates) do
+        local range_match = date_utils.in_keyword_range(entry_ts, filter_val)
+        if range_match ~= nil then
+          if range_match then return true end
+        else
+          if filter_ts == nil then
+            filter_ts = resolve_date_cached(filter_val, ctx) or false
+          end
+          if filter_ts and same_day(entry_ts, filter_ts) then return true end
+        end
+      end
+      return false
     end
     local filter_ts = resolve_date_cached(filter_val, ctx)
     if not filter_ts then return false end
     if op == ".." then
       local filter_ts2 = resolve_date_cached(filter_val2, ctx)
       if not filter_ts2 then return false end
-      return date_utils.in_date_range(entry_ts, filter_ts, filter_ts2)
+      for _, entry_ts in ipairs(candidates) do
+        if date_utils.in_date_range(entry_ts, filter_ts, filter_ts2) then return true end
+      end
+      return false
     end
-    return compare_date(entry_ts, op, filter_ts, filter_val)
+    for _, entry_ts in ipairs(candidates) do
+      if compare_date(entry_ts, op, filter_ts, filter_val) then return true end
+    end
+    return false
   end
 
   -- ── day ──
   if name == "day" then
-    if not entry.day then return false end
+    -- Inline [day:: value] entries widen the value SOURCE when the index lacks
+    -- a `day`. Raw inline strings are eligible for the string-equality fast path.
+    local inline = entry.inline_fields
+    local has_inline_day = inline and inline.day ~= nil
+    if not entry.day and not has_inline_day then return false end
     if op == "=" then
+      -- String-equality fast path against index `day` and raw inline values.
       if entry.day == filter_val then return true end
-      local entry_ts = entry.day_ts or date_utils.parse_iso_datetime(entry.day)
-      if not entry_ts then return false end
-      local range_match = date_utils.in_keyword_range(entry_ts, filter_val)
-      if range_match ~= nil then return range_match end
-      local resolved = resolve_date_cached(filter_val, ctx)
-      if resolved then return same_day(entry_ts, resolved) end
+      if has_inline_day then
+        for _, raw in ipairs(to_list(inline.day)) do
+          if tostring(raw) == filter_val then return true end
+        end
+      end
+    end
+    -- Candidate timestamps: index-derived + inline (scalar or list).
+    local candidates = collect_date_candidates(entry, "day")
+    if #candidates == 0 then return false end
+    if op == "=" then
+      local filter_ts = nil
+      for _, entry_ts in ipairs(candidates) do
+        local range_match = date_utils.in_keyword_range(entry_ts, filter_val)
+        if range_match ~= nil then
+          if range_match then return true end
+        else
+          if filter_ts == nil then
+            filter_ts = resolve_date_cached(filter_val, ctx) or false
+          end
+          if filter_ts and same_day(entry_ts, filter_ts) then return true end
+        end
+      end
       return false
     end
     -- For comparison/range operators, parse both sides as dates
-    local entry_ts = parse_entry_date(entry, "day")
     local filter_ts = resolve_date_cached(filter_val, ctx)
-    if not entry_ts or not filter_ts then return false end
+    if not filter_ts then return false end
     if op == ".." then
       local filter_ts2 = resolve_date_cached(filter_val2, ctx)
       if not filter_ts2 then return false end
-      return date_utils.in_date_range(entry_ts, filter_ts, filter_ts2)
+      for _, entry_ts in ipairs(candidates) do
+        if date_utils.in_date_range(entry_ts, filter_ts, filter_ts2) then return true end
+      end
+      return false
     end
-    return compare_date(entry_ts, op, filter_ts, filter_val)
+    for _, entry_ts in ipairs(candidates) do
+      if compare_date(entry_ts, op, filter_ts, filter_val) then return true end
+    end
+    return false
   end
 
   -- ── Generic (unknown) fields ──
-  local entry_val = get_generic_field(entry, name)
-  if entry_val == nil then return false end
+  -- The field value may be a scalar or a list (key appeared 2+ times).
+  -- Match if THE scalar, or ANY list element, satisfies the operator.
+  -- Every candidate goes through identical typed parsing (tonumber → ISO
+  -- date → lexicographic), so list and scalar behavior are byte-for-byte
+  -- consistent and scalar single-value behavior is unchanged.
+  local raw_field = get_generic_field(entry, name)
+  if raw_field == nil then return false end
 
-  local num_entry = tonumber(entry_val)
   local num_filter = tonumber_cached(filter_val, ctx)
-
-  if op == ".." then
-    if num_entry and num_filter then
-      local num_filter2 = tonumber_cached(filter_val2, ctx)
-      if not num_filter2 then return false end
-      return in_num_range(num_entry, num_filter, num_filter2)
+  for _, entry_val in ipairs(to_list(raw_field)) do
+    if match_generic_value(node, entry_val, op, filter_val, filter_val2, num_filter, ctx) then
+      return true
     end
-    -- String range: lexicographic, case-insensitive
-    local lo = cached_lower(node, "_range_lo_lower", filter_val)
-    local hi = cached_lower(node, "_range_hi_lower", filter_val2 or "")
-    local s = tostring(entry_val):lower()
-    return lo <= s and s <= hi
   end
-
-  if op == "=" then
-    if num_entry and num_filter then
-      return num_entry == num_filter
-    end
-    local fv = cached_lower(node, "_generic_eq_lower", filter_val)
-    return tostring(entry_val):lower() == fv
-  end
-
-  -- Ordered comparisons: try numeric first, then date, then fail
-  if num_entry and num_filter then
-    return compare_num(num_entry, op, num_filter)
-  end
-  local entry_ts = date_utils.parse_iso_datetime(tostring(entry_val))
-  local filter_ts = resolve_date_cached(filter_val, ctx)
-  if entry_ts and filter_ts then
-    return compare_date(entry_ts, op, filter_ts, filter_val)
-  end
-
   return false
 end
 

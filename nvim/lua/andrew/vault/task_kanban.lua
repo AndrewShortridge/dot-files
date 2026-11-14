@@ -1,5 +1,6 @@
 local vault_index = require("andrew.vault.vault_index")
 local config = require("andrew.vault.config")
+local hl_util = require("andrew.vault.hl_util")
 local engine = require("andrew.vault.engine")
 local date_utils = require("andrew.vault.date_utils")
 local filter_utils = require("andrew.vault.filter_utils")
@@ -12,6 +13,10 @@ local task_utils = require("andrew.vault.task_utils")
 local M = {}
 
 local ns = vim.api.nvim_create_namespace("vault_kanban")
+
+--- Column divider glyph. Module-level because both render_board (layout) and
+--- column_at_cursor (cursor column -> board column) must agree on its byte width.
+local divider_char = "\xe2\x94\x82" -- "│"
 local truncate = date_utils.truncate
 local passes_filter = filter_utils.passes_task_filter
 local filter_cache_key = filter_utils.filter_cache_key
@@ -102,7 +107,6 @@ local function render_board(groups, col_width, columns)
   local lines = {}
   local highlights = {}
   local card_positions = {}
-  local divider_char = "\xe2\x94\x82" -- "│"
   local horiz_char = "\xe2\x94\x80"   -- "─"
 
   -- Header row: column labels with task counts
@@ -331,9 +335,21 @@ local function build_spatial_index(card_positions)
   local col_index = {}
 
   for _, cp in ipairs(card_positions) do
-    -- Map every row in the card's 3-line range
+    -- Map every row in the card's 3-line range. A kanban row holds one card per
+    -- COLUMN, so row_index[r] is a per-column table (plus `any`, the leftmost
+    -- card on that row) — a plain row -> card map let the rightmost column win
+    -- and made every h/j/k/l/m/M/<CR> act on that card whatever the cursor
+    -- column was.
     for r = cp.row, cp.row + 2 do
-      row_index[r] = cp
+      local bucket = row_index[r]
+      if not bucket then
+        bucket = {}
+        row_index[r] = bucket
+      end
+      bucket[cp.col_index] = cp
+      if not bucket.any or cp.col_index < bucket.any.col_index then
+        bucket.any = cp
+      end
     end
     -- Column index
     if not col_index[cp.col_index] then col_index[cp.col_index] = {} end
@@ -349,16 +365,51 @@ end
 -- Navigation helpers (spatial-index accelerated)
 -- ---------------------------------------------------------------------------
 
----Find the card at or nearest to the given cursor row.
+---Map a 0-indexed cursor BYTE column to a 1-based board column index.
+---Mirrors render_board's layout: column ci starts at (ci-1)*(col_width+#divider).
+---@param cursor_col integer|nil 0-indexed byte column
+---@param col_width integer|nil
+---@param ncols integer|nil
+---@return integer|nil
+local function column_at_cursor(cursor_col, col_width, ncols)
+  if not cursor_col or not col_width or col_width <= 0 then return nil end
+  local stride = col_width + #divider_char
+  local ci = math.floor(cursor_col / stride) + 1
+  if ncols and ci > ncols then ci = ncols end
+  if ci < 1 then ci = 1 end
+  return ci
+end
+
+---Find the card at or nearest to the given cursor position.
 ---@param card_positions table[]
 ---@param cursor_row integer 0-indexed buffer line
 ---@param row_index table|nil spatial row index for O(1) lookup
+---@param cursor_col integer|nil 0-indexed byte column (selects the board column)
+---@param col_width integer|nil board column width (needed to map cursor_col)
+---@param ncols integer|nil number of board columns
 ---@return table|nil card_position entry
-local function find_card_at_cursor(card_positions, cursor_row, row_index)
+local function find_card_at_cursor(card_positions, cursor_row, row_index, cursor_col, col_width, ncols)
+  local want_col = column_at_cursor(cursor_col, col_width, ncols)
+
   -- O(1) path via spatial index
   if row_index then
-    local hit = row_index[cursor_row]
-    if hit then return hit end
+    local bucket = row_index[cursor_row]
+    if bucket then
+      if want_col and bucket[want_col] then return bucket[want_col] end
+      -- No card in the cursor's own column on this row: take the nearest one
+      -- that does exist, so navigation still moves instead of dead-ending.
+      if want_col then
+        local best, best_d = nil, math.huge
+        for ci, cp in pairs(bucket) do
+          if type(ci) == "number" then
+            local d = math.abs(ci - want_col)
+            if d < best_d then best, best_d = cp, d end
+          end
+        end
+        if best then return best end
+      end
+      return bucket.any
+    end
     -- Cursor is outside any card range; fall through to nearest search
   end
 
@@ -370,6 +421,11 @@ local function find_card_at_cursor(card_positions, cursor_row, row_index)
       dist = 0
     else
       dist = math.min(math.abs(cursor_row - cp.row), math.abs(cursor_row - (cp.row + 2)))
+    end
+    -- Prefer the cursor's own board column when the row ties (dist == 0 for
+    -- every card on the row), otherwise h/l could never leave one column.
+    if want_col then
+      dist = dist * 8 + math.abs((cp.col_index or 1) - want_col)
     end
     if dist < best_dist then
       best = cp
@@ -449,14 +505,14 @@ local function redraw(state)
   state.card_positions = board.card_positions
   state.row_index, state.col_index = build_spatial_index(board.card_positions)
 
-  vim.api.nvim_buf_set_option(state.buf, "modifiable", true)
+  vim.api.nvim_set_option_value("modifiable", true, { buf = state.buf })
   vim.api.nvim_buf_set_lines(state.buf, 0, -1, false, board.lines)
-  vim.api.nvim_buf_set_option(state.buf, "modifiable", false)
+  vim.api.nvim_set_option_value("modifiable", false, { buf = state.buf })
 
   -- Clear and re-apply highlights
   vim.api.nvim_buf_clear_namespace(state.buf, ns, 0, -1)
   for _, hl in ipairs(board.highlights) do
-    local ok, err = pcall(vim.api.nvim_buf_add_highlight, state.buf, ns, hl.group, hl.row, hl.col_start, hl.col_end)
+    local ok, err = hl_util.add_safe(state.buf, ns, hl.group, hl.row, hl.col_start, hl.col_end)
     if not ok then log.debug("highlight failed at row %d: %s", hl.row, err) end
   end
 end
@@ -538,7 +594,7 @@ function M.kanban(opts)
 
   -- Apply highlights
   for _, hl in ipairs(board.highlights) do
-    local ok, err = pcall(vim.api.nvim_buf_add_highlight, float.buf, ns, hl.group, hl.row, hl.col_start, hl.col_end)
+    local ok, err = hl_util.add_safe(float.buf, ns, hl.group, hl.row, hl.col_start, hl.col_end)
     if not ok then log.debug("highlight failed at row %d: %s", hl.row, err) end
   end
 
@@ -577,7 +633,7 @@ function M.kanban(opts)
   map("h", function()
     local cursor = vim.api.nvim_win_get_cursor(state.win)
     local row = cursor[1] - 1 -- 0-indexed
-    local current = find_card_at_cursor(state.card_positions, row, state.row_index)
+    local current = find_card_at_cursor(state.card_positions, row, state.row_index, cursor[2], state.col_width, #state.columns)
     if not current then return end
     local target_col = current.col_index - 1
     if target_col < 1 then target_col = #state.columns end
@@ -590,7 +646,7 @@ function M.kanban(opts)
   map("l", function()
     local cursor = vim.api.nvim_win_get_cursor(state.win)
     local row = cursor[1] - 1
-    local current = find_card_at_cursor(state.card_positions, row, state.row_index)
+    local current = find_card_at_cursor(state.card_positions, row, state.row_index, cursor[2], state.col_width, #state.columns)
     if not current then return end
     local target_col = current.col_index + 1
     if target_col > #state.columns then target_col = 1 end
@@ -604,7 +660,7 @@ function M.kanban(opts)
   map("j", function()
     local cursor = vim.api.nvim_win_get_cursor(state.win)
     local row = cursor[1] - 1
-    local current = find_card_at_cursor(state.card_positions, row, state.row_index)
+    local current = find_card_at_cursor(state.card_positions, row, state.row_index, cursor[2], state.col_width, #state.columns)
     if not current then return end
     local col_cards = cards_in_column(state.card_positions, current.col_index, state.col_index)
     for i, cp in ipairs(col_cards) do
@@ -619,7 +675,7 @@ function M.kanban(opts)
   map("k", function()
     local cursor = vim.api.nvim_win_get_cursor(state.win)
     local row = cursor[1] - 1
-    local current = find_card_at_cursor(state.card_positions, row, state.row_index)
+    local current = find_card_at_cursor(state.card_positions, row, state.row_index, cursor[2], state.col_width, #state.columns)
     if not current then return end
     local col_cards = cards_in_column(state.card_positions, current.col_index, state.col_index)
     for i, cp in ipairs(col_cards) do
@@ -635,7 +691,7 @@ function M.kanban(opts)
   map("<CR>", function()
     local cursor = vim.api.nvim_win_get_cursor(state.win)
     local row = cursor[1] - 1
-    local cp = find_card_at_cursor(state.card_positions, row, state.row_index)
+    local cp = find_card_at_cursor(state.card_positions, row, state.row_index, cursor[2], state.col_width, #state.columns)
     if not cp then return end
     local task = cp.task
     state.close()
@@ -646,7 +702,7 @@ function M.kanban(opts)
   map("m", function()
     local cursor = vim.api.nvim_win_get_cursor(state.win)
     local row = cursor[1] - 1
-    local cp = find_card_at_cursor(state.card_positions, row, state.row_index)
+    local cp = find_card_at_cursor(state.card_positions, row, state.row_index, cursor[2], state.col_width, #state.columns)
     if not cp then return end
     -- Find current column index in columns list by mark
     local current_idx = nil
@@ -668,7 +724,7 @@ function M.kanban(opts)
   map("M", function()
     local cursor = vim.api.nvim_win_get_cursor(state.win)
     local row = cursor[1] - 1
-    local cp = find_card_at_cursor(state.card_positions, row, state.row_index)
+    local cp = find_card_at_cursor(state.card_positions, row, state.row_index, cursor[2], state.col_width, #state.columns)
     if not cp then return end
     local current_idx = nil
     for i, col in ipairs(state.columns) do
@@ -752,6 +808,15 @@ end
 -- ---------------------------------------------------------------------------
 -- Setup
 -- ---------------------------------------------------------------------------
+
+--- Internals exposed for specs only (tests/audit_vaultc_tasks_spec.lua).
+--- Not part of the module's public API; do not call from plugin code.
+M._internal = {
+  build_spatial_index = build_spatial_index,
+  find_card_at_cursor = find_card_at_cursor,
+  column_at_cursor = column_at_cursor,
+  divider_char = divider_char,
+}
 
 function M.setup()
   -- Register with engine cache system

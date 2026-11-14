@@ -7,6 +7,57 @@
 // custom settings, run `zed: open default settings` from the
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
+  "cli_default_open_behavior": "existing_window",
+  "agent_servers": {
+    
+  },
+  "project_panel": {
+    "dock": "left"
+  },
+  "outline_panel": {
+    "dock": "left"
+  },
+  "collaboration_panel": {
+    "dock": "left"
+  },
+  "git_panel": {
+    "dock": "left"
+  },
+  "language_models": {
+    "openai_compatible": {
+      "MiniMax": {
+        "api_url": "https://api.minimax.io/v1",
+        "available_models": [
+          {
+            "name": "MiniMax-M2",
+            "display_name": "MiniMax M2",
+            "max_tokens": 204800,
+            "max_output_tokens": 16384,
+            "capabilities": {
+              "tools": true,
+              "images": false,
+              "parallel_tool_calls": false,
+              "prompt_cache_key": false,
+            },
+          },
+        ],
+      },
+    },
+    "ollama": {
+      "api_url": "http://localhost:11434",
+      "auto_discover": false,
+      "available_models": [
+        {
+          "name": "olmo-3:7b-think-q4_K_M",
+          "display_name": "OLMo 3 7B Think (Q4_K_M)",
+          "max_tokens": 16384,
+          "supports_thinking": true,
+          "supports_tools": false,
+          "supports_images": false,
+        },
+      ],
+    },
+  },
   "diagnostics": {
     "inline": {
       "enabled": true,
@@ -19,13 +70,16 @@
   "tabs": { "file_icons": true },
   "relative_line_numbers": "enabled",
   "agent": {
+    "dock": "right",
+    "default_profile": "write",
     "inline_assistant_model": {
       "provider": "openai",
       "model": "gpt-5.2",
     },
     "default_model": {
-      "provider": "openai",
-      "model": "gpt-5.2",
+      "enable_thinking": false,
+      "provider": "MiniMax",
+      "model": "MiniMax-M2",
     },
     "favorite_models": [],
     "model_parameters": [],
@@ -37,9 +91,20 @@
   "inlay_hints": {
     "enabled": true,
   },
+  "show_completion_documentation": true,
+  "show_edit_predictions": true,
   "show_wrap_guides": true,
-  "experimental.theme_overrides": {
-    "editor.wrap_guide": "#56B6C280",
+  "active_pane_modifiers": { "border_size": 2 }, // Sets border thickness of currently viewed "split" int file editor
+  // "experimental.theme_overrides": {
+  "theme_overrides": {
+    "One Dark Pro Extended": {
+      "editor.wrap_guide": "#56B6C280",
+      "panel.overlay_hover": "#FFFFFF",
+      // "border.selected": "#61AFEF", // One Dark Blue
+      "border.selected": "#98C379", // One Dark Green
+      // "border.selected": "#C678DD", // One Dark Pink
+      "panel.focused_border": "#C678DD", // Focus border around file in the file explorer
+    },
   },
   "wrap_guides": [120],
   "icon_theme": "Material Icon Theme",
@@ -48,7 +113,7 @@
   "theme": {
     "mode": "dark",
     "light": "One Light",
-    "dark": "One Dark",
+    "dark": "One Dark Pro Extended",
   },
   // Automatic tab indentation is 2 spaces instead of default 4
   "tab_size": 2,

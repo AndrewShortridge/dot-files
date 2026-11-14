@@ -1,0 +1,410 @@
+#!/usr/bin/env bash
+# bookmarks - context/project bookmark picker for COSMIC (fzf in a kitty panel)
+#
+#   bookmarks                     pick context -> project -> bookmark
+#   bookmarks work                pick project in "work" -> bookmark
+#   bookmarks work ml             pick bookmark in work/ml
+#   bookmarks --popup [MODE] [CTX [PROJ [GROUP]]]  same, inside a centered kitty overlay panel
+#   bookmarks --menu [CTX [PROJ]]   key menu: one more keypress picks the mode below
+#                                   (the COSMIC shortcut runs: bookmarks --popup --menu)
+#   bookmarks --edit [CTX [PROJ]]   open the chosen list in $EDITOR
+#   bookmarks --session [CTX [PROJ [GROUP]]]  open/focus the project window, or the window of
+#                                   one of its saved tab groups (bsession open)
+#   bookmarks --save [CTX [PROJ [GROUP]]]     save the project window you were in (or the one
+#                                   named) and fzf-pick its unbookmarked urls into the .txt
+#                                   (bsession save --promote)
+#   bookmarks --close [CTX [PROJ [GROUP]]]    save, then close that window (bsession close)
+#   bookmarks --switch [CTX [PROJ [GROUP]]]   close the window you were just in (saved first),
+#                                   then open a saved project or one of its tab groups
+#                                   (bsession switch). Without all three, fzf-pick the target
+#                                   from `bsession list`; CTX / CTX PROJ narrow the candidates.
+#
+# Layout:  ~/.config/bookmarks/<context>/<project>.txt           curated bookmarks
+#          ~/.config/bookmarks/<context>/<project>.session.toml  saved window layout (bsession)
+#          ~/.config/bookmarks/config   (sourced; per-context browser + workspace)
+# A context is a directory holding at least one .txt; its name is letters,
+# digits and _ only, because it spells the config variables below.
+#
+# Line format inside a .txt:   label :: url      or just   url
+# Blank lines and lines starting with # are ignored.
+#
+# config defines, per context (see that file):
+#   browser_<ctx>    command that opens a url (url appended). Optional: without
+#                    it, bsession runs the flatpak build of host_<ctx> when
+#                    installed, else the first system binary on PATH
+#                    (`bsession browser CTX` shows the pick), then $BROWSER,
+#                    then xdg-open.
+#   app_id_<ctx>     the browser's Wayland app_id, used to find its window;
+#                    with browser_<ctx> unset it defaults to the detected build's
+#   workspace_<ctx>  COSMIC workspace the browser must live on
+#   restore_<ctx>    extra args for a cold start only: no window of app_id_<ctx>
+#                    yet, or, when the picker cannot place windows, no bsession
+#                    host_<ctx> socket (browser not running)
+#   host_<ctx>       bsession native host name (firefox|brave|...), used by --session/--save
+# A context without app_id/workspace just runs the browser command.
+# Workspace placement needs cosmic-wmctl on PATH.
+set -euo pipefail
+
+ROOT="${BOOKMARKS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/bookmarks}"
+ALL='*'
+
+# ---------------------------------------------------------------- ui --------
+# Inside the panel (BOOKMARKS_IN_PANEL, set by --popup) the overlay vanishes
+# with the process, so anything worth reading is held on screen first.
+
+# hold -- in the panel, wait for a keypress; a no-op in a terminal
+hold() {
+    [[ -n ${BOOKMARKS_IN_PANEL:-} ]] || return 0
+    read -rsn1 -p 'press any key' _ || true
+}
+
+# die MSG... -- report, hold, exit 1
+die() {
+    printf 'bookmarks: %s\n' "$*" >&2
+    hold
+    exit 1
+}
+
+# require CMD -- die unless CMD is on PATH
+require() { command -v "$1" >/dev/null || die "$1 is required"; }
+
+# notify TITLE [BODY] -- desktop notification plus a line on stderr. The
+# notifier failing (no daemon, D-Bus timeout) must not abort the caller: the
+# stderr line is the fallback, not the notification.
+notify() {
+    if command -v notify-send >/dev/null; then
+        notify-send -a bookmarks -- "$1" "${2:-}" || true
+    fi
+    printf 'bookmarks: %s %s\n' "$1" "${2:-}" >&2
+}
+
+# pick PROMPT -- fzf over stdin rows "shown<TAB>hidden..."; prints the whole
+# row of the choice, exit 1 on cancel. Only the first column is displayed and
+# matched, so the hidden columns carry raw values losslessly.
+pick() {
+    fzf --reverse --no-multi --cycle --info=inline --prompt="$1 " --ansi \
+        --delimiter=$'\t' --with-nth=1 --tabstop=4 --border=rounded
+}
+
+# held [-q] CMD... -- run CMD and exit with its status; in the panel, keep its
+# output on screen first: until a key on failure, briefly on success (not at
+# all with -q, for commands whose visible result is a window appearing).
+held() {
+    local linger=1.2
+    [[ $1 == -q ]] && { linger=0; shift; }
+    if "$@"; then
+        [[ -n ${BOOKMARKS_IN_PANEL:-} && $linger != 0 ]] && sleep "$linger"
+        exit 0
+    fi
+    hold
+    exit 1
+}
+
+# menu -- which-key style second keystroke after the global shortcut; sets $mode
+menu() {
+    local k rest c
+    trap 'printf "\e[?25h"' EXIT   # cursor back even on EOF / Ctrl-C
+    while :; do
+        printf '\e[H\e[2J\e[?25l\n  \e[1mbookmarks\e[0m\n\n'
+        printf '  \e[1;33m%s\e[0m  %-9s %s\n' \
+            f find      'open a bookmark' \
+            o open      'open / focus a project window' \
+            g switch    'close the window you were just in; open a saved project or one of its tab groups' \
+            s save      'save the window you were just in; add its new urls to the list' \
+            a 'save all' 'save every open project and group window' \
+            c close     'save and close the window you were just in' \
+            e edit      'edit a project list' \
+            i status    'connected browsers and their project windows' \
+            q cancel    ''
+        IFS= read -rsn1 k || exit 0
+        if [[ $k == $'\e' ]]; then
+            # Bare Esc cancels; an escape *sequence* (arrows, F-keys, Alt-x)
+            # is swallowed whole and ignored instead of leaking "[A" to the tty.
+            rest=''
+            while IFS= read -rsn1 -t 0.02 c; do rest+=$c; done
+            [[ -n $rest ]] && continue
+            exit 0
+        fi
+        case $k in
+            f) mode=pick; return ;;
+            o) mode=session; return ;;
+            g) mode=switch; return ;;
+            s) mode=save; return ;;
+            a) mode=saveall; return ;;
+            c) mode=close; return ;;
+            e) mode=edit; return ;;
+            i) mode=status; return ;;
+            q|'') exit 0 ;;
+        esac
+    done
+}
+
+# -------------------------------------------------------------- data --------
+# Candidate rows for pick(): the bookmark tree under $ROOT, and the saved
+# targets bsession knows about. -L: contexts and lists may be symlinks.
+
+# contexts -> one row per directory holding a project list, which is what
+# `bsession list` calls a context; names are limited to what host_<ctx> & co.
+# can spell, so scratch dirs under $ROOT (bsession-rs, ext-tests) never show
+contexts() {
+    find -L "$ROOT" -mindepth 2 -maxdepth 2 -regextype posix-extended \
+        -type f -name '*.txt' -regex '.*/[A-Za-z0-9_]+/[^/]+' -printf '%h\n' \
+        | sed 's|.*/||' | sort -u
+}
+projects() { find -L "$ROOT/$1" -maxdepth 1 -type f -name '*.txt' -printf '%f\n' | sed 's/\.txt$//' | sort; }
+
+# entries CTX PROJ -> "display<TAB>url" rows; PROJ='*' spans every project in CTX
+entries() {
+    local ctx=$1 proj=$2 files=() f tag line label url
+    if [[ $proj == "$ALL" ]]; then
+        mapfile -t files < <(find -L "$ROOT/$ctx" -maxdepth 1 -type f -name '*.txt' | sort)
+    else
+        files=("$ROOT/$ctx/$proj.txt")
+    fi
+    for f in "${files[@]}"; do
+        tag=$(basename "$f" .txt)
+        while IFS= read -r line || [[ -n $line ]]; do
+            line=${line#$'\xef\xbb\xbf'}   # a BOM would hide a leading # comment
+            [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
+            if [[ $line == *"::"* ]]; then
+                label=${line%%::*}; url=${line#*::}
+            else
+                label=$line; url=$line
+            fi
+            label=${label#"${label%%[![:space:]]*}"}; label=${label%"${label##*[![:space:]]}"}
+            url=${url#"${url%%[![:space:]]*}"};       url=${url%"${url##*[![:space:]]}"}
+            [[ -n $url ]] || continue
+            # Already schemed: "x://", or "scheme:" followed by a non-digit
+            # (so host:port like localhost:8080 still gets https://). Keep in
+            # step with the Rust entry parser (bsession-rs, domain/bookmarks).
+            [[ $url == *://* || $url =~ ^[A-Za-z][A-Za-z0-9+.-]*:[^0-9/] ]] || url="https://$url"
+            if [[ $proj == "$ALL" ]]; then
+                printf '%-12s %-48s %s\t%s\n' "[$tag]" "$label" "$url" "$url"
+            else
+                printf '%-48s %s\t%s\n' "$label" "$url" "$url"
+            fi
+        done < "$f"
+    done
+}
+
+# targets [CTX] [PROJ] -> "display<TAB>ctx<TAB>proj<TAB>group" rows, one per
+# saved project and per saved tab group, from `bsession list` (the picker never
+# reads .session.toml itself). The display is "ctx/proj" or "ctx/proj › group"
+# with a dim "(N tabs)"; group titles may hold spaces, slashes or ›, so the
+# raw fields ride along in the hidden columns and are never re-parsed.
+targets() {
+    local ctx=$1 proj=$2
+    bsession list -- ${ctx:+"$ctx"} | awk -F'\t' -v OFS='\t' -v proj="$proj" '
+        proj == "" || $2 == proj {
+            shown = $1 "/" $2
+            if ($3 != "") shown = shown " › " $3
+            print shown " \033[2m(" $4 " tabs)\033[0m", $1, $2, $3
+        }'
+}
+
+# ----------------------------------------------------------- browser --------
+# Opening a url in the context's browser, on its COSMIC workspace.
+
+# spawn CMD URL -- run the browser command. In the panel, kitty does the
+# spawn: on Wayland it requests an xdg-activation token for the keypress and
+# hands it to the child as XDG_ACTIVATION_TOKEN, which is what lets the
+# browser take focus (and lets cosmic-comp switch to its workspace). A bare
+# spawn from a layer-shell overlay cannot steal focus.
+spawn() {
+    if [[ -n ${BOOKMARKS_IN_PANEL:-} ]]; then
+        kitten @ load-config -o "open_url_with=$1"
+        kitten @ action open_url "$2"
+        sleep 0.2   # token round-trip is async; let kitty spawn before we exit
+    else
+        # cmd is intentionally word-split (carries flags); no quoting, no globbing
+        set -f
+        # shellcheck disable=SC2086
+        setsid -f $1 "$2" >/dev/null 2>&1 </dev/null
+        set +f
+    fi
+}
+
+# windows_of APP_ID -> "identifier<TAB>workspace" per toplevel of that app
+windows_of() {
+    cosmic-wmctl windows --json 2>/dev/null \
+        | jq -r --arg a "$1" '.[] | select(.app_id == $a) | "\(.identifier)\t\(.workspaces[0] // "")"'
+}
+
+# cold_host HOST -- true when no browser is connected to bsession as HOST
+# (socket absent): the cold-start signal when no window placement is possible.
+# With HOST empty nothing can be told, and the launch counts as warm.
+cold_host() {
+    [[ -n $1 && ! -S ${XDG_RUNTIME_DIR:-/run/user/$UID}/bsession/$1.sock ]]
+}
+
+# settle_window APP WS -- in the background, wait up to 30 s for the first
+# window of APP and move it to WS if it mapped elsewhere (belt and braces for
+# a cold start whose window ignores the active workspace)
+settle_window() {
+    setsid -f bash -c '
+        for _ in $(seq 1 60); do
+            sleep 0.5
+            w=$(cosmic-wmctl windows --json 2>/dev/null | jq -r --arg a "$1" ".[] | select(.app_id == \$a) | .workspaces[0]" | head -1)
+            [[ -z $w ]] && continue
+            [[ $w == "$2" ]] || cosmic-wmctl window-move "app_id=$1" "$2" --exact --force-ext-move >/dev/null
+            exit 0
+        done' _ "$1" "$2" >/dev/null 2>&1 </dev/null
+}
+
+# cfg NAME -- the sourced config variable NAME, trimmed; empty when it is
+# unset or whitespace-only, which the config header promises count as unset
+# (bsession's parser applies the same rule). Always succeeds: a blank must
+# not trip errexit in `x=$(cfg ...)`.
+cfg() {
+    local v=${!1:-}
+    [[ $v == *[![:space:]]* ]] || return 0
+    v=${v#"${v%%[![:space:]]*}"}; v=${v%"${v##*[![:space:]]}"}
+    printf '%s' "$v"
+}
+
+# open_url CTX URL -- open URL with the context's browser on its workspace
+open_url() {
+    local ctx=$1 url=$2 cmd app ws restore host detected_app
+    if [[ -r $ROOT/config ]]; then
+        # || keeps a broken config (bash syntax, unquoted flags) on screen
+        # instead of killing the overlay with the sourced command's status
+        . "$ROOT/config" || die "config: failed to load $ROOT/config"
+    fi
+    cmd=$(cfg "browser_$ctx"); app=$(cfg "app_id_$ctx"); ws=$(cfg "workspace_$ctx")
+    restore=$(cfg "restore_$ctx"); host=$(cfg "host_$ctx")
+    if [[ -z $cmd ]] && command -v bsession >/dev/null; then
+        # flatpak build of host_<ctx> if installed, else the system one; the
+        # app_id goes with the build, so only a detected command supplies it
+        IFS=$'\t' read -r cmd detected_app < <(bsession browser "$ctx" 2>/dev/null) || true
+        app=${app:-${detected_app:-}}
+    fi
+    cmd=${cmd:-${BROWSER:-xdg-open}}
+    # The first word must resolve now: setsid -f discards the child's exec
+    # failure and the panel path reports nothing either. Split as spawn does.
+    set -f
+    # shellcheck disable=SC2086
+    set -- $cmd
+    set +f
+    command -v "${1:-}" >/dev/null || die "browser command not found: ${1:-}"
+
+    # Without placement (no app_id/workspace, no cosmic-wmctl, workspace
+    # missing) there is no window list to tell cold from warm, so the host
+    # socket decides; bsession open restores by the same rule.
+    if [[ -z $app || -z $ws ]] || ! command -v cosmic-wmctl >/dev/null; then
+        cold_host "$host" && cmd="$cmd $restore"
+        spawn "$cmd" "$url"
+        return
+    fi
+    if ! cosmic-wmctl workspaces --json | jq -e --arg n "$ws" 'any(.[]; .name == $n)' >/dev/null; then
+        notify "workspace $ws does not exist" "pin it: cosmic-wmctl workspace-pin $ws"
+        cold_host "$host" && cmd="$cmd $restore"
+        spawn "$cmd" "$url"
+        return
+    fi
+
+    local id have_ws running=0 settle=0
+    while IFS=$'\t' read -r id have_ws; do
+        [[ -n $id ]] || continue
+        if [[ $have_ws != "$ws" ]]; then
+            cosmic-wmctl window-move "identifier=$id" "$ws" --exact --force-ext-move >/dev/null
+            settle=1
+        fi
+        running=1
+    done < <(windows_of "$app")
+
+    if (( running )); then
+        # Running instance: remote-open the url. The activation token makes
+        # cosmic-comp switch to the window's workspace and focus it.
+        (( settle )) && sleep 0.3   # let the move land before activation
+        spawn "$cmd" "$url"
+    else
+        # Cold start: switch first so the new window maps on the right
+        # workspace, then launch with the cold-start args.
+        cosmic-wmctl workspace-activate "$ws"
+        spawn "$cmd $restore" "$url"
+        settle_window "$app" "$ws"
+    fi
+    [[ -n ${BOOKMARKS_IN_PANEL:-} ]] || { sleep 0.5; cosmic-wmctl window-activate "app_id=$app" >/dev/null 2>&1 || true; }
+}
+
+# ---------------------------------------------------------- dispatch --------
+
+# switch_target [CTX [PROJ [GROUP]]] -- resolve the target (fzf unless the
+# arguments pin exactly one), then `bsession switch` to it. Never returns.
+switch_target() {
+    local ctx=$1 proj=$2 group=$3 rows choice
+    if [[ -z $group ]]; then
+        rows=$(targets "$ctx" "$proj") || die 'bsession list failed'
+        [[ -n $rows ]] || die 'no projects'
+        if [[ $rows == *$'\n'* ]]; then
+            choice=$(pick 'switch to:' <<<"$rows") || exit 0
+        else
+            choice=$rows
+        fi
+        # group is last: the only column that may be empty, so IFS cannot eat it
+        IFS=$'\t' read -r _ ctx proj group <<<"$choice"
+    fi
+    # Group titles are free text and may begin with -, so flags come first and
+    # -- ends them (same for the open/save/close sinks below).
+    held -q bsession switch -- "$ctx" "$proj" ${group:+"$group"}
+}
+
+require fzf
+
+mode=pick
+case ${1:-} in
+    --popup)
+        shift
+        require kitten
+        BOOKMARKS_IN_PANEL=1 exec kitten panel --edge=center --layer=overlay \
+            --focus-policy=exclusive --lines=24 --columns=110 --app-id=bookmarks \
+            -o allow_remote_control=yes -- "$0" "$@"
+        ;;
+    --menu) shift; menu ;;
+    --edit) mode=edit; shift ;;
+    --session) mode=session; shift ;;
+    --save) mode=save; shift ;;
+    --close) mode=close; shift ;;
+    --switch) mode=switch; shift ;;
+    --help|-h) sed -n '2,/^set -e/{/^set -e/!p}' "$0"; exit 0 ;;
+esac
+
+[[ -d $ROOT ]] || die "no bookmark dir at $ROOT"
+[[ $mode == pick || $mode == edit ]] || require bsession
+
+ctx=${1:-}; proj=${2:-}; group=${3:-}
+
+# Modes that act on bsession's own view (the focused window, every window,
+# the saved target list) need no context/project pick of their own.
+case $mode in
+    status)  bsession status || true; hold; exit 0 ;;
+    saveall) held bsession save --promote ;;
+    switch)  [[ -z $ctx ]] || [[ -d $ROOT/$ctx ]] || die "no context '$ctx'"
+             switch_target "$ctx" "$proj" "$group" ;;
+    save)    [[ -n $ctx ]] || held bsession save --focused --promote ;;   # the window you were just in
+    close)   [[ -n $ctx ]] || held bsession close --focused ;;
+esac
+
+if [[ -z $ctx ]]; then
+    ctx=$(contexts | pick 'context:') || exit 0
+fi
+[[ -d $ROOT/$ctx ]] || die "no context '$ctx'"
+[[ $ctx =~ ^[A-Za-z0-9_]+$ ]] || die "context name '$ctx' must be letters, digits and _ (host_$ctx cannot be configured)"
+
+if [[ -z $proj ]]; then
+    proj=$( { [[ $mode == pick ]] && echo "$ALL"; projects "$ctx"; } | pick "$ctx /") || exit 0
+fi
+# "$ALL" is only an offer of the pick mode; typed on argv elsewhere it would
+# reach $EDITOR/bsession as a literal "*".
+[[ $proj == "$ALL" && $mode == pick ]] || [[ -f $ROOT/$ctx/$proj.txt ]] || die "no project '$ctx/$proj'"
+
+# shellcheck disable=SC2086  # $EDITOR may carry flags ("code --wait")
+case $mode in
+    edit)    exec ${EDITOR:-nvim} "$ROOT/$ctx/$proj.txt" ;;
+    session) held -q bsession open -- "$ctx" "$proj" ${group:+"$group"} ;;
+    save)    held bsession save --promote -- "$ctx" "$proj" ${group:+"$group"} ;;
+    close)   held bsession close -- "$ctx" "$proj" ${group:+"$group"} ;;
+esac
+
+choice=$(entries "$ctx" "$proj" | pick "$ctx/$proj >") || exit 0
+open_url "$ctx" "${choice##*$'\t'}"

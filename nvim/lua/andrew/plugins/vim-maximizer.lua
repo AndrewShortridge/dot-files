@@ -14,6 +14,8 @@ return {
   -- =============================================================================
   keys = {
     -- Toggle maximization of current split
-    { "<leader>sm", "<cmd>MaximizerToggle<CR>", desc = "Maximize/minimize current split" },
+    { "<leader>wm", "<cmd>MaximizerToggle<CR>", desc = "Maximize/minimize current split" },
+    -- UI/Toggle group alias: zoom (maximize) current split
+    { "<leader>uZ", "<cmd>MaximizerToggle<CR>", desc = "Zoom (maximize split)" },
   },
 }

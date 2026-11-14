@@ -9,7 +9,6 @@ local sn = ls.snippet_node
 local fmt = require("luasnip.extras.fmt").fmt
 local rep = require("luasnip.extras").rep
 local tex = require("andrew.utils.tex")
-local footnotes = require("andrew.vault.footnotes")
 
 -- Import shared math snippets
 local math_snips, math_auto = tex.math_snippets()
@@ -18,9 +17,26 @@ local math_snips, math_auto = tex.math_snippets()
 -- Helpers
 -------------------------------------------------------------------------------
 
+--- Next free numeric footnote id for the current buffer.
+--- andrew.vault.footnotes has no next_id(), so scan the buffer ourselves:
+--- the highest [^N] found plus one, or 1 when the buffer has no numeric
+--- footnotes at all.
+local function next_footnote_id()
+  local max_id = 0
+  for _, line in ipairs(vim.api.nvim_buf_get_lines(0, 0, -1, false)) do
+    for num in line:gmatch("%[%^(%d+)%]") do
+      local n = tonumber(num)
+      if n and n > max_id then
+        max_id = n
+      end
+    end
+  end
+  return max_id + 1
+end
+
 --- Generate a callout snippet for a given trigger and callout type.
 local function callout_snippet(trig, callout_type)
-  return s({ trig = trig, desc = callout_type .. " callout" }, {
+  return s({ trig = ";" .. trig, desc = callout_type .. " callout" }, {
     t("> [!" .. callout_type .. "] "), i(1, "Title"),
     t({ "", "> " }), i(2, "Content"),
     t({ "", "" }),
@@ -29,7 +45,7 @@ end
 
 --- Generate a collapsed callout snippet for a given trigger and callout type.
 local function callout_collapsed_snippet(trig, callout_type)
-  return s({ trig = trig .. "-", desc = callout_type .. " callout (collapsed)" }, {
+  return s({ trig = ";" .. trig .. "-", desc = callout_type .. " callout (collapsed)" }, {
     t("> [!" .. callout_type .. "]- "), i(1, "Title"),
     t({ "", "> " }), i(2, "Content"),
     t({ "", "" }),
@@ -38,7 +54,7 @@ end
 
 --- Generate an expanded callout snippet for a given trigger and callout type.
 local function callout_expanded_snippet(trig, callout_type)
-  return s({ trig = trig .. "+", desc = callout_type .. " callout (expanded)" }, {
+  return s({ trig = ";" .. trig .. "+", desc = callout_type .. " callout (expanded)" }, {
     t("> [!" .. callout_type .. "]+ "), i(1, "Title"),
     t({ "", "> " }), i(2, "Content"),
     t({ "", "" }),
@@ -46,8 +62,13 @@ local function callout_expanded_snippet(trig, callout_type)
 end
 
 --- Choice-node text entries for callout types.
-local function callout_type_choices()
-  return c(1, {
+--- @param idx? number  jump index for the choice node (default 1). Snippets that
+---   use more than one callout picker MUST pass distinct indices -- two nodes
+---   sharing a jump index makes LuaSnip throw in choiceNode.lua
+---   ("attempt to get length of field 'absolute_insert_position'") and the
+---   trigger is swallowed with nothing inserted.
+local function callout_type_choices(idx)
+  return c(idx or 1, {
     t("NOTE"),
     t("TIP"),
     t("WARNING"),
@@ -80,7 +101,7 @@ local snippets = {
   ---------------------------------------------------------------------------
 
   -- Generic callout with type picker
-  s({ trig = "callout", desc = "Callout (pick type)" }, {
+  s({ trig = ";callout", desc = "Callout (pick type)" }, {
     t("> [!"), callout_type_choices(), t("] "), i(2, "Title"),
     t({ "", "> " }), i(3, "Content"),
     t({ "", "" }),
@@ -113,14 +134,14 @@ local snippets = {
   ---------------------------------------------------------------------------
 
   -- Collapsed by default
-  s({ trig = "callout-", desc = "Collapsed callout (pick type)" }, {
+  s({ trig = ";callout-", desc = "Collapsed callout (pick type)" }, {
     t("> [!"), callout_type_choices(), t("]- "), i(2, "Title"),
     t({ "", "> " }), i(3, "Content"),
     t({ "", "" }),
   }),
 
   -- Expanded by default
-  s({ trig = "callout+", desc = "Expanded callout (pick type)" }, {
+  s({ trig = ";callout+", desc = "Expanded callout (pick type)" }, {
     t("> [!"), callout_type_choices(), t("]+ "), i(2, "Title"),
     t({ "", "> " }), i(3, "Content"),
     t({ "", "" }),
@@ -173,10 +194,10 @@ local snippets = {
   ---------------------------------------------------------------------------
 
   s({ trig = ";callout-nested", desc = "Nested callout (callout inside callout)" }, {
-    t("> [!"), callout_type_choices(), t("] "), i(2, "Outer Title"),
+    t("> [!"), callout_type_choices(1), t("] "), i(2, "Outer Title"),
     t({ "", "> " }), i(3, "Outer content"),
-    t({ "", ">", "> > [!" }), callout_type_choices(), t("] "), i(4, "Inner Title"),
-    t({ "", "> > " }), i(5, "Inner content"),
+    t({ "", ">", "> > [!" }), callout_type_choices(4), t("] "), i(5, "Inner Title"),
+    t({ "", "> > " }), i(6, "Inner content"),
     t({ "", "", "" }),
   }),
 
@@ -205,12 +226,12 @@ local snippets = {
   }),
 
   s({ trig = ";callout-triple", desc = "Triple-nested callout" }, {
-    t("> [!"), callout_type_choices(), t("] "), i(2, "Level 1 Title"),
+    t("> [!"), callout_type_choices(1), t("] "), i(2, "Level 1 Title"),
     t({ "", "> " }), i(3, "Level 1 content"),
-    t({ "", ">", "> > [!" }), callout_type_choices(), t("] "), i(4, "Level 2 Title"),
-    t({ "", "> > " }), i(5, "Level 2 content"),
-    t({ "", "> >", "> > > [!" }), callout_type_choices(), t("] "), i(6, "Level 3 Title"),
-    t({ "", "> > > " }), i(7, "Level 3 content"),
+    t({ "", ">", "> > [!" }), callout_type_choices(4), t("] "), i(5, "Level 2 Title"),
+    t({ "", "> > " }), i(6, "Level 2 content"),
+    t({ "", "> >", "> > > [!" }), callout_type_choices(7), t("] "), i(8, "Level 3 Title"),
+    t({ "", "> > > " }), i(9, "Level 3 content"),
     t({ "", "", "" }),
   }),
 
@@ -295,7 +316,7 @@ local snippets = {
   -- Dataview snippets
   ---------------------------------------------------------------------------
 
-  s({ trig = "dv", desc = "Dataview TABLE query" }, {
+  s({ trig = ";dv", desc = "Dataview TABLE query" }, {
     t({ "```dataview", "TABLE " }), i(1, "field1, field2"),
     t({ "", "FROM " }), i(2, '"folder"'),
     t({ "", "WHERE " }), i(3, "condition"),
@@ -303,7 +324,7 @@ local snippets = {
     t({ "", "```", "" }),
   }),
 
-  s({ trig = "dvl", desc = "Dataview LIST query" }, {
+  s({ trig = ";dvl", desc = "Dataview LIST query" }, {
     t({ "```dataview", "LIST" }),
     t({ "", "FROM " }), i(1, '"folder"'),
     t({ "", "WHERE " }), i(2, "condition"),
@@ -311,7 +332,7 @@ local snippets = {
     t({ "", "```", "" }),
   }),
 
-  s({ trig = "dvt", desc = "Dataview TASK query" }, {
+  s({ trig = ";dvt", desc = "Dataview TASK query" }, {
     t({ "```dataview", "TASK" }),
     t({ "", "FROM " }), i(1, '"folder"'),
     t({ "", "WHERE " }), i(2, "!completed"),
@@ -319,12 +340,12 @@ local snippets = {
     t({ "", "```", "" }),
   }),
 
-  s({ trig = "dvjs", desc = "Dataviewjs code block" }, {
+  s({ trig = ";dvjs", desc = "Dataviewjs code block" }, {
     t({ "```dataviewjs", "" }), i(1, "// code"),
     t({ "", "```", "" }),
   }),
 
-  s({ trig = "dvjs-full", desc = "Dataviewjs block with dv.table() scaffold" }, {
+  s({ trig = ";dvjs-full", desc = "Dataviewjs block with dv.table() scaffold" }, {
     t({ "```dataviewjs", 'const pages = dv.pages(\'' }), i(1, '"folder"'),
     t({ "')", "  .where(p => " }), i(2, 'p.type === "note"'),
     t({ ")", "  .sort(p => " }), i(3, "p.date"),
@@ -333,7 +354,7 @@ local snippets = {
     i(6, "p.date"), t({ "])", ");", "```", "" }),
   }),
 
-  s({ trig = "vault", desc = "Vault (Lua) code block with dv.* PageArray" }, {
+  s({ trig = ";vault", desc = "Vault (Lua) code block with dv.* PageArray" }, {
     t({ "```vault", "" }),
     t("dv.table({"), i(1, '"Name", "Status"'), t({ "}, dv.pages('", "" }),
     i(2, '"folder"'), t({ "')", "" }),
@@ -347,23 +368,23 @@ local snippets = {
   -- Wikilink and embed snippets
   ---------------------------------------------------------------------------
 
-  s({ trig = "wl", desc = "Wikilink [[note]]" }, {
+  s({ trig = ";wl", desc = "Wikilink [[note]]" }, {
     t("[["), i(1, "note"), t("]]"),
   }),
 
-  s({ trig = "wla", desc = "Wikilink with alias [[note|alias]]" }, {
+  s({ trig = ";wla", desc = "Wikilink with alias [[note|alias]]" }, {
     t("[["), i(1, "note"), t("|"), i(2, "alias"), t("]]"),
   }),
 
-  s({ trig = "wlh", desc = "Wikilink with heading [[note#heading]]" }, {
+  s({ trig = ";wlh", desc = "Wikilink with heading [[note#heading]]" }, {
     t("[["), i(1, "note"), t("#"), i(2, "heading"), t("]]"),
   }),
 
-  s({ trig = "embed", desc = "Embed ![[note]]" }, {
+  s({ trig = ";embed", desc = "Embed ![[note]]" }, {
     t("![["), i(1, "note"), t("]]"),
   }),
 
-  s({ trig = "embedh", desc = "Embed with heading ![[note#heading]]" }, {
+  s({ trig = ";embedh", desc = "Embed with heading ![[note#heading]]" }, {
     t("![["), i(1, "note"), t("#"), i(2, "heading"), t("]]"),
   }),
 
@@ -371,22 +392,22 @@ local snippets = {
   -- Task snippets
   ---------------------------------------------------------------------------
 
-  s({ trig = "task", desc = "Task checkbox" }, {
+  s({ trig = ";task", desc = "Task checkbox" }, {
     t("- [ ] "), i(1, "task"),
   }),
 
-  s({ trig = "taskd", desc = "Task with due date and priority" }, {
+  s({ trig = ";taskd", desc = "Task with due date and priority" }, {
     t("- [ ] "), i(1, "task"),
     t(" [due:: "), i(2, "YYYY-MM-DD"),
     t("] [priority:: "), i(3, "1"), t("]"),
   }),
 
-  s({ trig = "taskp", desc = "Task with priority" }, {
+  s({ trig = ";taskp", desc = "Task with priority" }, {
     t("- [ ] "), i(1, "task"),
     t(" [priority:: "), i(2, "1"), t("]"),
   }),
 
-  s({ trig = "taskdone", desc = "Completed task checkbox" }, {
+  s({ trig = ";taskdone", desc = "Completed task checkbox" }, {
     t("- [x] "), i(1, "task"),
   }),
 
@@ -394,12 +415,12 @@ local snippets = {
   -- Code block snippets
   ---------------------------------------------------------------------------
 
-  s({ trig = "mermaid", desc = "Mermaid diagram block" }, {
+  s({ trig = ";mermaid", desc = "Mermaid diagram block" }, {
     t({ "```mermaid", "" }), i(1, "graph TD"),
     t({ "", "```", "" }),
   }),
 
-  s({ trig = "code", desc = "Fenced code block" }, {
+  s({ trig = ";code", desc = "Fenced code block" }, {
     t("```"), c(1, {
       t(""),
       t("lua"),
@@ -419,7 +440,7 @@ local snippets = {
     t({ "", "```", "" }),
   }),
 
-  s({ trig = "cb", desc = "Fenced code block (alias)" }, {
+  s({ trig = ";cb", desc = "Fenced code block (alias)" }, {
     t("```"), i(1, "language"),
     t({ "", "" }), i(2),
     t({ "", "```", "" }),
@@ -429,14 +450,14 @@ local snippets = {
   -- Frontmatter snippet
   ---------------------------------------------------------------------------
 
-  s({ trig = "fm", desc = "YAML frontmatter" }, {
+  s({ trig = ";fm", desc = "YAML frontmatter" }, {
     t({ "---", "type: " }), i(1, "note"),
     t({ "", "date: " }), f(function() return os.date("%Y-%m-%d") end),
     t({ "", "tags:", "  - " }), i(2, "tag"),
     t({ "", "---", "" }),
   }),
 
-  s({ trig = "fmtask", desc = "Task note frontmatter" }, {
+  s({ trig = ";fmtask", desc = "Task note frontmatter" }, {
     t({ "---", "type: task", "status: " }),
     c(1, { t("todo"), t("in-progress"), t("done"), t("blocked") }),
     t({ "", "priority: " }),
@@ -447,7 +468,7 @@ local snippets = {
     t({ "", "---", "" }),
   }),
 
-  s({ trig = "fmlit", desc = "Literature note frontmatter" }, {
+  s({ trig = ";fmlit", desc = "Literature note frontmatter" }, {
     t({ "---", "type: literature", "authors:", "  - " }), i(1, "Author Name"),
     t({ "", "year: " }), i(2, "2025"),
     t({ "", "journal: " }), i(3, "Journal Name"),
@@ -459,11 +480,11 @@ local snippets = {
   -- Inline field snippets
   ---------------------------------------------------------------------------
 
-  s({ trig = "field", desc = "Inline field [key:: value]" }, {
+  s({ trig = ";field", desc = "Inline field [key:: value]" }, {
     t("["), i(1, "key"), t(":: "), i(2, "value"), t("]"),
   }),
 
-  s({ trig = "fieldi", desc = "Standalone inline field key:: value" }, {
+  s({ trig = ";fieldi", desc = "Standalone inline field key:: value" }, {
     i(1, "key"), t(":: "), i(2, "value"),
   }),
 
@@ -471,33 +492,33 @@ local snippets = {
   -- Footnote snippets
   ---------------------------------------------------------------------------
 
-  s({ trig = "fnr", desc = "Footnote reference [^N]" }, {
+  s({ trig = ";fnr", desc = "Footnote reference [^N]" }, {
     t("[^"),
-    f(function() return tostring(footnotes.next_id()) end),
+    f(function() return tostring(next_footnote_id()) end),
     t("]"),
   }),
 
-  s({ trig = "fnd", desc = "Footnote definition [^N]: ..." }, {
+  s({ trig = ";fnd", desc = "Footnote definition [^N]: ..." }, {
     t("[^"),
-    f(function() return tostring(footnotes.next_id()) end),
+    f(function() return tostring(next_footnote_id()) end),
     t("]: "),
     i(1, "definition"),
   }),
 
-  s({ trig = "fn", desc = "Footnote reference [^id]" }, {
+  s({ trig = ";fn", desc = "Footnote reference [^id]" }, {
     t("[^"),
     i(1, "id"),
     t("]"),
   }),
 
-  s({ trig = "fndef", desc = "Footnote definition [^id]: ..." }, {
+  s({ trig = ";fndef", desc = "Footnote definition [^id]: ..." }, {
     t("[^"),
     i(1, "id"),
     t("]: "),
     i(2, "definition"),
   }),
 
-  s({ trig = "fnp", desc = "Paired footnote: reference + definition" }, {
+  s({ trig = ";fnp", desc = "Paired footnote: reference + definition" }, {
     t("[^"),
     i(1, "1"),
     t("]"),
@@ -507,16 +528,18 @@ local snippets = {
     i(2, "definition"),
   }),
 
-  s({ trig = "fnpa", desc = "Paired footnote (auto-numbered): reference + definition" }, {
-    t("[^"),
-    f(function() return tostring(footnotes.next_id()) end),
-    t({ "]", "", "[^" }),
-    f(function() return tostring(footnotes.next_id()) end),
-    t("]: "),
+  s({ trig = ";fnpa", desc = "Paired footnote (auto-numbered): reference + definition" }, {
+    -- One function node emits BOTH occurrences so the id is computed once:
+    -- two separate f() nodes would re-scan the buffer after the first one has
+    -- already inserted [^N], yielding a mismatched pair.
+    f(function()
+      local id = tostring(next_footnote_id())
+      return { "[^" .. id .. "]", "", "[^" .. id .. "]: " }
+    end),
     i(1, "definition"),
   }),
 
-  s({ trig = "fni", desc = "Inline footnote ^[...]" }, {
+  s({ trig = ";fni", desc = "Inline footnote ^[...]" }, {
     t("^["),
     i(1, "footnote text"),
     t("]"),
@@ -526,13 +549,13 @@ local snippets = {
   -- Table snippet
   ---------------------------------------------------------------------------
 
-  s({ trig = "tbl", desc = "Markdown table" }, {
+  s({ trig = ";tbl", desc = "Markdown table" }, {
     t("| "), i(1, "Header 1"), t(" | "), i(2, "Header 2"), t({ " |", "" }),
     t({ "| --- | --- |", "" }),
     t("| "), i(3, "Cell"), t(" | "), i(4, "Cell"), t({ " |", "" }),
   }),
 
-  s({ trig = "table", desc = "Markdown table (3 columns)" }, {
+  s({ trig = ";table", desc = "Markdown table (3 columns)" }, {
     t("| "), i(1, "Header 1"), t(" | "), i(2, "Header 2"), t(" | "), i(3, "Header 3"), t({ " |", "" }),
     t({ "| --- | --- | --- |", "" }),
     t("| "), i(4, "Cell"), t(" | "), i(5, "Cell"), t(" | "), i(6, "Cell"), t({ " |", "" }),
@@ -542,7 +565,7 @@ local snippets = {
   -- Dynamic table snippet (dimension-based)
   ---------------------------------------------------------------------------
 
-  s({ trig = "tblx", desc = "Markdown table (dynamic: type CxR then Tab)" }, {
+  s({ trig = ";tblx", desc = "Markdown table (dynamic: type CxR then Tab)" }, {
     i(1, "3x2"),
     d(2, function(args)
       local table_gen = require("andrew.utils.table-gen")
@@ -569,17 +592,17 @@ local snippets = {
   -- Heading snippets
   ---------------------------------------------------------------------------
 
-  s({ trig = "h2", desc = "Level 2 heading" }, {
+  s({ trig = ";h2", desc = "Level 2 heading" }, {
     t("## "), i(1, "Heading"),
     t({ "", "" }),
   }),
 
-  s({ trig = "h3", desc = "Level 3 heading" }, {
+  s({ trig = ";h3", desc = "Level 3 heading" }, {
     t("### "), i(1, "Heading"),
     t({ "", "" }),
   }),
 
-  s({ trig = "h4", desc = "Level 4 heading" }, {
+  s({ trig = ";h4", desc = "Level 4 heading" }, {
     t("#### "), i(1, "Heading"),
     t({ "", "" }),
   }),
@@ -1586,13 +1609,13 @@ local snippets = {
   -- =========================================================================
 
   -- Image link: ![alt](url "title")
-  s({ trig = "img", desc = "Image ![alt](url)" }, {
+  s({ trig = ";img", desc = "Image ![alt](url)" }, {
     t("!["), i(1, "alt text"), t("]("), i(2, "url"),
     t(' "'), i(3, "title"), t('")'),
   }),
 
   -- Image link from clipboard: auto-fills URL from system clipboard
-  s({ trig = "imgc", desc = "Image from clipboard ![alt](clipboard)" }, {
+  s({ trig = ";imgc", desc = "Image from clipboard ![alt](clipboard)" }, {
     t("!["), i(1, "alt text"), t("]("),
     f(function()
       local clip = vim.fn.getreg("+")
@@ -1602,69 +1625,69 @@ local snippets = {
   }),
 
   -- HTML comment (single-line)
-  s({ trig = "comment", desc = "HTML comment <!-- -->" }, {
+  s({ trig = ";comment", desc = "HTML comment <!-- -->" }, {
     t("<!-- "), i(1, "comment"), t(" -->"),
   }),
 
   -- HTML comment block (multi-line)
-  s({ trig = "commentblock", desc = "HTML comment block (multi-line)" }, {
+  s({ trig = ";commentblock", desc = "HTML comment block (multi-line)" }, {
     t({ "<!--", "" }), i(1, "comment"), t({ "", "-->" }),
   }),
 
   -- Reference-style link: [text][id] with definition below
-  s({ trig = "reflink", desc = "Reference-style link [text][id] + definition" }, {
+  s({ trig = ";reflink", desc = "Reference-style link [text][id] + definition" }, {
     t("["), i(1, "link text"), t("]["), i(2, "ref-id"), t("]"),
     t({ "", "", "[" }), rep(2), t("]: "), i(3, "url"),
   }),
 
   -- Reference-style image: ![alt][id] with definition below
-  s({ trig = "refimg", desc = "Reference-style image ![alt][id] + definition" }, {
+  s({ trig = ";refimg", desc = "Reference-style image ![alt][id] + definition" }, {
     t("!["), i(1, "alt text"), t("]["), i(2, "ref-id"), t("]"),
     t({ "", "", "[" }), rep(2), t("]: "), i(3, "url"), t(' "'), i(4, "title"), t('"'),
   }),
 
   -- Highlight ==text==
-  s({ trig = "hl", desc = "Highlight ==text==" }, {
+  s({ trig = ";hl", desc = "Highlight ==text==" }, {
     t("=="), i(1, "highlighted text"), t("=="),
   }),
 
   -- Highlight ==text== (alias)
-  s({ trig = "mark", desc = "Highlight ==text== (alias)" }, {
+  s({ trig = ";mark", desc = "Highlight ==text== (alias)" }, {
     t("=="), i(1, "highlighted text"), t("=="),
   }),
 
   -- Important highlight ==!text==
-  s({ trig = "hl!", desc = "Important highlight ==!text==" }, {
+  s({ trig = ";hl!", desc = "Important highlight ==!text==" }, {
     t("==!"), i(1, "important"), t("=="),
   }),
 
   -- Question highlight ==?text==
-  s({ trig = "hl?", desc = "Question highlight ==?text==" }, {
+  s({ trig = ";hl?", desc = "Question highlight ==?text==" }, {
     t("==?"), i(1, "question"), t("=="),
   }),
 
   -- Abbreviation *[ABBR]: Full Text
-  s({ trig = "abbr", desc = "Abbreviation *[ABBR]: Full Text" }, {
+  s({ trig = ";abbr", desc = "Abbreviation *[ABBR]: Full Text" }, {
     t("*["), i(1, "ABBR"), t("]: "), i(2, "Full Text"),
   }),
 
   -- Definition list: term + : definition
-  s({ trig = "def", desc = "Definition list (term + definition)" }, {
+  s({ trig = ";def", desc = "Definition list (term + definition)" }, {
     i(1, "Term"), t({ "", ": " }), i(2, "Definition"),
   }),
 
   -- Keyboard key <kbd>key</kbd>
-  s({ trig = "kbd", desc = "Keyboard key <kbd>...</kbd>" }, {
+  s({ trig = ";kbd", desc = "Keyboard key <kbd>...</kbd>" }, {
     t("<kbd>"), i(1, "key"), t("</kbd>"),
   }),
 
   -- Keyboard combo <kbd>mod</kbd>+<kbd>key</kbd>
-  s({ trig = "kbdc", desc = "Keyboard combo <kbd>mod</kbd>+<kbd>key</kbd>" }, {
+  s({ trig = ";kbdc", desc = "Keyboard combo <kbd>mod</kbd>+<kbd>key</kbd>" }, {
     t("<kbd>"), i(1, "Ctrl"), t("</kbd>+<kbd>"), i(2, "key"), t("</kbd>"),
   }),
 
   -- Collapsible details/summary block
-  s({ trig = "details", desc = "Collapsible <details><summary>...</summary>...</details>" }, {
+  s({ trig = ";details", desc = "Collapsible <details><summary>...</summary>...</details>" }, {
     t({ "<details>", "<summary>" }), i(1, "Click to expand"), t({ "</summary>", "", "" }),
     i(2, "Hidden content here"),
     t({ "", "", "</details>" }),

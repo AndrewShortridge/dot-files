@@ -9,6 +9,7 @@
 local engine = require("andrew.vault.engine")
 local config = require("andrew.vault.config")
 local file_cache = require("andrew.vault.file_cache")
+local fzf_look = require("andrew.utils.fzf_look")
 local link_utils = require("andrew.vault.link_utils")
 local linkdiag = require("andrew.vault.linkdiag")
 local notify = require("andrew.vault.notify")
@@ -228,8 +229,7 @@ local function show_repair_picker(bufnr, repairs)
     entry_map[entry] = r
   end
 
-  fzf.fzf_exec(entries, {
-    prompt = "Link repair (" .. #repairs .. " broken)> ",
+  fzf.fzf_exec(entries, fzf_look.titled("Link repair (" .. #repairs .. " broken)", {
     actions = {
       ["default"] = function(selected)
         if not selected or not selected[1] then return end
@@ -307,7 +307,7 @@ local function show_repair_picker(bufnr, repairs)
         end
       end,
     },
-  })
+  }))
 end
 
 --- Repair broken links in the current buffer.
@@ -531,9 +531,8 @@ function M.repair_vault(opts)
       if vr.auto_fix then auto_count = auto_count + 1 end
     end
 
-    fzf.fzf_exec(entries, {
-      prompt = string.format("Vault repair (%d broken, %d auto-fixable)> ",
-        #vault_repairs, auto_count),
+    fzf.fzf_exec(entries, fzf_look.titled(
+      string.format("Vault repair (%d broken, %d auto-fixable)", #vault_repairs, auto_count), {
       previewer = "builtin",
       cwd = engine.vault_path,
       actions = {
@@ -558,7 +557,7 @@ function M.repair_vault(opts)
           end
         end,
       },
-    })
+    }))
   end)
 end
 

@@ -216,6 +216,11 @@ function M.tokenize(src)
       tokens[#tokens + 1] = { type = TK.OP, value = advance(2) }
     elseif ch == "-" and peek(1) == "-" then
       tokens[#tokens + 1] = { type = TK.OP, value = advance(2) }
+    -- Optional chaining `?.` -> emit as OP so the lone-`?` ternary PUNCT path
+    -- is never reached for `?.`. Must precede the single-char PUNCT block below
+    -- (which would otherwise swallow the lone `?`).
+    elseif ch == "?" and peek(1) == "." then
+      tokens[#tokens + 1] = { type = TK.OP, value = advance(2) }
 
     -- Single-char operators
     elseif ch == "+" or ch == "-" or ch == "*" or ch == "/"

@@ -17,21 +17,29 @@ local function dollar_count_heuristic()
   local col = vim.api.nvim_win_get_cursor(0)[2]
   local before = line:sub(1, col):gsub("\\%$", "")
   local _, count = before:gsub("%$", "")
-  return count % 2 == 1
+  if count % 2 == 0 then
+    return false
+  end
+  -- An odd count alone is not enough in prose: a single `$` is usually a price
+  -- ("costs $5 so **bold** and xx"), and treating the rest of the line as math
+  -- let every math autosnippet fire on ordinary text -- `**` became \cdot,
+  -- `~~` became \approx, `xx` became \times. Require the run to be CLOSED
+  -- later on the line; `mk`/`dm` insert both delimiters at once, so a real
+  -- inline-math zone always has its closing `$` present.
+  local after = line:sub(col + 1):gsub("\\%$", "")
+  return after:find("%$") ~= nil
 end
 
---- Check if cursor is inside a LaTeX math zone.
---- Works in both .tex files (treesitter node walk) and markdown (latex injection).
---- Falls back to regex $-counting when treesitter is in an error state
---- (e.g., during typing before delimiters are complete).
-function M.in_mathzone()
-  local buf = vim.api.nvim_get_current_buf()
-  local ft = vim.bo[buf].filetype
+-- 1-slot memo: blink.cmp's luasnip source filters the WHOLE cached snippet
+-- list by show_condition on every completion query, calling in_mathzone once
+-- per snippet (~387 in markdown). All calls in one query share the same
+-- buffer/changedtick/cursor, so memoizing on that key collapses ~387 fresh
+-- TS parses into 1. No invalidation needed (key encodes changedtick+cursor).
+local _mz_cache = { key = nil, val = false }
 
-  -- Treesitter: detect language at cursor via the parser tree
-  local row = vim.api.nvim_win_get_cursor(0)[1] - 1
-  local col = vim.api.nvim_win_get_cursor(0)[2]
-
+--- Uncached math-zone detection. Takes pre-computed buf/ft/row/col so the
+--- memo wrapper can capture every return path with a single assignment.
+local function _in_mathzone_uncached(buf, ft, row, col)
   local lok, lang = pcall(function()
     local parser = vim.treesitter.get_parser(buf)
     local lang_tree = parser:language_for_range({ row, col, row, col })
@@ -70,6 +78,25 @@ function M.in_mathzone()
   return false
 end
 
+--- Check if cursor is inside a LaTeX math zone.
+--- Works in both .tex files (treesitter node walk) and markdown (latex injection).
+--- Falls back to regex $-counting when treesitter is in an error state
+--- (e.g., during typing before delimiters are complete).
+--- Memoized on (buf, changedtick, cursor) so blink.cmp's per-snippet
+--- show_condition fan-out within one completion query reuses a single parse.
+function M.in_mathzone()
+  local buf = vim.api.nvim_get_current_buf()
+  local cur = vim.api.nvim_win_get_cursor(0)
+  local key = buf .. ":" .. vim.api.nvim_buf_get_changedtick(buf) .. ":" .. cur[1] .. ":" .. cur[2]
+  if _mz_cache.key == key then
+    return _mz_cache.val
+  end
+  local ft = vim.bo[buf].filetype
+  local val = _in_mathzone_uncached(buf, ft, cur[1] - 1, cur[2])
+  _mz_cache.key, _mz_cache.val = key, val
+  return val
+end
+
 function M.not_mathzone()
   return not M.in_mathzone()
 end
@@ -86,6 +113,28 @@ function M.math_snippets()
 
   local cond = { condition = M.in_mathzone, show_condition = M.in_mathzone }
 
+  -- Autosnippet guard. Every short math autosnippet below (`sum`, `lim`, `hat`,
+  -- `bar`, `vec`, `dot`, `case`, `prod`, `inv`, ...) is ALSO the tail of a
+  -- readable `;latex-*` alias. `-` is not in 'iskeyword', so `wordTrig` sees a
+  -- word boundary right before `sum` in `;latex-sum` and the autosnippet fired
+  -- MID-TYPING, leaving `;latex-\sum_{i=1}^{n} ` behind -- the readable aliases
+  -- were impossible to type inside math. Refuse while the token being typed
+  -- already contains `;` (this config's alias marker; the same test
+  -- plugins/blink-cmp.lua uses to gate its snippet source in tex/markdown).
+  -- Regular snippets keep the plain `cond` so `;latex-*` still expands.
+  local function auto_mathzone(line_to_cursor, match)
+    local before = line_to_cursor or ""
+    if match then
+      before = before:sub(1, #before - #match)
+    end
+    local token = before:match("%S*$")
+    if token and token:find(";", 1, true) then
+      return false
+    end
+    return M.in_mathzone()
+  end
+  local auto_cond = { condition = auto_mathzone, show_condition = M.in_mathzone }
+
   -- math autosnippet: simple text replacement
   local function mr(trig, repl, opts)
     opts = opts or {}
@@ -94,7 +143,7 @@ function M.math_snippets()
       snippetType = "autosnippet",
       wordTrig = opts.wordTrig ~= false,
       priority = opts.priority,
-    }, { t(repl) }, cond)
+    }, { t(repl) }, auto_cond)
   end
 
   -- math autosnippet: with nodes (insert nodes, etc.)
@@ -105,7 +154,7 @@ function M.math_snippets()
       snippetType = "autosnippet",
       wordTrig = opts.wordTrig ~= false,
       priority = opts.priority,
-    }, nodes, cond)
+    }, nodes, auto_cond)
   end
 
   -- regular math snippet: simple text replacement (shows in completions)

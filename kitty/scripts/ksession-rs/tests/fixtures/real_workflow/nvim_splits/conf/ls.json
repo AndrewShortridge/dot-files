@@ -1,0 +1,47 @@
+{
+  "tabs": [
+    {
+      "id": 1,
+      "title": "code",
+      "windows": [
+        {
+          "id": 1,
+          "title": "main.rs",
+          "foreground": {
+            "text": "/home/u/.local/bin/nvim src/main.rs",
+            "exe": "nvim"
+          },
+          "cwd": "/home/u/project"
+        },
+        {
+          "id": 2,
+          "title": "lib.rs",
+          "foreground": {
+            "text": "/home/u/.local/bin/nvim src/lib.rs",
+            "exe": "nvim"
+          },
+          "cwd": "/home/u/project"
+        },
+        {
+          "id": 3,
+          "title": "Cargo.toml",
+          "foreground": {
+            "text": "/home/u/.local/bin/nvim Cargo.toml",
+            "exe": "nvim"
+          },
+          "cwd": "/home/u/project"
+        },
+        {
+          "id": 4,
+          "title": ".gitignore",
+          "foreground": {
+            "text": "/home/u/.local/bin/nvim .gitignore",
+            "exe": "nvim"
+          },
+          "cwd": "/home/u/project"
+        }
+      ]
+    }
+  ],
+  "version": "0.47.0"
+}

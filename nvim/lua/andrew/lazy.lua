@@ -32,6 +32,13 @@ vim.opt.rtp:prepend(lazypath)
 -- =============================================================================
 -- Configure lazy.nvim with plugin specifications and behavior settings
 
+-- Containerised runs (container/nvim.def) export NVIM_CONTAINER=1. There the
+-- plugin tree is baked into a read-only .sif, usually on an air-gapped compute
+-- node, so the update checker can do nothing but spend startup on `git fetch`
+-- calls that cannot resolve -- and would have nowhere to write if they could.
+-- Unset on a normal workstation run, where both settings keep their old values.
+local containerised = vim.env.NVIM_CONTAINER == "1"
+
 require("lazy").setup({
   -- Import all plugin specifications from the plugins directory
   -- This loads all plugins defined in lua/andrew/plugins/*.lua
@@ -45,14 +52,20 @@ require("lazy").setup({
   -- Lazy.nvim Behavior Options
   -- =============================================================================
 
+  -- No plugin in this config declares a luarocks dependency (lazy's own health
+  -- check says so), so hererocks only ever produced one ERROR and two WARNINGs
+  -- in :checkhealth lazy. Turn it off.
+  rocks = { enabled = false },
+
   -- Checker: Automatically check for plugin updates
   checker = {
-    enabled = true,        -- Enable automatic update checking
+    enabled = not containerised,  -- Automatic update checking (off in a container)
     notify = false,        -- Don't notify on every check (silent background check)
   },
 
   -- Change Detection: Watch config files for changes
   change_detection = {
+    enabled = not containerised,  -- Nothing can change under a read-only image
     notify = false,        -- Don't notify when config files change
   },
 })

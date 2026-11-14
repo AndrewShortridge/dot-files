@@ -117,7 +117,12 @@ function M.invalidate_image_cache(changed_path)
   -- Collect matching keys first (avoid mutating during iteration)
   local to_remove = {}
   for key in _image_cache:entries() do
-    local cached_name = key:match("^([^\0]+)")
+    -- Keys are "<image_name>\0<buf_dir>", and the split CANNOT use a Lua
+    -- pattern: LuaJIT's classend() scans for the closing "]" and stops at the
+    -- embedded NUL, so "[^\0]" always raises "malformed pattern (missing ']')".
+    -- A plain (pattern-free) find is NUL-safe.
+    local sep = key:find("\0", 1, true)
+    local cached_name = sep and key:sub(1, sep - 1) or key
     if cached_name == changed_name then
       to_remove[#to_remove + 1] = key
     end
@@ -386,6 +391,28 @@ function M.remove_placement(handle)
     return true
   end
   return false
+end
+
+--- Hide a placement (detach its rendered image from the terminal) without
+--- closing it. The handle stays live in the slot map and st.placements so the
+--- same placement can be re-shown on scroll-back without recreating/retransmitting.
+---@param handle table { slot, generation }
+---@return boolean found
+function M.hide_placement(handle)
+  local entry = _placement_map:get(handle)
+  if not entry then return false end
+  safe_pcall("placement hide", function() entry.placement:hide() end)
+  return true
+end
+
+--- Show a previously hidden placement (re-render its already-loaded image).
+---@param handle table { slot, generation }
+---@return boolean found
+function M.show_placement(handle)
+  local entry = _placement_map:get(handle)
+  if not entry then return false end
+  safe_pcall("placement show", function() entry.placement:show() end)
+  return true
 end
 
 --- Get the count of live placements for a buffer.

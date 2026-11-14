@@ -14,6 +14,14 @@ local function select_range(sr, sc, er, ec)
   if sr > er or (sr == er and sc > ec) then
     return
   end
+  -- `normal! v` below TOGGLES visual mode, so when this runs from an existing
+  -- visual selection (`vil`, `vac`, ...) it would EXIT visual mode instead of
+  -- starting a fresh one. Leave visual mode first so the `v` always enters it.
+  -- Operator-pending mode ("no" / "nov" / "noV" / "no^V") must NOT be escaped:
+  -- the pending operator needs the range this function is about to build.
+  if vim.fn.mode():find("^[vV\22]") then
+    vim.cmd("normal! \27")
+  end
   vim.api.nvim_win_set_cursor(0, { sr + 1, sc })
   vim.cmd("normal! v")
   vim.api.nvim_win_set_cursor(0, { er + 1, ec })
@@ -63,86 +71,52 @@ local function parse_fence(line)
   return nil
 end
 
+--- Collect every fenced code block in the buffer as {open, close} row pairs
+--- (0-indexed, inclusive). Single top-down scan: a fence opens a block, and the
+--- first later fence of the same char, at least as long, and WITHOUT an info
+--- string closes it (CommonMark forbids an info string on a closing fence).
+--- Scanning downward is what makes a BARE opening fence (```` ``` ```` with no
+--- language) work: walking UPWARDS from the cursor cannot tell such an opener
+--- from the closer of an earlier block, and the old heuristic guessed "closer"
+--- every time -- so `ac`/`ic` silently did nothing inside every code block
+--- written without a language tag.
+local function collect_code_block_ranges()
+  local total = line_count()
+  local blocks = {}
+  local r = 0
+  while r < total do
+    local indent, fence = parse_fence(get_line(r))
+    if indent then
+      local char, len = fence:sub(1, 1), #fence
+      local close
+      for r2 = r + 1, total - 1 do
+        local indent2, fence2, rest2 = parse_fence(get_line(r2))
+        if indent2 and fence2:sub(1, 1) == char and #fence2 >= len
+          and #vim.trim(rest2 or "") == 0 then
+          close = r2
+          break
+        end
+      end
+      if close then
+        blocks[#blocks + 1] = { open = r, close = close }
+        r = close
+      end
+      -- No closer: orphan fence, keep scanning from the next line.
+    end
+    r = r + 1
+  end
+  return blocks
+end
+
 --- Find the fenced code block enclosing row (0-indexed).
 --- Returns (open_row, close_row) or nil.
 local function find_code_block(row)
-  local total = line_count()
-
-  -- Search upward for opening fence
-  local open_row, open_char, open_len
-  for r = row, 0, -1 do
-    local line = get_line(r)
-    local indent, fence, rest = parse_fence(line)
-    if indent then
-      local char = fence:sub(1, 1)
-      local len = #fence
-      if r < row then
-        local trimmed = vim.trim(rest or "")
-        if #trimmed > 0 then
-          -- Has info string -> definitely an opener
-          open_row = r
-          open_char = char
-          open_len = len
-          break
-        else
-          -- Bare fence: could be closer of a previous block.
-          -- Skip this fence and its matching opener above.
-          local skip_char, skip_len = char, len
-          for r2 = r - 1, 0, -1 do
-            local line2 = get_line(r2)
-            local indent2, fence2, rest2 = parse_fence(line2)
-            if indent2 and fence2:sub(1, 1) == skip_char and #fence2 >= skip_len then
-              r = r2 -- continue searching upward past the opener
-              break
-            end
-          end
-        end
-      else
-        -- Cursor is on a fence line itself
-        local trimmed = vim.trim(rest or "")
-        if #trimmed > 0 then
-          -- On an opening fence
-          open_row = r
-          open_char = char
-          open_len = len
-          break
-        else
-          -- On a closing fence or bare opener. Search upward for the opener.
-          local target_char, target_len = char, len
-          for r2 = r - 1, 0, -1 do
-            local line2 = get_line(r2)
-            local indent2, fence2, rest2 = parse_fence(line2)
-            if indent2 and fence2:sub(1, 1) == target_char and #fence2 >= target_len then
-              open_row = r2
-              open_char = target_char
-              open_len = #fence2
-              break
-            end
-          end
-          break
-        end
-      end
+  for _, b in ipairs(collect_code_block_ranges()) do
+    if row >= b.open and row <= b.close then
+      return b.open, b.close
     end
-  end
-
-  if not open_row then
-    return nil
-  end
-
-  -- Search downward for closing fence (same char type, at least open_len chars)
-  for r = open_row + 1, total - 1 do
-    local line = get_line(r)
-    local indent, fence, rest = parse_fence(line)
-    if indent and fence:sub(1, 1) == open_char and #fence >= open_len then
-      local trimmed = vim.trim(rest or "")
-      if #trimmed == 0 then
-        -- Verify cursor is within this block
-        if row >= open_row and row <= r then
-          return open_row, r
-        else
-          return nil
-        end
-      end
+    if b.open > row then
+      return nil
     end
   end
   return nil
@@ -151,48 +125,9 @@ end
 --- Collect all code block positions for motions.
 --- Returns list of {row} (0-indexed) for each opening fence.
 local function collect_code_blocks()
-  local total = line_count()
   local blocks = {}
-  local r = 0
-  while r < total do
-    local line = get_line(r)
-    local indent, fence, rest = parse_fence(line)
-    if indent then
-      local char = fence:sub(1, 1)
-      local len = #fence
-      local trimmed = vim.trim(rest or "")
-      if #trimmed > 0 then
-        -- Opening fence with info string
-        blocks[#blocks + 1] = { row = r }
-        -- Skip to closing fence
-        for r2 = r + 1, total - 1 do
-          local line2 = get_line(r2)
-          local indent2, fence2, rest2 = parse_fence(line2)
-          if indent2 and fence2:sub(1, 1) == char and #fence2 >= len then
-            r = r2
-            break
-          end
-        end
-      else
-        -- Bare fence: could be an opening fence for a code block with no info string
-        local found_closer = false
-        for r2 = r + 1, total - 1 do
-          local line2 = get_line(r2)
-          local indent2, fence2, rest2 = parse_fence(line2)
-          if indent2 and fence2:sub(1, 1) == char and #fence2 >= len then
-            local trimmed2 = vim.trim(rest2 or "")
-            if #trimmed2 == 0 then
-              blocks[#blocks + 1] = { row = r }
-              r = r2
-              found_closer = true
-              break
-            end
-          end
-        end
-        -- Orphan fence if not found_closer, skip
-      end
-    end
-    r = r + 1
+  for _, b in ipairs(collect_code_block_ranges()) do
+    blocks[#blocks + 1] = { row = b.open }
   end
   return blocks
 end

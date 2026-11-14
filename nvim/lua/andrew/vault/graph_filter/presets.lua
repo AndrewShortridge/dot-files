@@ -76,8 +76,7 @@ function M.open_preset_picker(state_ref, default_state, on_apply)
   end
 
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(names, {
-    prompt = "Load preset> ",
+  fzf.fzf_exec(names, require("andrew.utils.fzf_look").titled("Load preset", {
     actions = {
       ["default"] = function(selected)
         if selected and selected[1] then
@@ -95,7 +94,7 @@ function M.open_preset_picker(state_ref, default_state, on_apply)
         end
       end,
     },
-  })
+  }))
 end
 
 --- Save a preset with user-provided name.

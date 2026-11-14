@@ -1,0 +1,30 @@
+{
+  "name": "light_001",
+  "description": "Light scenario: minimal session for baseline benchmarks",
+  "generated_at": "2026-05-26T13:56:30.255314351+00:00",
+  "kitty_version": "kitty 0.47.0 created by Kovid Goyal",
+  "tab_count": 2,
+  "window_count": 4,
+  "complexity": "light",
+  "tags": [
+    "light",
+    "baseline"
+  ],
+  "build_params": {
+    "num_windows": "2",
+    "build_duration_ms": "1410",
+    "num_tabs": "2"
+  },
+  "scenario": {
+    "min_tabs": 1,
+    "max_tabs": 2,
+    "min_windows": 2,
+    "max_windows": 4,
+    "min_buffers": 4,
+    "max_buffers": 8,
+    "min_nvim": 1,
+    "max_nvim": 2,
+    "min_tmux": 0,
+    "max_tmux": 1
+  }
+}

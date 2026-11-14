@@ -1,0 +1,16 @@
+{
+  "name": "nvim_multi_tab",
+  "description": "Multiple nvim tabs: nvim with multiple tab pages",
+  "generated_at": "2026-05-25T23:15:00Z",
+  "kitty_version": "kitty 0.47.0",
+  "tab_count": 3,
+  "window_count": 3,
+  "tags": [
+    "nvim",
+    "multi-tab",
+    "multiple-tabs"
+  ],
+  "build_params": {
+    "type": "manual"
+  }
+}

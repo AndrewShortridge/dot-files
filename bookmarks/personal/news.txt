@@ -1,0 +1,6 @@
+# personal / news  —  label :: url   (or just a url)
+Hacker News :: https://news.ycombinator.com
+Lobsters :: https://lobste.rs
+Ars Technica :: https://arstechnica.com
+This Week in Rust :: https://this-week-in-rust.org
+Phoronix :: https://www.phoronix.com

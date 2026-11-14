@@ -20,14 +20,48 @@ function M:enabled()
   return vim.wo.spell
 end
 
+--- Extract the word surrounding the cursor from the completion context.
+--- `vim.fn.expand("<cword>")` cannot be used on its own: while typing in INSERT
+--- mode the cursor sits one byte PAST the last character, which is off the end
+--- of the line, and <cword> then evaluates to "" — so the source produced no
+--- suggestions at all in real use. The context line/column are authoritative.
+---@param ctx table|nil blink.cmp.Context
+---@return string
+local function word_at_cursor(ctx)
+  local line = ctx and ctx.line
+  local col = ctx and ctx.cursor and ctx.cursor[2]
+  if type(line) == "string" and type(col) == "number" then
+    local head = line:sub(1, col):match("[%a'][%a']*$") or ""
+    local tail = line:sub(col + 1):match("^[%a']*") or ""
+    local word = head .. tail
+    if word ~= "" then return word end
+  end
+  -- Fallback for a nil/odd context. pcall: expand("<cword>") raises E348 when
+  -- there is genuinely no word under the cursor (e.g. an empty line).
+  local ok, cword = pcall(vim.fn.expand, "<cword>")
+  return (ok and cword) or ""
+end
+
+--- Spell suggestions depend on the WHOLE word typed so far, not on a stable
+--- item set that blink can re-filter locally. A complete response
+--- (is_incomplete_* = false) makes blink cache the first answer for the trigger
+--- context and never re-query, so the empty result for the first typed letter
+--- stuck for the rest of the word and the source produced nothing. Marking every
+--- response incomplete makes blink re-ask on each keystroke.
+---@param items table[]
+---@return table
+local function incomplete_response(items)
+  return { is_incomplete_forward = true, is_incomplete_backward = true, items = items }
+end
+
 --- Get completions: spell suggestions for the word under cursor.
 ---@param _ctx blink.cmp.Context
 ---@param callback fun(response: blink.cmp.CompletionResponse)
 function M:get_completions(_ctx, callback)
   -- Get the word under cursor
-  local word = vim.fn.expand("<cword>")
+  local word = word_at_cursor(_ctx)
   if not word or word == "" then
-    callback(base.empty_response)
+    callback(incomplete_response({}))
     return
   end
 
@@ -35,7 +69,7 @@ function M:get_completions(_ctx, callback)
   -- vim.fn.spellbadword() returns {"word", "type"} for bad words, {"", ""} otherwise.
   local bad = vim.fn.spellbadword(word)
   if not bad or not bad[1] or bad[1] == "" then
-    callback(base.empty_response)
+    callback(incomplete_response({}))
     return
   end
 
@@ -50,7 +84,7 @@ function M:get_completions(_ctx, callback)
     })
   end
 
-  callback(base.response(items))
+  callback(incomplete_response(items))
 end
 
 return M

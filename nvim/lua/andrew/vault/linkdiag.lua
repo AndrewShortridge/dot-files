@@ -126,6 +126,11 @@ end
 -- Core validation
 -- ---------------------------------------------------------------------------
 
+---@type table<number, boolean> bufnr -> a validate_batch is in flight
+local _url_batch_active = {}
+---@type table<number, boolean> bufnr -> a coalesced re-validate is queued
+local _url_refresh_queued = {}
+
 --- Run URL validation (async) and append diagnostics.
 --- Called after pipeline validation to check external URLs.
 ---@param bufnr number buffer number
@@ -163,25 +168,55 @@ local function run_url_validation(bufnr, diags)
   -- Re-set diagnostics with cached URL results included
   vim.diagnostic.set(M.ns, bufnr, diags)
 
-  -- Fire async validation for uncached URLs
+  -- Never re-enter while a batch for this buffer is still running: the
+  -- callbacks below call M.validate(), which lands back here.
+  if _url_batch_active[bufnr] then return end
+
+  -- Fire async validation for uncached URLs.  Excluded URLs (localhost, LAN
+  -- addresses, ...) are skipped: validate_url() resolves them SYNCHRONOUSLY
+  -- and never caches the result, so queuing them made every callback re-run
+  -- M.validate() on a still-uncached URL -- an unbounded recursion that ended
+  -- in "stack overflow" and a hung Neovim.
   local uncached = {}
   for _, entry in ipairs(url_entries) do
-    if not url_validate.get_cached(entry.url) then
+    if not url_validate.get_cached(entry.url) and not url_validate.is_excluded(entry.url) then
       uncached[#uncached + 1] = entry
     end
   end
 
-  if #uncached > 0 then
-    url_validate.validate_batch(uncached, function(_entry, _result)
-      if vim.api.nvim_buf_is_valid(bufnr) then
-        M.validate(bufnr)
-      end
-    end, function(_all_results)
+  if #uncached == 0 then return end
+
+  _url_batch_active[bufnr] = true
+
+  --- Re-render diagnostics once per event-loop tick (never synchronously from
+  --- a validate_batch callback).
+  local function queue_refresh()
+    if _url_refresh_queued[bufnr] then return end
+    _url_refresh_queued[bufnr] = true
+    vim.schedule(function()
+      _url_refresh_queued[bufnr] = nil
       if vim.api.nvim_buf_is_valid(bufnr) then
         M.validate(bufnr)
       end
     end)
   end
+
+  local any_cached = false
+  url_validate.validate_batch(uncached, function(entry, _result)
+    -- Only refresh when the result actually landed in the cache; otherwise the
+    -- refresh would find the same URL uncached and queue the batch again.
+    if url_validate.get_cached(entry.url) then
+      any_cached = true
+      queue_refresh()
+    end
+  end, function(_all_results)
+    _url_batch_active[bufnr] = nil
+    -- Nothing was cached (every request was rejected or excluded): refreshing
+    -- would re-queue the same batch on every tick, so stop here.
+    if any_cached then
+      queue_refresh()
+    end
+  end)
 end
 
 --- Pipeline-based validation: uses pre-tokenized and pre-resolved data.

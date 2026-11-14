@@ -43,6 +43,8 @@ local _fs_watcher_count = 0        -- count of entries in _fs_watchers
 local _fs_watcher_vault = nil
 local _pending_changed_files = {}  -- abs_path -> true
 local _pending_count = 0           -- count of entries in _pending_changed_files
+local _self_written = {}           -- abs_path -> hrtime deadline; coalesced writes already indexed by BufWritePost
+local SELF_WRITE_TTL = 0.5         -- seconds; must exceed the 100ms flush debounce with margin
 -- Hybrid coalescing: watch channel collapses within-tick fs events,
 -- then a short debounce (100ms) handles cross-tick bursts (e.g. git checkout).
 local _fs_send, _fs_handle = watch.new(nil)
@@ -53,6 +55,28 @@ local function flush_pending_files()
   local paths = vim.tbl_keys(_pending_changed_files)
   _pending_changed_files = {}
   _pending_count = 0
+
+  -- Coalesce self-writes: a path that BufWritePost just indexed (within TTL)
+  -- has already been re-stat/parse/derived/persisted synchronously, so drop
+  -- the watcher's redundant echo. Expired entries are dropped and re-indexed.
+  local had_pending = #paths > 0
+  local now = vim.uv.hrtime()
+  local kept = {}
+  for _, p in ipairs(paths) do
+    local deadline = _self_written[p]
+    if deadline and now <= deadline then
+      _self_written[p] = nil  -- consume: already indexed by BufWritePost
+    else
+      if deadline then _self_written[p] = nil end  -- expired; drop and re-index
+      kept[#kept + 1] = p
+    end
+  end
+  paths = kept
+
+  -- Everything was coalesced away: BufWritePost already did the work. Returning
+  -- here avoids falling into the empty-flush branch below (full build_async +
+  -- scope=all invalidation), which is reserved for the new-dir-scan signal.
+  if had_pending and #paths == 0 then return end
 
   local vault = _fs_watcher_vault
   if not vault then return end
@@ -324,10 +348,20 @@ function W.stop_fs_watcher()
 
   _pending_changed_files = {}
   _pending_count = 0
+  _self_written = {}
 
   -- Recreate watch channel for potential restart
   _fs_send, _fs_handle = watch.new(nil)
   setup_fs_watch_subscriber()
+end
+
+--- Register a buffer-driven (BufWritePost) write so the fs watcher coalesces
+--- its redundant echo of the same write. No-op when the watcher is inactive
+--- (BufWritePost is then the sole indexer — nothing to coalesce).
+---@param abs_path string
+function W.note_self_write(abs_path)
+  if _fs_watcher_count == 0 then return end
+  _self_written[abs_path] = vim.uv.hrtime() + SELF_WRITE_TTL * 1e9
 end
 
 --- Get filesystem watcher status.
@@ -351,5 +385,31 @@ end
 function W.setup(engine)
   _engine = engine
 end
+
+-- Test-only hooks: expose internals so the self-write coalescing logic can be
+-- driven directly in a headless spec without real inotify watches. Not used by
+-- production code paths.
+W._test = {
+  flush_pending_files = flush_pending_files,
+  set_active = function(active)
+    _fs_watcher_count = active and 1 or 0
+  end,
+  set_vault = function(v)
+    _fs_watcher_vault = v
+  end,
+  add_pending = function(abs_path)
+    if not _pending_changed_files[abs_path] then
+      _pending_changed_files[abs_path] = true
+      _pending_count = _pending_count + 1
+    end
+  end,
+  reset = function()
+    _pending_changed_files = {}
+    _pending_count = 0
+    _self_written = {}
+    _fs_watcher_count = 0
+    _fs_watcher_vault = nil
+  end,
+}
 
 return W

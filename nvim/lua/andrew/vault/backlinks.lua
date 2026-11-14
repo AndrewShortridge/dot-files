@@ -239,6 +239,10 @@ function M.forwardlinks()
         if path then
           local rel = path:sub(#engine.vault_path + 2)
           links[#links + 1] = rel
+        elseif require("andrew.vault.embed_images").is_image_embed(trimmed) then
+          -- ![[diagram.png]] is an attachment embed, not a note link: listing
+          -- it as "diagram.png.md" invented a note that does not exist.
+          links[#links + 1] = trimmed
         else
           links[#links + 1] = trimmed .. ".md"
         end

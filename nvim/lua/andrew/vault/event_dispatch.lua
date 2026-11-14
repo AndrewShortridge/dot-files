@@ -8,6 +8,10 @@
 --- TextChanged/TextChangedI/InsertLeave: single autocmd, shared vault check.
 ---   Dispatches to: highlight_coordinator, embed, task_hierarchy.
 ---
+--- WinScrolled: single autocmd, shared vault check.
+---   Dispatches coordinator-first then embed (embed.newly_visible reads viewport
+---   _ranges/_prev_ranges that the coordinator refreshes on the same tick).
+---
 --- FileType markdown: single autocmd, dispatches buffer-local keymaps to 14 modules.
 ---
 --- BufWritePost: single autocmd, shared vault check.
@@ -127,7 +131,6 @@ function M.setup()
       if not vim.api.nvim_buf_is_valid(bufnr) then return end
       if vim.bo[bufnr].filetype ~= "markdown" then return end
 
-      local file = vim.api.nvim_buf_get_name(bufnr)
       if not engine.is_vault_buf(bufnr) then return end
 
       local event = ev.event
@@ -139,13 +142,34 @@ function M.setup()
 
       -- embed: TextChanged + InsertLeave (self-referential rerender)
       if event ~= "TextChangedI" then
-        embed.on_text_changed(bufnr, file)
+        embed.on_text_changed(bufnr)
       end
 
       -- task_hierarchy: TextChanged + TextChangedI
       if event ~= "InsertLeave" then
         task_hierarchy._schedule_render(bufnr)
       end
+    end,
+  })
+
+  -- -----------------------------------------------------------------------
+  -- WinScrolled — shared vault check, dispatches coordinator-first then embed
+  -- -----------------------------------------------------------------------
+  -- Computes bufnr/ft/is_vault ONCE and reads current win ONCE, replacing two
+  -- independent global WinScrolled autocmds. Ordering is load-bearing: embed's
+  -- newly_visible() reads viewport _ranges/_prev_ranges that the coordinator's
+  -- get_zones()->refresh() updates on this same tick.
+
+  vim.api.nvim_create_autocmd("WinScrolled", {
+    group = _group,
+    callback = function()
+      local bufnr = vim.api.nvim_get_current_buf()
+      if vim.bo[bufnr].filetype ~= "markdown" then return end
+      if not engine.is_vault_buf(bufnr) then return end
+
+      local ctx = { bufnr = bufnr, winid = vim.api.nvim_get_current_win() }
+      highlight_coordinator.on_win_scrolled(ctx)
+      embed.on_win_scrolled(ctx)
     end,
   })
 

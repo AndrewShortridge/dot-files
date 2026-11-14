@@ -354,6 +354,18 @@ function M.remove(bufnr)
   _buffers[bufnr] = nil
 end
 
+--- Bulk-clear extmarks within the given line ranges (one call per range).
+--- Region end_line is 0-indexed exclusive, matching nvim_buf_clear_namespace's
+--- exclusive line_end exactly. Shared by consumers that already hold ranges.
+---@param bufnr number
+---@param ns number  Namespace ID
+---@param ranges {start_line: number, end_line: number}[]
+function M.clear_ranges(bufnr, ns, ranges)
+  for _, range in ipairs(ranges) do
+    vim.api.nvim_buf_clear_namespace(bufnr, ns, range.start_line, range.end_line)
+  end
+end
+
 --- Clear extmarks within invalid ranges only (shared helper for consumers).
 --- Returns the invalid ranges used, or nil if no work needed.
 ---@param bufnr number
@@ -373,19 +385,7 @@ function M.clear_extmarks_in_invalid_ranges(bufnr, ns, scope, opts)
   local invalid_ranges = tracker:get_invalid_ranges()
   if #invalid_ranges == 0 then return nil end
 
-  for _, range in ipairs(invalid_ranges) do
-    local existing = vim.api.nvim_buf_get_extmarks(
-      bufnr,
-      ns,
-      { range.start_line, 0 },
-      { range.end_line, 0 },
-      {}
-    )
-    for _, mark in ipairs(existing) do
-      vim.api.nvim_buf_del_extmark(bufnr, ns, mark[1])
-    end
-  end
-
+  M.clear_ranges(bufnr, ns, invalid_ranges)
   return invalid_ranges
 end
 

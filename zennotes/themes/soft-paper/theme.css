@@ -1,0 +1,93 @@
+/* Soft Paper: ZenNotes port of Nick Milo's Obsidian theme (v1.2.3, GPL-3.0, based on AnuPpuccin).
+ * Source: .obsidian/themes/Soft Paper/theme.css — `.theme-light` / `.theme-dark` --ctp-* palettes,
+ * `body` accent block (sapphire) and the h1–h6 colors. Tokens are RGB triplets.
+ * Shared by the desktop app and `zn tui` (theme_id = "custom-soft-paper").
+ *
+ * Deviations from the source, on purpose:
+ *  - Soft Paper's text-faint is cyan (light 12 159 206) / teal (dark 10 209 208). The TUI uses
+ *    --z-grey-* for dimmed chrome, so those are neutral steps between fg-2 and the surfaces instead.
+ *  - Soft Paper's cyan == blue (both ctp-sky). --z-aqua uses ctp-teal in light mode so the two
+ *    syntax hues stay distinguishable.
+ *  - --z-bg-4 (light) is one step past ctp-surface2 so borders still read on cream in a terminal. */
+
+:root {
+  color-scheme: light;
+  --z-bg: 238 230 221;          /* ctp-base    #EEE6DD */
+  --z-bg-softer: 230 219 209;   /* ctp-mantle  #E6DBD1 */
+  --z-bg-1: 230 219 209;        /* ctp-mantle */
+  --z-bg-2: 220 211 203;        /* ctp-surface0 */
+  --z-bg-3: 209 201 194;        /* ctp-surface1 (border) */
+  --z-bg-4: 188 178 169;        /* one step past ctp-surface2 (202 193 185) */
+  --z-fg: 87 82 121;            /* ctp-text    #575279 */
+  --z-fg-1: 87 82 121;
+  --z-fg-2: 82 82 82;           /* ctp-overlay2 = text-muted */
+  --z-grey-2: 110 106 118;
+  --z-grey-1: 96 92 104;
+  --z-grey-0: 82 82 82;
+  --z-grey-dim: 150 143 138;
+  --z-accent: 26 125 164;       /* ctp-sapphire #1A7DA4 */
+  --z-accent-soft: 46 141 178;
+  --z-accent-muted: 60 120 148;
+  --z-red: 186 113 132;         /* ctp-red     #BA7184 */
+  --z-green: 91 165 123;        /* ctp-green   #5BA57B */
+  --z-yellow: 209 149 72;       /* ctp-yellow  #D19548 */
+  --z-blue: 40 105 131;         /* ctp-blue    #286983 */
+  --z-purple: 154 133 174;      /* ctp-lavender #9A85AE */
+  --z-aqua: 102 158 166;        /* ctp-teal    #669EA6 */
+  --z-shadow: 60 50 42;
+  --z-glass-a1: 0.62;
+  --z-glass-a2: 0.5;
+  --z-glass-a3: 0.35;
+  --z-glass-a4: 0.25;
+}
+
+/* --text-selection: rgba(ctp-accent, 0.25) */
+:root .cm-editor .cm-selectionBackground, :root .cm-editor ::selection { background: rgb(26 125 164 / 0.25) !important; }
+
+/* Light headings: Soft Paper `body` block (h1 #BA7184 … h6 #8D8D8D) */
+:root .cm-editor .tok-heading1, :root .prose-zen h1 { color: rgb(186 113 132); }
+:root .cm-editor .tok-heading2, :root .prose-zen h2 { color: rgb(221 127 103); }
+:root .cm-editor .tok-heading3, :root .prose-zen h3 { color: rgb(110 154 141); }
+:root .cm-editor .tok-heading4, :root .prose-zen h4 { color: rgb(91 165 123); }
+:root .cm-editor .tok-heading5, :root .prose-zen h5 { color: rgb(154 133 174); }
+:root .cm-editor .tok-heading6, :root .prose-zen h6 { color: rgb(141 141 141); }
+
+:root[data-theme-mode="dark"] {
+  color-scheme: dark;
+  --z-bg: 48 52 70;             /* ctp-base    #303446 */
+  --z-bg-softer: 41 44 60;      /* ctp-mantle  #292C3C */
+  --z-bg-1: 41 44 60;           /* ctp-mantle */
+  --z-bg-2: 65 69 89;           /* ctp-surface0 (border) */
+  --z-bg-3: 81 86 108;          /* ctp-surface1 */
+  --z-bg-4: 98 103 126;         /* ctp-surface2 */
+  --z-fg: 198 206 239;          /* ctp-text    #C6CEEF */
+  --z-fg-1: 198 206 239;
+  --z-fg-2: 181 189 220;        /* ctp-subtext1 = text-muted */
+  --z-grey-2: 160 168 200;
+  --z-grey-1: 170 178 210;
+  --z-grey-0: 181 189 220;
+  --z-grey-dim: 98 103 126;     /* ctp-surface2 */
+  --z-accent: 17 183 197;       /* ctp-sapphire #11B7C5 */
+  --z-accent-soft: 10 209 208;  /* --sp-teal-link #0AD1D0 */
+  --z-accent-muted: 60 150 160;
+  --z-red: 231 130 132;         /* ctp-red     #E78284 */
+  --z-green: 103 196 143;       /* ctp-green   #67C48F */
+  --z-yellow: 201 190 62;       /* ctp-yellow  #C9BE3E */
+  --z-blue: 140 170 238;        /* ctp-blue    #8CAAEE */
+  --z-purple: 187 147 214;      /* ctp-lavender #BB93D6 */
+  --z-aqua: 153 209 219;        /* ctp-sky     #99D1DB */
+  --z-shadow: 0 0 0;
+  --z-glass-a1: 0.58;
+  --z-glass-a2: 0.46;
+  --z-glass-a3: 0.32;
+  --z-glass-a4: 0.22;
+}
+
+/* Dark headings: Soft Paper `.theme-dark` block (h3 = --sp-teal-link) */
+:root[data-theme-mode="dark"] .cm-editor .tok-heading1, :root[data-theme-mode="dark"] .prose-zen h1 { color: rgb(231 130 132); }
+:root[data-theme-mode="dark"] .cm-editor .tok-heading2, :root[data-theme-mode="dark"] .prose-zen h2 { color: rgb(239 159 118); }
+:root[data-theme-mode="dark"] .cm-editor .tok-heading3, :root[data-theme-mode="dark"] .prose-zen h3 { color: rgb(10 209 208); }
+:root[data-theme-mode="dark"] .cm-editor .tok-heading4, :root[data-theme-mode="dark"] .prose-zen h4 { color: rgb(103 196 143); }
+:root[data-theme-mode="dark"] .cm-editor .tok-heading5, :root[data-theme-mode="dark"] .prose-zen h5 { color: rgb(187 147 214); }
+:root[data-theme-mode="dark"] .cm-editor .tok-heading6, :root[data-theme-mode="dark"] .prose-zen h6 { color: rgb(141 141 141); }
+:root[data-theme-mode="dark"] .cm-editor .cm-selectionBackground, :root[data-theme-mode="dark"] .cm-editor ::selection { background: rgb(17 183 197 / 0.25) !important; }

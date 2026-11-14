@@ -6,17 +6,36 @@
 -- Similar to Obsidian's Advanced Tables plugin.
 --
 -- Usage:
---   <leader>tm  Toggle table mode on/off
+--   <leader>Tm  Toggle table mode on/off (prefix is <leader>T -- see init below)
 --   |           Auto-creates table structure when table mode is on
---   Tab         Move to next cell (in table mode)
+--   ]| / [|     Move to the next / previous cell
+--   }| / {|     Move to the cell below / above
+--   a| / i|     Around / inside a cell (text objects)
 --   ||          Creates a horizontal separator row
 --
--- Table mode auto-activates when entering a line starting with |
+-- NOTE: the plugin maps no <Tab>. Insert-mode <Tab> belongs to blink.cmp.
+--
+-- Loaded on-demand: the plugin is lazy-gated on its toggle mapping (<leader>Tm)
+-- and table commands rather than `ft = markdown`, so opening a .md file no longer
+-- re-fires `FileType markdown` (which would re-attach the treesitter highlighter).
+-- Auto-activation on a line starting with | only kicks in after the first explicit
+-- <leader>Tm / :TableModeToggle / :Tableize loads the plugin's markdown ftplugin.
 
 return {
   "dhruvasagar/vim-table-mode",
 
-  ft = { "markdown" },
+  keys = {
+    { "<leader>Tm", desc = "Toggle table mode" },
+  },
+  cmd = {
+    "TableModeToggle",
+    "TableModeEnable",
+    "TableModeDisable",
+    "Tableize",
+    "TableSort",
+    "TableModeRealign",
+    "TableAddFormula",
+  },
 
   init = function()
     -- Use markdown-compatible table corners
@@ -25,7 +44,7 @@ return {
     -- Auto-align columns as you type
     vim.g.table_mode_auto_align = 1
 
-    -- Map toggle to <leader>tm (table mode)
+    -- Toggle lives at <leader>Tm (prefix <leader>T + toggle map "m").
     vim.g.table_mode_map_prefix = "<leader>T"
     vim.g.table_mode_toggle_map = "m"
   end,

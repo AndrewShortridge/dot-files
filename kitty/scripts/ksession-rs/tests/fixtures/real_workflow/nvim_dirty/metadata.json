@@ -1,0 +1,16 @@
+{
+  "name": "nvim_dirty",
+  "description": "Dirty nvim: Modified files with unsaved changes",
+  "generated_at": "2026-05-25T23:15:00Z",
+  "kitty_version": "kitty 0.47.0",
+  "tab_count": 1,
+  "window_count": 2,
+  "tags": [
+    "nvim",
+    "dirty",
+    "modified"
+  ],
+  "build_params": {
+    "type": "manual"
+  }
+}

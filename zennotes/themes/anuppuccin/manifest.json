@@ -1,0 +1,11 @@
+{
+  "name": "AnuPpuccin",
+  "author": "Anubis (port)",
+  "version": "1.0.0",
+  "description": "AnuPpuccin by Anubis, Catppuccin Latte / Mocha palettes.",
+  "modes": "both",
+  "preview": {
+    "light": "#9478f0",
+    "dark": "#7d5bed"
+  }
+}

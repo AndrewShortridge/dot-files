@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 # Combined session picker: lists every running kitty OS window (across
-# all kitty processes) AND every project session file that isn't open
-# yet. Running entries focus on Enter; project entries spawn.
+# all kitty processes), every project session file that isn't open yet,
+# ssh-config hosts, and project directories under KSESSION_PROJECT_ROOTS
+# that have neither a saved session nor a running window. Running entries
+# focus on Enter; project/ssh entries spawn; directory entries open a fresh
+# kitty there (no saved state needed — save one later with ctrl+space>S).
 # Bound from kitty.conf via ctrl+space>s.
 set -euo pipefail
 
 # Kitty launches this directly (not via an interactive shell), so .bashrc
 # isn't sourced and miniconda/local paths are missing. Add them explicitly.
-export PATH="$PATH:/usr/local/bin:/usr/bin:/home/andrew/miniconda3/bin:/home/andrew/.local/bin"
+export PATH="$PATH:/usr/local/bin:/usr/bin:/home/andrew/miniconda3/bin:/home/andrew/.local/bin:/home/andrew/.bun/bin"
 
 SESSIONS_DIR="${KITTY_PROJECT_SESSIONS_DIR:-$HOME/.config/kitty/sessions}"
+# Colon-separated roots whose immediate subdirectories are offered as
+# ad-hoc projects (Pass 4). Empty string disables the pass.
+PROJECT_ROOTS="${KSESSION_PROJECT_ROOTS-$HOME/Desktop/Personal-Projects:$HOME/Desktop}"
 LOG="${HOME}/.cache/kitty-session-picker.log"
 mkdir -p "$(dirname "$LOG")"
 
@@ -49,15 +55,20 @@ fi
 current_sock_url="${KITTY_LISTEN_ON:-}"
 
 # Row schema (8 tab-separated fields):
-#   1 action  ∈ {focus, spawn, ssh}
+#   1 action  ∈ {focus, spawn, ssh, dir}
 #   2 sock_url   (focus only)   e.g. unix:/tmp/kitty-12345
 #   3 window_id  (focus only)   kitty-internal active-window id (used by
 #                               focus-window / get-text --match id:)
-#   4 file_path  (spawn only) — for ssh rows we stash the host alias here
-#                so the preview pane can dispatch off field {4}.
+#   4 file_path  (spawn only) — for ssh rows we stash the host alias here,
+#                for dir rows the absolute directory, so the preview pane
+#                can dispatch off field {4}.
 #   5 frecency_key — the key used for frecency bumps & scoring:
 #                  - spawn:  saved session basename (e.g. "rust-kitty-sessionizer")
 #                  - ssh:    "ssh-<host>"
+#                  - dir:    directory basename (same key a later `ksession
+#                            save <basename>` and the resulting running
+#                            window would use, so frecency carries across
+#                            the dir -> running -> saved lifecycle)
 #                  - focus:  "<project-name>" when wm_class matches
 #                            kitty-project-<name>, else "__adhoc_<pid>_<osw_id>"
 #   6 display string (what fzf shows — pinned via --with-nth=6 so trailing
@@ -172,7 +183,39 @@ if [[ "${KSESSION_NO_SSH:-0}" != "1" ]]; then
   done < <(ssh_hosts "$SSH_CONFIG_PATH")
 fi
 
-all_rows="${running_rows}${spawn_rows}${ssh_rows}"
+# ----- Pass 4: project directories with no session file and not running -----
+# Immediate subdirectories of each PROJECT_ROOTS entry. A directory is
+# skipped when a saved session of the same basename exists (Pass 2 owns
+# it) or a kitty-project-<basename> window is running (Pass 1 owns it).
+# Basename collisions across roots get a "<parent>-<base>" key so the
+# second one stays reachable instead of silently vanishing.
+dir_rows=""
+declare -A dir_keys=()   # key -> abs path; also fed to the frecency prune
+if [[ -n "$PROJECT_ROOTS" ]]; then
+  IFS=':' read -r -a _roots <<<"$PROJECT_ROOTS"
+  shopt -s nullglob
+  for root in "${_roots[@]}"; do
+    [[ -d "$root" ]] || continue
+    for d in "$root"/*/; do
+      d="${d%/}"
+      base="$(basename "$d")"
+      [[ "$base" == .* ]] && continue
+      key="$base"
+      if [[ -n "${dir_keys[$key]:-}" ]]; then
+        key="$(basename "$root")-${base}"
+        [[ -n "${dir_keys[$key]:-}" ]] && continue
+      fi
+      [[ -f "$SESSIONS_DIR/$key.conf" ]] && continue          # covered by Pass 2
+      [[ -n "${proj_running[kitty-project-$key]:-}" ]] && continue   # covered by Pass 1
+      dir_keys["$key"]="$d"
+      display="   ▸ ${key}  ·  ${d/#$HOME/\~}"
+      dir_rows+="dir"$'\t'$'\t'$'\t'"${d}"$'\t'"${key}"$'\t'"${display}"$'\t'$'\t'$'\n'
+    done
+  done
+  shopt -u nullglob
+fi
+
+all_rows="${running_rows}${spawn_rows}${ssh_rows}${dir_rows}"
 if [[ -z "$all_rows" ]]; then
   echo "no kitty sessions or project files found." >&2
   read -rp "press enter to close..."
@@ -180,11 +223,12 @@ if [[ -z "$all_rows" ]]; then
 fi
 
 # ----- Orphan frecency prune -------------------------------------------------
-#
-# Pass 1/2/3 are now done, so `proj_running[]` is populated. Build the list
-# of "currently running keys" (the values that fed frecency_key for focus
-# rows in Pass 1) and ask the lib to drop any store entry that has no
-# `.conf` AND isn't running AND isn't `ssh-*` AND isn't `__adhoc_*`.
+# Pass 1-4 are now done, so `proj_running[]` and `dir_keys[]` are populated.
+# Build the list of "live keys" (running focus keys from Pass 1 plus every
+# directory key from Pass 4) and ask the lib to drop any store entry that
+# has no `.conf` AND isn't live AND isn't `ssh-*` AND isn't `__adhoc_*`.
+# Directory keys count as live so a dir project you opened last week keeps
+# its frecency even while no window for it is running.
 #
 # Best-effort: wrap in `set +e` so any failure (flock contention, jq
 # weirdness) cannot block the picker. The lib also tolerates errors
@@ -193,8 +237,8 @@ fi
 # MUST run before sort_rows, since sort_rows queries frecency_score per key
 # and we don't want stale scores polluting the order.
 _prune_orphan_frecency_keys() {
-  local running_keys=""
-  local cls
+  local live_keys=""
+  local cls key
   for cls in "${!proj_running[@]}"; do
     # proj_running keys are wm_class values like "kitty-project-foo" and
     # "kitty-project-ssh-bar". Strip the "kitty-project-" prefix to get
@@ -202,10 +246,13 @@ _prune_orphan_frecency_keys() {
     # by the lib regardless, but emitting them in the running list is
     # cheap and slightly more accurate.
     case "$cls" in
-      kitty-project-*) running_keys+="${cls#kitty-project-}"$'\n' ;;
+      kitty-project-*) live_keys+="${cls#kitty-project-}"$'\n' ;;
     esac
   done
-  frecency_prune_orphans "$SESSIONS_DIR" "$running_keys"
+  for key in "${!dir_keys[@]}"; do
+    live_keys+="${key}"$'\n'
+  done
+  frecency_prune_orphans "$SESSIONS_DIR" "$live_keys"
 }
 set +e
 _prune_orphan_frecency_keys
@@ -224,7 +271,7 @@ set -e
 #          a brand-new focus scores ~1.0, which beats a stale-but-low-count
 #          frecency entry (count*0.25 < 1 for count<=3) but loses cleanly
 #          to any high-frequency entry (count*4 >> 1).
-#   spawn, ssh: frecency_score(key).
+#   spawn, ssh, dir: frecency_score(key).
 #
 # The current-session row (sock_url == current_sock_url) is forced to the
 # very bottom by setting its composite to -inf.
@@ -307,6 +354,7 @@ sort_rows() {
 #   running ●           : green
 #   saved ○             : blue
 #   ssh ⚡              : yellow
+#   directory ▸         : cyan
 #   current-session *   : bold magenta
 #   project/session name: bold (no color shift)
 #   separator ·         : dim
@@ -320,6 +368,7 @@ colorize_rows() {
       green  = "\033[32m"
       blue   = "\033[34m"
       yellow = "\033[33m"
+      cyan   = "\033[36m"
       magenta_b = "\033[1;35m"
     }
     {
@@ -335,6 +384,7 @@ colorize_rows() {
       if      (action == "focus") sub(/●/,  green  "●"  reset, d)
       else if (action == "spawn") sub(/○/,  blue   "○"  reset, d)
       else if (action == "ssh")   sub(/⚡/, yellow "⚡" reset, d)
+      else if (action == "dir")   sub(/▸/,  cyan   "▸"  reset, d)
 
       # Dim the " · " separators (UTF-8 middot is C2 B7; awk handles it
       # under the default locale on this system).
@@ -379,13 +429,14 @@ all_rows="$(sort_rows | colorize_rows)"$'\n'
 # delete; this slice does not.)
 
 # Shared preview command, identical in both modes. Each row's `action` (field 1)
-# selects one of three preview renderers, all of which emit ANSI-colored output
+# selects one of four preview renderers, all of which emit ANSI-colored output
 # that fzf renders in the preview pane:
 #   focus -> kitty @ get-text --ansi   (live terminal contents w/ real colors)
 #   ssh   -> lib/ssh-host-preview.sh   (colorized Host block from ssh-config)
+#   dir   -> ls -A --color             (directory listing)
 #   spawn -> lib/conf-preview.sh       (colorized kitty session .conf)
 _SCRIPTS_LIB="$(dirname "${BASH_SOURCE[0]}")/lib"
-preview_cmd="if [ {1} = focus ]; then kitty @ --to {2} get-text --ansi --match id:{3} --extent screen 2>/dev/null; elif [ {1} = ssh ]; then \"$_SCRIPTS_LIB/ssh-host-preview.sh\" \"$SSH_CONFIG_PATH\" {4}; else \"$_SCRIPTS_LIB/conf-preview.sh\" {4}; fi"
+preview_cmd="if [ {1} = focus ]; then kitty @ --to {2} get-text --ansi --match id:{3} --extent screen 2>/dev/null; elif [ {1} = ssh ]; then \"$_SCRIPTS_LIB/ssh-host-preview.sh\" \"$SSH_CONFIG_PATH\" {4}; elif [ {1} = dir ]; then ls -A --color=always --group-directories-first {4}; else \"$_SCRIPTS_LIB/conf-preview.sh\" {4}; fi"
 
 # Cursor-shape helpers. DECSCUSR sequences:
 #   \e[6 q = bar (insert), \e[2 q = block (normal).
@@ -507,6 +558,8 @@ _confirm_delete() {
 # record (with action subtype, target identifier, and the dispatch rc).
 # Also calls frecency_remove on the row's key. Returns 0 on success, 1
 # on any dispatch failure (still removes the row from the buffer).
+# `dir` rows never touch the filesystem: delete only forgets the frecency
+# entry and hides the row for this invocation.
 _delete_selection() {
   local action sock wid file name host target rc=0 state_dir
   action=$(printf '%s' "$selection" | cut -f1)
@@ -541,6 +594,9 @@ _delete_selection() {
       target="/tmp/kitty-ssh-sessions/ssh-${host}.kitty-session"
       rm -f -- "$target" >>"$LOG" 2>&1 || rc=$?
       ;;
+    dir)
+      target="$file"
+      ;;
     *)
       target="<unknown>"
       rc=3
@@ -559,8 +615,8 @@ _delete_selection() {
   return $rc
 }
 
-# Dispatch the current selection through the existing focus/spawn/ssh
-# table and bump frecency. Exits the script when done (the loop only
+# Dispatch the current selection through the focus/spawn/ssh/dir table
+# and bump frecency. Exits the script when done (the loop only
 # calls this on the `open` side effect, which is terminal).
 _open_and_exit() {
   local action sock wid file name host ssh_dir ssh_session_file action_rc
@@ -578,23 +634,19 @@ _open_and_exit() {
       kitty @ --to "$sock" focus-window --match "id:$wid" >>"$LOG" 2>&1 || action_rc=$?
       ;;
     spawn)
-      # Use ksession binary for restore (spawns new window)
-      # Priority: KSESSION_IMPL env > ~/.local/bin/ksession > hardcoded path
+      # Use the ksession Rust binary for restore (spawns new window).
+      # Priority: KSESSION_IMPL env > ~/.local/bin/ksession. No fallback:
+      # a missing binary is a hard error, not a silent degradation.
       local ksession_bin
-      if [[ -n "${KSESSION_IMPL:-}" ]]; then
-        ksession_bin="$KSESSION_IMPL"
-      elif [[ -x "${HOME}/.local/bin/ksession" ]]; then
-        ksession_bin="${HOME}/.local/bin/ksession"
-      else
-        ksession_bin="${HOME}/.config/kitty/scripts/ksession-rs/target/release/ksession"
+      ksession_bin="${KSESSION_IMPL:-${HOME}/.local/bin/ksession}"
+      if [[ ! -x "$ksession_bin" ]]; then
+        echo "ksession binary missing or not executable: $ksession_bin" >>"$LOG"
+        echo "session-picker: ksession binary '$ksession_bin' is missing or not executable." >&2
+        echo "session-picker: run 'make install' in ~/.config/kitty/scripts/ksession-rs to install it." >&2
+        read -rp "press enter to close..."
+        exit 1
       fi
-      if [[ -x "$ksession_bin" ]]; then
-        "$ksession_bin" restore "$name" >>"$LOG" 2>&1 || { action_rc=$?; echo "ksession restore failed with $action_rc" >>"$LOG"; }
-      else
-        # Fallback to direct kitty spawn
-        kitty --detach --class "kitty-project-${name}" --session "$file" \
-              >>"$LOG" 2>&1 || { action_rc=$?; echo "kitty exited non-zero" >>"$LOG"; }
-      fi
+      "$ksession_bin" restore "$name" >>"$LOG" 2>&1 || { action_rc=$?; echo "ksession restore failed with $action_rc" >>"$LOG"; }
       ;;
     ssh)
       # field 4 carries the ssh host alias (see Pass 3 emit).
@@ -608,6 +660,13 @@ _open_and_exit() {
         printf 'launch --title "ssh-%s" ssh %s\n' "$host" "$host"
       } > "$ssh_session_file"
       kitty --detach --class "kitty-project-ssh-${host}" --session "$ssh_session_file" \
+            >>"$LOG" 2>&1 || { action_rc=$?; echo "kitty exited non-zero" >>"$LOG"; }
+      ;;
+    dir)
+      # Fresh kitty rooted at the directory. The wm_class makes the next
+      # picker open list it as a running project (Pass 1) and lets
+      # `ksession save <name>` produce a saved session under the same key.
+      kitty --detach --class "kitty-project-${name}" --directory "$file" \
             >>"$LOG" 2>&1 || { action_rc=$?; echo "kitty exited non-zero" >>"$LOG"; }
       ;;
   esac

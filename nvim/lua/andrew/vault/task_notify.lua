@@ -202,7 +202,12 @@ end
 --- Set up commands, keymaps, and autocmds for overdue task notifications.
 function M.setup()
   local cfg = config.task_notify or {}
-  if cfg.enabled == false then return end
+  -- NOTE: no early return on cfg.enabled == false. config.task_notify.enabled
+  -- gates only the AUTOMATIC overdue popup; the on-demand commands/keymap
+  -- (:VaultOverdue, :VaultOverdueSnooze, <leader>vxd) stay registered either way,
+  -- as config.lua documents. The automatic path is gated in M.on_buf_enter below
+  -- (and check_overdue() self-gates as a second line of defence).
+  local auto = cfg.enabled ~= false
 
   local palette = require("andrew.vault.command_palette")
 
@@ -224,7 +229,10 @@ function M.setup()
     M.list_overdue()
   end, { desc = "Vault: overdue tasks" })
 
-  -- BufEnter autocmd removed: now dispatched via event_dispatch.lua
+  -- BufEnter autocmd removed: now dispatched via event_dispatch.lua ->
+  -- M.on_buf_enter, which is gated on `enabled` there. Nothing automatic is
+  -- registered here, so `auto` is only recorded for introspection/debugging.
+  M._auto_enabled = auto
 
   -- Register with engine cache system
   engine.register_cache({
@@ -257,6 +265,9 @@ end
 --- Called by event_dispatch.lua on BufEnter for vault markdown buffers.
 --- @param _ctx { bufnr: number, file: string, is_vault_md: boolean }
 function M.on_buf_enter(_ctx)
+  -- Automatic popup path only: disabled by config.task_notify.enabled = false.
+  -- The on-demand commands/keymap registered in setup() are unaffected.
+  if (config.task_notify or {}).enabled == false then return end
   local vault_index = require("andrew.vault.vault_index")
   local idx = vault_index.current()
   if idx then

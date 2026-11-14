@@ -1,5 +1,6 @@
 local engine = require("andrew.vault.engine")
 local vault_index = require("andrew.vault.vault_index")
+local fzf_look = require("andrew.utils.fzf_look")
 local link_utils = require("andrew.vault.link_utils")
 local cleanup = require("andrew.vault.resource_cleanup")
 local notify = require("andrew.vault.notify")
@@ -221,6 +222,9 @@ local function compute_rename_changes(linking_files, old_name, new_name, old_pat
     file_writes = file_writes,
   }
 end
+
+-- Test affordance: expose the pure change-computation step (no behavior change)
+M._compute_rename_changes = compute_rename_changes
 
 --- Collect all rename changes (async when index is unavailable).
 ---@param old_name string
@@ -549,8 +553,7 @@ function M.tag_rename(old_tag, new_tag)
         return
       end
       local fzf = require("fzf-lua")
-      fzf.fzf_exec(tags, {
-        prompt = "Rename tag> ",
+      fzf.fzf_exec(tags, fzf_look.titled("Rename tag", {
         actions = {
           ["default"] = function(selected)
             if selected and selected[1] then
@@ -562,7 +565,7 @@ function M.tag_rename(old_tag, new_tag)
             end
           end,
         },
-      })
+      }))
     end)
   end
 end

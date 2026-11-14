@@ -8,27 +8,35 @@ local source = base.create_source({
   build = base.build_kv_fields("inline_fields", ":: "),
 
   get_completions = base.kv_get_completions(function(before, _ctx, _bufnr)
-    -- Value: standalone "key:: partial"  (cf. pat.INLINE_FIELD_STANDALONE — partial, no anchored value)
+    -- Value: standalone "key:: partial" (cheap, anchored) — always tried
+    -- (cf. pat.INLINE_FIELD_STANDALONE — partial, no anchored value)
+    -- (the optional %s*/[-*]?/%s* prefix already subsumes a bare "key:: ")
     local standalone_key = before:match("^%s*[-*]?%s*([%w_%-]+)::%s+")
-      or before:match("^([%w_%-]+)::%s+")
     if standalone_key then return standalone_key end
 
-    -- Value: bracketed "[key:: partial"  (cf. pat.INLINE_FIELD_BRACKET — partial, unclosed bracket)
-    local bracket_key = before:match("%[([%w_%-]+)::%s+[^%]]*$")
-    if bracket_key then return bracket_key end
-
-    -- Value: parenthesized "(key:: partial"  (cf. pat.INLINE_FIELD_PAREN — partial, unclosed paren)
-    local paren_key = before:match("%(([%w_%-]+)::%s+[^%)]*$")
-    if paren_key then return paren_key end
-
-    -- Key: after [ (not [[)  (cf. pat.HAS_WIKILINK for the exclusion check)
-    if before:match("%[[%w_%-]*$") and not before:match("%[%[[%w_%-]*$") then
-      return false
+    -- Value: bracketed/parenthesized "[key:: " / "(key:: " — both need '::'.
+    -- Plain-byte pre-gate avoids the unanchored backtracking matches on prose.
+    if before:find("::", 1, true) then
+      -- (cf. pat.INLINE_FIELD_BRACKET — partial, unclosed bracket)
+      local bracket_key = before:match("%[([%w_%-]+)::%s+[^%]]*$")
+      if bracket_key then return bracket_key end
+      -- (cf. pat.INLINE_FIELD_PAREN — partial, unclosed paren)
+      local paren_key = before:match("%(([%w_%-]+)::%s+[^%)]*$")
+      if paren_key then return paren_key end
     end
 
-    -- Key: after (  (exclude markdown link targets ](url)
-    if before:match("%([%w_%-]*$") and not before:match("%]%([%w_%-]*$") then
-      return false
+    -- Key: after [ (not [[) — needs a literal '[' (cf. pat.HAS_WIKILINK exclusion)
+    if before:find("[", 1, true) then
+      if before:match("%[[%w_%-]*$") and not before:match("%[%[[%w_%-]*$") then
+        return false
+      end
+    end
+
+    -- Key: after ( — needs a literal '(' (exclude markdown link targets ](url)
+    if before:find("(", 1, true) then
+      if before:match("%([%w_%-]*$") and not before:match("%]%([%w_%-]*$") then
+        return false
+      end
     end
 
     -- Key: standalone at line start (2+ chars)

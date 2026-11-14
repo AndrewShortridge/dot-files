@@ -10,11 +10,16 @@ return {
   -- Repository: https://github.com/mrcjkb/rustaceanvim
   "mrcjkb/rustaceanvim",
 
-  -- Version constraint: Use latest v6.x
-  version = "^6",
+  -- Version constraint: Use latest v9.x
+  -- (bumped from ^6: v6.9.7 calls the deprecated vim.lsp.get_buffers_by_client_id
+  --  on rust-analyzer init; fixed in v7.0.0+. v9 requires nvim >= 0.12, which we have.
+  --  No config-schema breaking changes across v7/v8/v9 affect this setup.)
+  version = "^9",
 
-  -- This plugin is already lazy-loaded by filetype
-  lazy = false,
+  -- Lazy-load on rust filetype. The plugin is purely filetype-driven (it acts on
+  -- rust buffers via vim.g.rustaceanvim), so there is no reason to load it — or its
+  -- nvim-dap dependency — at startup for non-rust filetypes. `ft` implies lazy.
+  ft = { "rust" },
 
   -- Dependencies
   dependencies = {
@@ -24,11 +29,17 @@ return {
   -- =============================================================================
   -- Plugin Configuration
   -- =============================================================================
-  config = function()
+  -- Set vim.g.rustaceanvim at startup via `init` (runs WITHOUT loading the plugin),
+  -- because rustaceanvim reads this global as it loads on the first rust buffer.
+  -- (Using `config` would set it only after load has already begun — too late.)
+  init = function()
     -- =============================================================================
     -- CodeLLDB Debug Adapter Setup (via Mason)
     -- =============================================================================
-    local cfg = require("rustaceanvim.config")
+    -- NOTE: the adapter table is built inline rather than via
+    -- require("rustaceanvim.config").get_codelldb_adapter — `init` runs at startup
+    -- before the lazy-gated plugin is on the runtimepath, so requiring it would
+    -- fail. This table is byte-identical to that helper's return value.
 
     -- Mason installs packages to ~/.local/share/nvim/mason/packages/
     local mason_path = vim.fn.stdpath("data") .. "/mason/packages/codelldb"
@@ -42,7 +53,16 @@ return {
 
     -- Configure codelldb adapter if installed
     if vim.fn.executable(codelldb_path) == 1 then
-      dap_adapter = cfg.get_codelldb_adapter(codelldb_path, liblldb_path)
+      -- Mirrors rustaceanvim.config.get_codelldb_adapter(codelldb_path, liblldb_path)
+      dap_adapter = {
+        type = "server",
+        port = "${port}",
+        host = "127.0.0.1",
+        executable = {
+          command = codelldb_path,
+          args = { "--liblldb", liblldb_path, "--port", "${port}" },
+        },
+      }
     end
 
     vim.g.rustaceanvim = {
@@ -121,12 +141,6 @@ return {
           opts.desc = "Render diagnostics"
           vim.keymap.set("n", "<leader>rD", function()
             vim.cmd.RustLsp("renderDiagnostic")
-          end, opts)
-
-          -- Debugger testables
-          opts.desc = "Debugger testables"
-          vim.keymap.set("n", "<leader>dt", function()
-            vim.cmd.RustLsp("testables")
           end, opts)
         end,
 

@@ -308,6 +308,13 @@ function M.setup_keymaps(buf, source_win)
 
   -- a: add a new frontmatter field (delegates to frontmatter_editor add flow)
   vim.keymap.set("n", "a", function()
+    -- frontmatter_editor.open() reads nvim_get_current_buf(); pressed from the
+    -- focused sidebar that is the sidebar's own scratch buffer, so the editor
+    -- bailed out with "not a vault file".  Hand focus back to the note first,
+    -- the way the <CR> inline-field branch already does.
+    if source_win and vim.api.nvim_win_is_valid(source_win) then
+      vim.api.nvim_set_current_win(source_win)
+    end
     require("andrew.vault.frontmatter_editor").open()
   end, vim.tbl_extend("force", opts, { desc = "Add field (open editor)" }))
 

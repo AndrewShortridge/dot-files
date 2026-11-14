@@ -10,8 +10,7 @@ This is a Neovim configuration repository targeting **Neovim 0.11+**. Agents sho
 ├── lazy-lock.json                   # Plugin lock file (auto-managed)
 ├── .stylua.toml                     # Lua formatter config
 ├── snippets/                        # Custom code snippets (LuaSnip)
-│   ├── extract-docs.lua
-│   └── test-hover.lua
+│   └── extract-docs.lua
 └── lua/andrew/
     ├── lazy.lua                     # Plugin manager setup (lazy.nvim bootstrap)
     ├── core/
@@ -21,26 +20,31 @@ This is a Neovim configuration repository targeting **Neovim 0.11+**. Agents sho
     ├── plugins/
     │   ├── init.lua                 # Master plugin spec list
     │   ├── autopairs.lua            # Auto-close brackets (nvim-autopairs)
-    │   ├── blink-cmp.lua            # Completion engine (blink.cmp + LuaSnip)
-    │   ├── bufferline.lua           # Tab bar (bufferline.nvim)
+    │   ├── blink-cmp.lua            # Completion engine (blink.cmp)
+    │   ├── codediff.lua             # Diff review tab + file history (codediff.nvim)
     │   ├── colorizer.lua            # Color code highlighting (nvim-colorizer)
     │   ├── colorscheme.lua          # OneDarkPro theme
     │   ├── comment.lua              # Commenting (Comment.nvim)
-    │   ├── dressing.lua             # Improved UI dialogs (dressing.nvim)
     │   ├── fortran-build.lua        # Makefile integration for Fortran
     │   ├── fzf-lua.lua              # Fuzzy finder (fzf-lua)
-    │   ├── gitsigns.lua             # Git change indicators (gitsigns.nvim)
+    │   ├── git.lua                  # <leader>g git commands (snacks.nvim fragment; the pickers are fzf-lua)
+    │   ├── gitsigns.lua             # Git change indicators + <leader>gh hunks
     │   ├── indent-blankline.lua     # Indentation guides
+    │   ├── incline.lua              # Window labels: icon + file name at each split's top-right (incline.nvim)
+    │   ├── mini-diff.lua           # Diff overlay + gh/gH hunk operators (mini.diff)
     │   ├── linting.lua              # Multi-language linting (nvim-lint)
-    │   ├── lualine.lua              # Status line (lualine.nvim)
-    │   ├── opencode.lua             # AI coding assistant (opencode.nvim)
+    │   ├── lualine.lua              # Status line (lualine.nvim); also shows 'showcmd' keys and "recording @q"
+    │   ├── luasnip.lua              # Snippet engine (LuaSnip + friendly-snippets)
+    │   ├── noice.lua                # Floating `:` cmdline + message box at the bottom-right (noice.nvim)
     │   ├── render-markdown.lua      # In-buffer markdown rendering
     │   ├── rustaceanvim.lua         # Enhanced Rust development
+    │   ├── snacks.lua              # snacks.nvim: vim.ui.input/select, image, toggles, scroll; picker colours via utils/snacks_look.lua
     │   ├── substitute.lua           # Motion-based replace
     │   ├── surround.lua             # Manage surrounding pairs
     │   ├── todo-comments.lua        # TODO/FIXME highlights
     │   ├── treesitter.lua           # Syntax highlighting (nvim-treesitter)
     │   ├── trouble.lua              # Diagnostics viewer (trouble.nvim)
+    │   ├── ts-autotag.lua           # Auto-close markup tags (nvim-ts-autotag) -- markup filetypes only
     │   ├── type-checker.lua         # Per-language type checking
     │   ├── vim-maximizer.lua        # Maximize splits
     │   ├── vim-table-mode.lua       # Markdown table formatting
@@ -62,7 +66,9 @@ This is a Neovim configuration repository targeting **Neovim 0.11+**. Agents sho
     ├── fortran/
     │   ├── init.lua                 # Fortran setup entry (FileType autocmd)
     │   ├── highlight.lua            # Custom syntax highlighting
-    │   ├── blink-source.lua         # Completion source for blink.cmp
+    │   ├── lsp.lua                  # In-process LSP server (fortran-extras)
+    │   ├── registry.lua             # The MPI/OpenMP/keyword documentation registry
+    │   ├── lsp_completion.lua       # textDocument/completion + completionItem/resolve
     │   └── docs.lua                 # Custom hover documentation
     └── vault/
         ├── init.lua                 # Obsidian-like note template system
@@ -135,7 +141,7 @@ The entry point `init.lua` loads modules in this exact order:
 
 ### Linting
 
-**Auto-lint** triggers on `BufReadPost`, `BufWritePost`, `InsertLeave`, and `FileType` events.
+**Auto-lint** triggers on `FileType` (i.e. when a buffer is opened), `BufWritePost` and `InsertLeave`, once per event. Fortran skips `InsertLeave`: its linter is a compiler run on the file on disk, so only an open or a save can report anything new. Pinned by `tests/lint_missing_binary_spec.lua`.
 
 **Linters by filetype:**
 
@@ -160,12 +166,15 @@ vim.g.fortran_linter_extra_args = {}        -- Additional compiler flags
 
 | Keymap | Action |
 |--------|--------|
-| `<leader>ll` | Lint current buffer |
-| `<leader>lm` | Run ruff only (Python) |
-| `<leader>lf` | Toggle Fortran compiler |
-| `<leader>lF` | Run Fortran linter (debug verbose) |
-| `<leader>lw` | Lint entire Fortran workspace |
-| `<leader>lW` | Clear workspace diagnostics |
+| `<leader>Ll` | Lint current buffer |
+| `<leader>Lm` | Run ruff only (Python) |
+| `<leader>Lf` | Toggle Fortran compiler |
+| `<leader>LF` | Run Fortran linter (debug verbose) |
+| `<leader>Lw` | Lint entire Fortran workspace |
+| `<leader>LW` | Clear workspace diagnostics |
+| `<leader>Lc` | Check Fortran capitalization |
+| `<leader>LC` | Fix Fortran capitalization (buffer) |
+| `<leader>Lt` | Toggle the capitalization check |
 
 **Fortran commands:**
 
@@ -185,30 +194,109 @@ vim.g.fortran_linter_extra_args = {}        -- Additional compiler flags
 | `ctags_lsp` | C/C++ | Conda | C header completions for Fortran ISO_C_BINDING |
 | `rust_analyzer` | Rust | rustaceanvim | Clippy on save, inlay hints, proc macros |
 
-**LSP keybindings** (buffer-local via `LspAttach`):
+**LSP keybindings.** Layout matches LazyVim v16. Most are declared in
+`lua/andrew/lsp_keymaps.lua` and bound buffer-locally via `LspAttach` ONLY when
+an attached client advertises the matching LSP method (`has = "..."`, LazyVim's
+mechanism). `gD` and `<leader>cl` are ungated. Method names are validated
+against `vim.lsp.protocol._request_name_to_server_capability` by
+`tests/lsp_keymaps_gated_spec.lua` -- a typo there silently unbinds a key
+forever, which is a live bug in LazyVim itself (`workspace/symbols`).
 
-| Keymap | Action |
-|--------|--------|
-| `gR` | References (fzf-lua) |
-| `gD` | Declaration |
-| `gd` | Definitions (fzf-lua) |
-| `gi` | Implementations (fzf-lua) |
-| `gt` | Type definitions (fzf-lua) |
-| `K` | Hover docs (custom Fortran docs first, then LSP) |
-| `<C-k>` | Signature help (ty for Python if available) |
-| `<leader>ca` | Code actions (normal + visual) |
-| `<leader>rn` | Rename symbol |
-| `<leader>D` | Buffer diagnostics (fzf-lua) |
-| `<leader>d` | Line diagnostics (float) |
-| `[d` / `]d` | Previous/next diagnostic |
-| `<leader>rs` | Restart LSP |
+| Keymap | Action | Gated on |
+|--------|--------|----------|
+| `gd` | Definitions (fzf-lua) | definition |
+| `gr` | References (fzf-lua) | references |
+| `gI` | Implementations (fzf-lua) | implementation |
+| `gy` | Type definitions (fzf-lua) | typeDefinition |
+| `gD` | Declaration, falling back to definitions | -- (fallback is the feature) |
+| `gK` | Signature help | signatureHelp |
+| `gai` / `gao` | Incoming / outgoing calls (fzf-lua) | callHierarchy |
+| `]]` / `[[` / `<A-n>` / `<A-p>` | Reference jumps (Snacks.words) | documentHighlight |
+| `K` | Hover docs (LSP; Fortran MPI/OpenMP docs come from fortran-extras) | hover (ungated; in lspconfig.lua) |
+| `<C-k>` | Signature help (ty for Python if available) | -- (in lspconfig.lua) |
+| `<leader>ca` | Code actions, fzf picker with diff preview | codeAction |
+| `<leader>cA` | Source Action (`apply = true`, `only = {"source"}`) | codeAction |
+| `<leader>co` | Organize Imports | the `source.organizeImports` KIND |
+| `<leader>cc` / `<leader>cC` | Run / display codelens | codeLens |
+| `<leader>cr` | Rename symbol | rename |
+| `<leader>cR` | Rename file (`Snacks.rename`) | workspace/willRenameFiles |
+| `<leader>cs` / `<leader>cS` | Document / workspace symbols (fzf) | documentSymbol, workspace/symbol |
+| `<leader>ss` / `<leader>sS` | Same two pickers, LazyVim spelling | documentSymbol, workspace/symbol |
+| `<leader>cl` | LSP info -- hand-rolled fzf client picker | -- |
+| `<leader>D` | Buffer diagnostics (fzf-lua) | -- (in lspconfig.lua) |
+| `<leader>lr` / `<leader>lh` | Restart LSP / toggle inlay hints | -- (in lspconfig.lua) |
+
+Global (NOT LspAttach-bound, so they also cover linter diagnostics):
+`<leader>cd` line diagnostics, `]d`/`[d` any severity, `]e`/`[e` errors,
+`]w`/`[w` warnings (`lua/andrew/core/keymaps.lua`). `<leader>cf`/`<leader>cF`
+(conform) and `<leader>cm` (Mason) live in their plugin specs.
+
+Divergence from LazyVim: it points `<leader>cs`/`<leader>cS` at Trouble's
+symbols and LSP views; here both are the fzf-lua symbol pickers, so Trouble
+keeps only the `<leader>x` group and there is no Trouble LSP-references view
+(`gr` covers references).
+
+nvim 0.12's built-in `grn`/`gra`/`grx`/`grr`/`gri`/`grt` are DELETED at startup
+in `lspconfig.lua` -- `gr` is bound to References, so leaving them would make
+every `gr` press wait out `timeoutlen` (500ms).
+
+**Treesitter query overrides live in `queries/`.** `queries/fortran/context.scm`
+replaces nvim-treesitter-context's bundled Fortran query, which uses node names
+(`do_loop`, `do_statement`) that the installed grammar does not have and so
+fails to compile -- and a query that fails to compile is discarded whole, taking
+all Fortran context with it. Such an override must NOT carry a `;; extends`
+modeline: `get_files` treats the first runtimepath file without one as the base
+and drops later bases, so a plain file replaces upstream's while `;; extends`
+would append to the broken one.
+
+**Server binaries are RESOLVED, not hardcoded.** `lspconfig.lua` looks in
+mason's bin dir, then `$PATH`, then `$HOME/miniconda3/bin`, and a server whose
+binary resolves nowhere is left disabled with one WARN notification instead of
+being enabled and dying invisibly. That failure mode had already bitten: the
+conda copy of `lua-language-server` was gone, so `lua_ls` never attached even
+though mason had it installed. `ctags-lsp` is currently installed nowhere and
+is therefore disabled.
+
+**ctags_lsp serves C/C++ ONLY.** Fortran was tried and reverted on 2026-09-06:
+ctags-lsp v0.11.0 scopes results to the current file (so it cannot complete C
+header symbols from a Fortran buffer, the interop job it was there for), and
+everything it did contribute to a Fortran buffer duplicated fortls -- both
+answered `textDocument/documentSymbol` with the same names, listing every
+subroutine twice in `<leader>ss`. Pinned by `tests/lsp_server_config_spec.lua`.
+
+**fortls is configured by CLI FLAGS, not `initializationOptions`.** fortls 3.2.2
+never reads initializationOptions (`langserver.py` has no reference to them), so
+the `init_options` table this config used to pass was discarded wholesale --
+including `enable_code_actions`, which is why fortls advertised no
+`codeActionProvider` and `<leader>ca` was dead in Fortran buffers. Options now
+go on the command line; per-project source/include dirs still belong in a
+`.fortls` JSON file.
 
 **Diagnostic icons:** `` (error), `` (warn), `` (hint), `` (info)
 
 **Float windows:** 50% editor width / 30% height, min 40x8, max 120x40, rounded borders.
 
-**Mason ensure_installed (LSP):** lua_ls, emmet_ls, prismals, pylsp, eslint, rust_analyzer
-**Mason ensure_installed (tools):** prettier, ty, ruff, eslint_d, rust_analyzer, codelldb
+**Mason is an installer only, and nothing in it runs when a file opens.**
+`mason.nvim` and `mason-tool-installer.nvim` load on their commands
+(`:Mason`, `<leader>cm`, `:MasonToolsInstall`); `mason-lspconfig.nvim` was
+removed because it parsed the whole mason registry inside the `FileType`
+autocmd. What it did is now done natively:
+
+- `init.lua` puts `mason/bin` on `$PATH` (mason's own PATH handling is `"skip"`).
+- `lspconfig.lua` calls `vim.lsp.enable()` for clangd, emmet_ls, eslint,
+  prismals, ruff and ty when mason has installed their binary. A server
+  installed mid-session needs a restart to attach.
+- On a fresh machine run `:MasonToolsInstall` once -- there is no automatic
+  install. Its `ensure_installed` takes mason PACKAGE names (`rust-analyzer`,
+  `lua-language-server`), not lspconfig names.
+
+**Completion capabilities are a static copy** (`lua/andrew/lsp_capabilities.lua`)
+of blink.cmp's `get_lsp_capabilities()`. Calling blink for them loaded blink.cmp
+and LuaSnip before the first paint of every code buffer; both now load on
+`InsertEnter`. `tests/lsp_capabilities_drift_spec.lua` fails if a blink update
+changes the table -- re-copy it when that happens.
+
+**Mason ensure_installed:** prettier, ruff, ty, eslint_d, codelldb, lua-language-server, python-lsp-server, rust-analyzer, ctags-lsp, emmet-ls, prisma-language-server, eslint-lsp
 
 ### Type Checking
 
@@ -263,20 +351,25 @@ Per-language type checking via terminal split (30% height):
 
 | Prefix | Category | Notable Keymaps |
 |--------|----------|-----------------|
-| `<leader>f` | Find/Search (fzf-lua) | `ff` files, `fr` recent, `fs` grep, `fc` word, `fk` keymaps, `fh` help, `ft` TODOs |
+| `<leader>f` | Find/Search (fzf-lua; one shared look, `utils/fzf_look.lua`) | `ff` files, `fr` recent, `fs` grep, `fc` word, `fk` keymaps, `fh` help, `ft` TODOs |
 | `<leader>x` | Trouble/Diagnostics | `xw` workspace, `xd` document, `xe` errors (file), `xE` errors (workspace), `xq` quickfix, `xt` TODOs |
+| `<leader>y` | Yank Path (for agent prompts) | `yf` relative path, `yp` absolute; line numbers ONLY from Visual mode, where the selection becomes `path#L10-L24` (`utils/path_reference.lua`, `tests/path_reference_spec.lua`) |
 | `<leader>s` | Splits/Windows | `sv` vertical, `sh` horizontal, `se` equalize, `sx` close, `sm` maximize |
+| `<leader><Tab>` | Tabs (LazyVim) | `<Tab>` new, `d` close, `o` close others, `]`/`[` next/prev, `f`/`l` first/last |
 | `<leader>t` | Tabs/Terminal | `to` new, `tx` close, `tn` next, `tp` prev, `tf` buffer to tab, `tt` floating terminal |
-| `<leader>h` | Git Hunks | `hs` stage, `hr` reset, `hS` stage buffer, `hR` reset buffer, `hb` blame, `hd` diff |
+| `<leader>g` | Git | `gg` lazygit, `gl` log, `gf` file history, `gb` blame line, `gs` status, `gS` stash, `gd`/`gD` diff, `gB`/`gY` browse, `gv` CodeDiff review tab, `gt`/`gT` CodeDiff file/repo history |
+| `gh` / `gH` | mini.diff | Apply / reset a hunk range (operators); `gh` is also the hunk text object. `<leader>go` toggles the overlay |
+| `<leader>gh` | Hunks | `ghs` stage, `ghr` reset, `ghS` stage buffer, `ghR` reset buffer, `ghb` blame, `ghB` blame buffer, `ghd` diff, `ght` toggle inline blame |
 | `<leader>c` | Code Actions | `ca` code action |
-| `<leader>d` | Debug/Diagnostics | `db` breakpoint, `dc` continue, `do`/`di`/`dO` step, `dt` terminate |
+| `<leader>c` | Code | `ca` action, `cA` source, `co` organize imports, `cc`/`cC` codelens, `cr`/`cR` rename, `cd` diagnostics, `cf`/`cF` format, `cs`/`cS` Trouble, `cl` info, `cm` Mason |
+| `<leader>d` | Debug | `db` breakpoint, `dc` continue, `do`/`di`/`dO` step, `dt` terminate (no longer shadowed by a diagnostic float) |
 | `<leader>l` | Linting | `ll` lint, `lf` toggle Fortran, `lw` workspace, `lm` ruff |
 | `<leader>a` | Type Check | `ac` dispatch, `aP` Python, `aR` Rust, `aL` Lua, `ag`/`ai` Fortran |
 | `<leader>m` | Make/Build | `mb` build, `md` debug, `mc` clean, `mr` run, `ma` all, `ml` re-run |
 | `<leader>r` | Rust/Refactor | `rr` runnables, `rd` debuggables, `rt` testables, `rm` expand macro, `rn` rename |
 | `<leader>e` | Explorer (Yazi) | `ee` toggle, `ef` on file, `ec` close, `er` refresh |
 | `<leader>v` | Vault Notes | `vn` new, `vd` daily, `vw` weekly, `vs` simulation, `va` analysis, `vt` task, `vm` meeting |
-| `<leader>o` | OpenCode AI | `ot` toggle, `oa` ask, `oe` explain, `on` new session |
+| `<leader>o` | _(unused)_ | Was OpenCode AI; keymaps removed 2026-09-06, plugin removed 2026-11-14 |
 | `<leader>T` | Table Mode | `Tm` toggle markdown table mode |
 
 **Non-leader keymaps:**
@@ -289,12 +382,12 @@ Per-language type checking via terminal split (30% height):
 | `]h` / `[h` | Next/prev git hunk |
 | `]t` / `[t` | Next/prev TODO comment |
 | `]d` / `[d` | Next/prev diagnostic |
-| `gR` / `gD` / `gd` / `gi` / `gt` | LSP navigation |
+| `gr` / `gD` / `gd` / `gI` / `gy` | LSP navigation |
 | `K` | Hover documentation |
 | `<C-k>` | Signature help |
 | `<C-space>` | Treesitter incremental select |
 | `gcc` / `gc` | Line/motion commenting |
-| `s` / `ss` / `S` | Substitute motions |
+| `gs` / `gss` / `gS` | Substitute motions |
 | `ys` / `cs` / `ds` | Surround operations |
 
 ## Plugin Inventory
@@ -304,12 +397,15 @@ Per-language type checking via terminal split (30% height):
 | plenary.nvim | init.lua | Lua utilities | Dependency |
 | vim-tmux-navigator | init.lua | Tmux/nvim navigation | Dependency |
 | OneDarkPro | colorscheme.lua | Color scheme | `priority = 1000` |
-| lualine.nvim | lualine.lua | Status line | Config |
-| bufferline.nvim | bufferline.lua | Tab bar | Config |
-| dressing.nvim | dressing.lua | Improved UI dialogs | `VeryLazy` |
+| lualine.nvim | lualine.lua | Status line: project name (when the root is not the cwd), filetype icon, pretty path; also carries the `'showcmd'` keys and "recording @q" now that noice owns the message row | Config |
+| noice.nvim | noice.lua | Floating `:` cmdline; messages in a box at the bottom-right | `VeryLazy` |
+| incline.nvim | incline.lua | Window labels (icon, file name, `[+]`) at the top-right of every split | `VeryLazy` |
+| snacks.nvim | snacks.lua | `vim.ui.input` + `vim.ui.select` (picker.ui_select), the `snacks` backend of the file finder (`<leader>ff` / `<leader><space>`; `utils/file_picker.lua` picks between `fzf` and `snacks` via `vim.g.file_picker_backend`), inline images, `<leader>u` toggles | `lazy = false`, `priority = 1000` |
 | which-key.nvim | which-key.lua | Keybinding hints | `VeryLazy` |
 | nvim-web-devicons | ui/devicons.lua | File icons | `lazy = true` |
-| blink.cmp | blink-cmp.lua | Completion (+ LuaSnip) | `InsertEnter` |
+| blink.cmp | blink-cmp.lua | Completion | `InsertEnter, CmdlineEnter` |
+| LuaSnip | luasnip.lua | Snippet engine (+ friendly-snippets) | `InsertEnter` |
+| nvim-ts-autotag | ts-autotag.lua | Auto-close markup tags (dormant: `setup()` is never called) | `ft` (html, vue, jsx, tsx) |
 | fzf-lua | fzf-lua.lua | Fuzzy finder | `cmd = "FzfLua"` |
 | nvim-treesitter | treesitter.lua | Syntax highlighting | `BufReadPre, BufNewFile` |
 | nvim-autopairs | autopairs.lua | Auto-close brackets | `InsertEnter` |
@@ -317,7 +413,10 @@ Per-language type checking via terminal split (30% height):
 | indent-blankline.nvim | indent-blankline.lua | Indentation guides | `BufReadPre, BufNewFile` |
 | todo-comments.nvim | todo-comments.lua | TODO/FIXME highlights | `BufReadPre, BufNewFile` |
 | trouble.nvim | trouble.lua | Diagnostics viewer | `cmd = "Trouble"` |
-| gitsigns.nvim | gitsigns.lua | Git signs | `BufReadPre, BufNewFile` |
+| gitsigns.nvim | gitsigns.lua | Git signs + `<leader>gh` hunks | `BufReadPre, BufNewFile` |
+| snacks.nvim (fragment) | git.lua | `<leader>g` git commands: fzf-lua pickers for log / history / status / stash / diff, snacks for lazygit and git browse | `keys` |
+| mini.diff | mini-diff.lua | Diff overlay, `gh`/`gH` operators | `BufReadPre, BufNewFile` |
+| codediff.nvim | codediff.lua | Diff review tab, file/repo history (`<leader>gv`/`gt`/`gT`); `build` fetches its diff library + watcher binary | `cmd = "CodeDiff"`, `keys` |
 | vim-maximizer | vim-maximizer.lua | Maximize splits | Keys |
 | substitute.nvim | substitute.lua | Motion-based replace | `BufReadPre, BufNewFile` |
 | nvim-surround | surround.lua | Surrounding pairs | `BufReadPre, BufNewFile` |
@@ -325,10 +424,9 @@ Per-language type checking via terminal split (30% height):
 | render-markdown.nvim | render-markdown.lua | Styled markdown | `ft = "markdown"` |
 | nvim-colorizer | colorizer.lua | Color code preview | Config |
 | yazi.nvim | yazi.lua | File explorer | `VeryLazy` |
-| opencode.nvim | opencode.lua | AI assistant | Config |
 | rustaceanvim | rustaceanvim.lua | Rust IDE features | `lazy = false` |
 | nvim-lspconfig | lsp/lspconfig.lua | LSP configuration | `BufReadPre, BufNewFile` |
-| mason.nvim | lsp/mason.lua | Tool installer | Config |
+| mason.nvim | lsp/mason.lua | Tool installer | `cmd`, `<leader>cm` |
 | conform.nvim | formatting/conform.lua | Code formatting | `lazy = false` |
 | nvim-lint | linting.lua | Linting | `BufReadPost, BufWritePost` |
 | type-checker | type-checker.lua | Type checking (virtual) | `VeryLazy` |
@@ -353,10 +451,11 @@ Custom Fortran development features beyond what fortls provides:
 
 - **`init.lua`** - Sets up FileType autocmd for custom highlighting
 - **`highlight.lua`** - Enhanced syntax highlighting for Fortran
-- **`docs.lua`** - Custom hover documentation for Fortran intrinsics
-- **`blink-source.lua`** - Completion source providing Fortran intrinsic completions to blink.cmp (min 2 chars, score offset +10)
+- **`docs.lua`** - Legacy prose for the Fortran intrinsics (hover falls back to it)
+- **`registry.lua`** - The one documentation set: MPI, the OpenMP runtime, the directives and clauses, the statement keywords. Hover, signature help, completion and `highlight.lua` all read it, so the coloured set, the hoverable set and the completable set are one set.
+- **`lsp.lua` / `lsp_completion.lua`** - Fortran completion is served by the in-process `fortran-extras` LSP server, not by a blink source: context-aware (directives after the `!$OMP` sentinel, that directive's clauses after it, the registry on ordinary lines), with `textEdit` deciding what is inserted and `completionItem/resolve` keeping the documentation bodies off the wire until an item is selected. The old `blink-source.lua` was removed with it (see `tests/audit_fortran_blink_source_spec.lua`).
 
-**Fortran-specific completion sources** (in blink-cmp.lua): `fortran_docs > lsp > snippets > path > buffer`
+**Fortran-specific completion sources** (in blink-cmp.lua): `lsp > snippets > path > buffer`
 
 ### Vault Note System (`vault/`)
 
@@ -366,6 +465,7 @@ An Obsidian-like note template system for creating structured notes:
 - **Keymaps:** `<leader>v` prefix (see keymap reference)
 - **Templates (20+):** daily_log, weekly_review, task, analysis, meeting, journal, concept, simulation, finding, literature, project_dashboard, area_dashboard, domain_moc, person, asset, changelog, draft, financial_snapshot, methodology, presentation, recurring_task
 - **Query engine:** DSL for searching/filtering vault notes (`query/` subdirectory)
+- **Search exclusions:** `config.search.exclude_dirs` (default `.obsidian`, `Templates`) hides directories from search results only; they stay indexed so wikilinks and linkcheck still work. Distinct from `config.index.skip_dirs`, which drops them from the index. See `vault/search_exclude.lua`.
 
 ## Code Style Guidelines
 
@@ -785,12 +885,17 @@ vim.lsp.config("*", { capabilities = capabilities })
 
 | Default | Action | Your Override |
 |---------|--------|---------------|
-| `grn` | Rename symbol | `<leader>rn` |
-| `grr` | References | `gR` (fzf-lua) |
-| `gri` | Implementation | `gi` (fzf-lua) |
-| `gra` | Code actions | `<leader>ca` |
-| `gO` | Document symbols | Not overridden (available) |
-| `Ctrl-S` | Signature help | `Ctrl-K` |
+| `grn` | Rename symbol | DELETED -> `<leader>cr` |
+| `grr` | References | DELETED -> `gr` (fzf-lua) |
+| `gri` | Implementation | DELETED -> `gI` (fzf-lua) |
+| `gra` | Code actions | DELETED -> `<leader>ca` |
+| `grt` | Type definition | DELETED -> `gy` (fzf-lua) |
+| `grx` | Run codelens (new in 0.12) | DELETED -> `<leader>cc` |
+| `gO` | Document symbols | Not overridden (available); see also `<leader>ss` |
+| `Ctrl-S` | Signature help | Not overridden; `Ctrl-K` and `gK` also work |
+
+They are deleted rather than shadowed: `gr` is itself a mapping, so any
+surviving `gr*` would make `gr` wait out `timeoutlen`.
 
 ### `nvim_open_win` Options
 
@@ -851,7 +956,7 @@ end
 - **Python**: Uses `ruff` for linting, `ruff_format` for formatting, `pylsp` for LSP (Jedi completion), `ty` for type checking
 - **Rust**: Uses `rust_analyzer` via rustaceanvim with `clippy` on save, `rustfmt` for formatting, CodeLLDB for debugging
 - **Lua**: Uses `lua_ls` from conda, `stylua` for formatting
-- **Fortran**: Uses `fortls` from conda, `fprettify` for formatting, multi-compiler linting (gfortran/ifort/ifx/mpiifx/nagfor), custom hover docs, custom blink.cmp source, CodeLLDB for debugging
+- **Fortran**: Uses `fortls` from conda, `fprettify` for formatting, multi-compiler linting (gfortran/ifort/ifx/mpiifx/nagfor), the in-process `fortran-extras` LSP server for MPI/OpenMP hover, signature help and completion, CodeLLDB for debugging
 - **C/C++**: Uses `ctags_lsp` for header completions, `cppcheck` for linting, CodeLLDB for debugging
 - **JS/TS/Vue**: Uses `eslint` for linting, `prettier` for formatting
 
@@ -877,11 +982,129 @@ conda install -c conda-forge \
   nodejs eslint \
   cppcheck \
   rust rust-src \
-  gfortran fprettify fortls ctags-lsp
+  gfortran fprettify fortls ctags-lsp \
+  lazygit git-delta gh
 ```
 
-**Mason-installed tools** (auto-installed via mason-tool-installer):
-prettier, ty, ruff, eslint_d, rust_analyzer, codelldb, lua_ls, emmet_ls, prismals, pylsp, eslint
+`git-delta` installs a binary named `delta`, which fzf-lua pipes its git
+previews through (`git_commits`, `git_bcommits`, `git_blame`, `git_status`,
+`git_diff`, `git_stash`). It works because `init.lua` puts `~/miniconda3/bin`
+first on PATH: `~/.local/bin/delta` is an unrelated desktop app's CLI that
+rejects git-delta's flags, and fzf-lua only checks that some `delta` exists.
+
+`gh` comes from conda as well, although Ubuntu ships one: snacks' issue pickers
+(`<leader>gi` / `<leader>gI`) request the `stateReason` JSON field, which
+Ubuntu's `gh` 2.45.0 rejects (the picker opens empty with a "GH Error").
+conda-forge's 2.104.0 has it. Both read the same login.
+
+**Snacks' own pickers wear the fzf look too** (`lua/andrew/utils/snacks_look.lua`):
+the GitHub pickers and the `vim.ui.select` menus cannot be fzf-lua pickers, so
+their `SnacksPicker*` / `SnacksGh*` highlight groups are redefined from the same
+Telescope groups `fzf_look.lua` uses, and re-applied on `ColorScheme`. Two
+things in it are workarounds, each explained at the code: the box title is
+recoloured in `picker.on_show` (snacks' `SnacksPickerBoxTitle` group never
+reaches the window), and the match counter is `nocombine` so the bold of the
+typed query does not spread to it.
+
+**Messages appear in a box, not on the message row** (`lua/andrew/plugins/noice.lua`).
+noice's `messages` module is on, and routes of ours run before its built-in
+ones: skip the kinds that only made sense on the row; send `:!command`
+output, `'verbose'` traces and anything taller than 10 lines to a split; send
+everything else to the `mini` view -- a bordered box above the statusline's
+right end where messages stack oldest-first and each leaves after 5 s. Things
+to know before touching it:
+
+- The catch-all route is REQUIRED. noice's built-in routes list the kinds they
+  show one by one and predate several (`bufwrite`, `undo`, `quickfix`,
+  `shell_ret`, `progress`); those would match nothing and vanish silently.
+- noice ignores the message `id` Neovim 0.12 uses to say "this replaces that".
+  The one case that showed is `:w` (a `"name" ` placeholder, then the full
+  line), handled by a route that drops the placeholder. Any other message that
+  updates in place will stack a line per update.
+- `vim.notify` is still Neovim's stock function (`notify.enabled = false`). It
+  prints a message, so it lands in the box like everything else.
+- With noice owning messages the row under the statusline stays empty except
+  during `/` search, and Neovim no longer draws `'showcmd'` or "recording @q"
+  there. `lualine.lua` shows both. The `'showcmd'` keys stay visible until the
+  next command (noice never clears them); `'showcmdloc'` = `statusline` with a
+  `%S` item was tried and loses the Visual selection size under lualine.
+- Modelled on craftzdog's dotfiles, which use Neovim's experimental
+  `vim._core.ui2` instead. ui2 was tried here: it draws its own command line,
+  which doubles up with noice's popup.
+
+**`'cursorline'` shows in the focused split only** (augroup
+`focused-split-cursorline` in `lua/andrew/core/keymaps.lua`, pinned by
+`tests/focused_split_cursorline_spec.lua`). Modelled on craftzdog's
+`setlocal cursorline` / `setlocal nocursorline` pair on WinEnter / WinLeave,
+but not a copy of it:
+
+- Only the window's LOCAL value is written. Its GLOBAL value (per window,
+  inherited by a split) is read as "does this window want a cursorline", so
+  `:set nocursorline` sticks. `vim.wo[win].cursorline = x` writes both values;
+  use `vim.wo[win][0]` in code that only means to change what is shown.
+- Floats are skipped, and so are `nofile` / `quickfix` / `prompt` / `terminal`
+  buffers: plugin panels use the line as a selection marker.
+- The focused split is remembered from WinEnter, never read from the current
+  window in BufWinEnter / WinNew. Those fire with a window current that an
+  API call is only visiting (`nvim_win_set_buf`, `nvim_open_win` unentered).
+- BufWinEnter is there because window options are remembered per buffer:
+  `:buffer N` in the focused split brings along the "off" the buffer had in an
+  unfocused one, with no window event fired.
+
+**The tabline and the window labels are ported from craftzdog's dotfiles**, with
+onedark's colours instead of his solarized-osaka ones. bufferline.nvim is gone.
+
+- `lua/andrew/utils/tabline.lua` (set up from `init.lua`, pinned by
+  `tests/tabline_spec.lua`) is the `'tabline'` expression: one slanted tab per
+  TAB PAGE, named after the file in its focused window. Its five highlight
+  groups are derived from `Normal`, `DiagnosticOk` (the green of the current
+  tab) and `CursorLine` and re-derived on `ColorScheme`, which is what keeps
+  them right across the `<leader>ub` light/dark toggle -- do not hardcode a
+  palette there.
+- `lua/andrew/plugins/incline.lua` is the label at the top-right of each split.
+  It defines its own two groups, re-derived on `ColorScheme`:
+  `WindowLabelFocused` is dark text on cyan (`DiagnosticHint`);
+  `WindowLabelUnfocused` is bold white text on the unfocused window's own
+  background (`NormalNC`, which onedark sets lighter than `Normal`), so it has
+  no box. White is fixed for dark backgrounds only; the light theme uses the
+  text colour.
+- `'showtabline'` stays 2 (`core/options.lua`, `<leader>uA` toggles it). His is
+  1, which hides the tabline until a second tab page exists.
+- Deliberate differences from his tabline are listed at the top of
+  `utils/tabline.lua`: dark text on the current tab, a tab keeping its name
+  while a float has focus, `%` escaped in file names.
+
+**The statusline's file section is project name, filetype icon, pretty path**
+(`lua/andrew/utils/statusline_path.lua`, pinned by
+`tests/statusline_path_spec.lua`), ported from craftzdog's dotfiles.
+
+- The project name shows only while the project root is NOT the working
+  directory. The path is relative to the cwd when the file is under it and to
+  the project root otherwise.
+- "Project root" here is `require("andrew.utils.root").project()`: the nearest
+  directory holding one of `project_markers` (`.git`, `lua`, `package.json`,
+  `Makefile`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `.obsidian`,
+  `.zennotes`), cwd when none. It is NOT `root.get()`, the LSP-first root the
+  `<leader>/` and grep pickers use; the two can differ.
+- The file name's highlights are built with lualine's `create_hl`, which fills
+  in the section's own colours; keep it that way rather than a bare `%#Group#`.
+
+**fzf-lua's git pickers are adapted in three places**, all under `lua/andrew/utils/`:
+
+- `fzf_git_preview.lua` -- runs each picker's preview command in fzf-lua's
+  Neovim preview window (a terminal buffer) instead of letting fzf print it in
+  its own. That is what gives them the same two boxes as the file pickers.
+  Enabled per picker in `fzf_look.lua`.
+- `fzf_look.lua` also moves the `<C-d>` action of `git_commits` and `git_diff`
+  to `<A-d>`: `<C-d>` pages the preview everywhere, and with a Neovim-window
+  preview that mapping wins.
+- `fzf_git_hunks.lua` -- replaces `git_hunks`' row parser, which upstream
+  raises on a hunk header without a count (`@@ -1 +1,2 @@`) and so empties the
+  whole picker. Pinned by `tests/fzf_git_hunks_spec.lua`; drop it when
+  upstream's `make_entry.git_hunk` handles that header.
+
+**Mason-installed tools** (installed by `:MasonToolsInstall`, not automatically):
+prettier, ruff, ty, eslint_d, codelldb, lua-language-server, python-lsp-server, rust-analyzer, ctags-lsp, emmet-ls, prisma-language-server, eslint-lsp
 
 **Tool path resolution:**
 - LSP servers: `$HOME/miniconda3/bin/` (lua_ls, fortls, ctags-lsp)

@@ -29,31 +29,48 @@ function M.parse_target(inner)
   -- Parse name#heading^block_id
   local name, heading, block_id
 
-  -- Handle self-referencing links: #heading, #heading^block, ^block
+  -- Handle self-referencing links: #^block, #heading, #heading^block, ^block
   if target_part:byte(1) == 35 then
-    local h2, b2 = target_part:match(pat.LINK_SELF_HEADING_BLOCK)
-    if h2 then
-      name, heading, block_id = "", h2, b2
+    -- `[[#^block]]` is Obsidian's block reference to the current note; without
+    -- this case it fell through to a heading literally named "^block".
+    local b0 = target_part:match(pat.LINK_SELF_HASH_BLOCK)
+    if b0 then
+      name, block_id = "", b0
     else
-      name, heading = "", target_part:sub(2)
+      local h2, b2 = target_part:match(pat.LINK_SELF_HEADING_BLOCK)
+      if h2 then
+        name, heading, block_id = "", h2, b2
+      else
+        name, heading = "", target_part:sub(2)
+      end
     end
   elseif target_part:byte(1) == 94 then
     name, block_id = "", target_part:sub(2)
   else
-    -- Try all combinations
-    local n, h, b = target_part:match(pat.LINK_NAME_HEADING_BLOCK)
-    if n then
-      name, heading, block_id = n, h, b
+    -- `[[Note#^block]]` -- Obsidian's block-reference syntax. Must be tried
+    -- BEFORE LINK_NAME_HEADING, which would otherwise capture "^block" as a
+    -- heading name and silently turn a valid block ref into a broken anchor
+    -- (gf landed on line 1, K said "Heading not found", :VaultLinkDiag called
+    -- it broken and :VaultFixLinks offered to "repair" it).
+    local n0, b1 = target_part:match(pat.LINK_NAME_HASH_BLOCK)
+    if n0 then
+      name, block_id = n0, b1
     else
-      n, b = target_part:match(pat.LINK_NAME_BLOCK)
+      -- Try all combinations
+      local n, h, b = target_part:match(pat.LINK_NAME_HEADING_BLOCK)
       if n then
-        name, block_id = n, b
+        name, heading, block_id = n, h, b
       else
-        n, h = target_part:match(pat.LINK_NAME_HEADING)
+        n, b = target_part:match(pat.LINK_NAME_BLOCK)
         if n then
-          name, heading = n, h
+          name, block_id = n, b
         else
-          name = target_part
+          n, h = target_part:match(pat.LINK_NAME_HEADING)
+          if n then
+            name, heading = n, h
+          else
+            name = target_part
+          end
         end
       end
     end

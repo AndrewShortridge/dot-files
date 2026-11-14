@@ -1,0 +1,20 @@
+new_tab editors
+layout splits
+enabled_layouts splits,stack
+set_layout_state {"pairs": {"horizontal": false, "one": 1}, "opts": {"default_axis_is_horizontal": true}, "class": "Splits", "all_windows": {"active_group_idx": 0, "active_group_history": [1, 2], "window_groups": [{"id": 1, "window_ids": [1]}, {"id": 2, "window_ids": [2]}]}}
+cd /home/u/proj
+
+launch 'kitty-unserialize-data={"id": 1}' --var=ksession_idx=0 --var=ksession_win=1 /bin/bash -l
+launch 'kitty-unserialize-data={"id": 2}' --cwd=/var/log --var=ksession_idx=1 --var=ksession_win=2 nvim /var/log/syslog
+focus
+
+new_tab
+layout stack
+enabled_layouts splits,stack
+set_layout_state {"pairs": {}, "opts": {}, "class": "Stack", "all_windows": {"active_group_idx": 0, "active_group_history": [3], "window_groups": [{"id": 3, "window_ids": [3]}]}}
+cd /home/u
+
+launch 'kitty-unserialize-data={"id": 3}' --var=ksession_idx=0 --var=ksession_win=3 /bin/bash -l
+focus
+
+focus_tab 0

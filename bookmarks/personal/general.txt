@@ -1,0 +1,5 @@
+# personal / general  —  label :: url   (or just a url)
+YouTube :: https://youtube.com
+GitHub :: https://github.com
+tonybtw dmenu-scripts :: https://github.com/tonybanters/dmenu-scripts
+Docs.rs :: https://docs.rs/

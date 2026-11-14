@@ -1,132 +1,114 @@
 -- =============================================================================
--- Theme Cycle
+-- Light / Dark Theme Switching
 -- =============================================================================
--- Cycles between: OneDark → Soft Paper Light → Soft Paper Dark → OneDark
--- Preserves and restores the original OneDark state when cycling back.
+-- Dark  = onedark  (OneDarkPro's Atom One Dark, configured in plugins/colorscheme.lua)
+-- Light = soft-paper-light
+--
+-- Replaces the old three-way cycler (<leader>ut / :ThemeCycle), which rotated
+-- onedark -> soft-paper-light -> soft-paper-dark. The dark/light pair is now
+-- driven by <leader>ub, registered as a Snacks.toggle in plugins/snacks.lua so
+-- it picks up which-key's enabled/disabled icon like every other UI toggle.
+--
+-- TWO THINGS THAT MUST NOT REGRESS
+--
+-- 1. Switching goes through `:colorscheme`, never soft-paper's `load()` directly.
+--    Only the real command fires the ColorScheme event, and vault/colors.lua
+--    (augroup VaultColors) listens for it to re-derive ~120 Vault* highlight
+--    groups from vim.g.colors_name. Calling load() straight would leave every
+--    Vault highlight on the previous palette. plugins/render-markdown.lua hangs
+--    off the same event.
+--
+-- 2. The light scheme must keep the name "soft-paper-light". vault/colors.lua
+--    selects its palette by pattern-matching that exact name; anything else
+--    falls through to its catch-all and picks the dark OneDark palette on a
+--    paper background.
+--
+-- Lualine is re-themed on every switch. The old cycler restored `theme = "auto"`
+-- when returning to onedark, silently discarding the hand-tuned statusline
+-- palette; it is now restored properly from andrew.themes.lualine_theme.
 
 local M = {}
 
--- Cycle order: the first entry is the "home" theme (restored from saved state).
--- Entries 2+ are the soft-paper variants.
-local CYCLE = { "onedark", "soft-paper-light", "soft-paper-dark" }
-
---- Saved state from before we left the home theme.
----@type { name: string, background: string }|nil
-local saved_state = nil
-
---- Current index in CYCLE (1 = home, 2 = SP light, 3 = SP dark).
-local cycle_idx = 1
-
---- Get the current position in the cycle based on vim.g.colors_name.
----@return number
-local function detect_index()
-  local name = vim.g.colors_name or ""
-  for i, entry in ipairs(CYCLE) do
-    if name == entry then
-      return i
-    end
-  end
-  return 1 -- default to home
-end
-
---- Update lualine to match the active theme.
----@param sp_palette table|nil soft-paper palette, or nil to restore original
----@param variant? "light"|"dark" soft-paper variant
-local function update_lualine(sp_palette, variant)
+--- Re-theme lualine and repaint the statusline.
+---@param theme table|string lualine theme table, or a theme name
+local function apply_lualine(theme)
   local ok, lualine = pcall(require, "lualine")
-  if not ok then return end
-
-  if sp_palette then
-    local sp = require("andrew.themes.soft-paper")
-    lualine.setup({ options = { theme = sp.lualine_theme(sp_palette, variant) } })
-  else
-    -- Restore original lualine: use "auto" and let it re-derive from colorscheme
-    lualine.setup({ options = { theme = "auto" } })
-    vim.defer_fn(function()
-      local lok, lmod = pcall(require, "lualine")
-      if lok then
-        lmod.setup({ options = { theme = "auto" } })
-      end
-    end, 50)
+  if not ok then
+    return
   end
-
+  lualine.setup({ options = { theme = theme } })
   vim.cmd("redrawstatus")
 end
 
 --- Activate a soft-paper variant.
 ---@param variant "light"|"dark"
-local function activate_soft_paper(variant)
-  -- Save home state on first departure
-  if not saved_state then
-    saved_state = {
-      name = vim.g.colors_name or "onedark",
-      background = vim.o.background,
-    }
-  end
-
-  vim.cmd("colorscheme soft-paper-" .. variant)
+function M.activate_soft_paper(variant)
+  -- soft-paper.load() sets vim.o.background itself; go through :colorscheme so
+  -- the ColorScheme event fires (see note 1 above).
+  vim.cmd.colorscheme("soft-paper-" .. variant)
 
   local sp = require("andrew.themes.soft-paper")
-  update_lualine(sp.active_palette, variant)
+  apply_lualine(sp.lualine_theme(sp.active_palette, variant))
 end
 
---- Restore the original (home) colorscheme.
-local function restore_home()
-  if saved_state then
-    vim.o.background = saved_state.background
-    vim.cmd("colorscheme " .. saved_state.name)
-    saved_state = nil
-  else
-    vim.o.background = "dark"
-    vim.cmd("colorscheme onedark")
+--- Activate the dark theme (OneDarkPro's Atom One Dark).
+function M.activate_onedark()
+  vim.o.background = "dark"
+
+  -- Clear UNCONDITIONALLY, and note why the usual guard is wrong here.
+  --
+  -- Setting 'background' above resets vim.g.colors_name to nil. Every
+  -- `if vim.g.colors_name then hi clear end` guard -- the conventional
+  -- colorscheme idiom, and the one in onedarkpro's own output
+  -- (onedarkpro/lib/compile.lua:112) -- is therefore already disarmed by the
+  -- time it runs. Nothing cleared, and 248 highlight groups kept their
+  -- soft-paper values on returning to dark.
+  --
+  -- The visible symptom was the gutter. gitsigns rebuilds its ~49 groups on
+  -- ColorScheme but skips any that is "already defined"
+  -- (gitsigns/highlight.lua:302), so the stale light ones were never
+  -- re-derived -- all the GitSignsStaged* especially. GitSignsAdd/Change/
+  -- Delete looked right only because soft-paper redefines those four by hand
+  -- (soft-paper.lua:391-394). BufferLine*, Snacks*, Fzf* and Ibl* were
+  -- stranded the same way.
+  vim.cmd("highlight clear")
+  if vim.fn.exists("syntax_on") == 1 then
+    vim.cmd("syntax reset")
   end
 
-  update_lualine(nil)
+  vim.cmd.colorscheme("onedark")
+  apply_lualine(require("andrew.themes.lualine_theme").theme)
 end
 
---- Cycle to the next theme in the rotation.
-function M.cycle()
-  cycle_idx = detect_index()
-  cycle_idx = (cycle_idx % #CYCLE) + 1
+--- Is a dark background currently active?
+--- Both onedark and soft-paper-dark report true; only soft-paper-light is light.
+---@return boolean
+function M.is_dark()
+  return vim.o.background == "dark"
+end
 
-  local target = CYCLE[cycle_idx]
-
-  if target == "soft-paper-light" then
-    activate_soft_paper("light")
-    vim.notify("Theme: Soft Paper Light", vim.log.levels.INFO)
-  elseif target == "soft-paper-dark" then
-    activate_soft_paper("dark")
-    vim.notify("Theme: Soft Paper Dark", vim.log.levels.INFO)
+--- Switch between the dark and light themes.
+---@param dark boolean true for onedark, false for soft-paper-light
+function M.set_dark(dark)
+  if dark then
+    M.activate_onedark()
   else
-    restore_home()
-    vim.notify("Theme: " .. (vim.g.colors_name or "onedark"), vim.log.levels.INFO)
+    M.activate_soft_paper("light")
   end
 end
 
 -- =============================================================================
--- Setup: register commands and keybindings
+-- Setup: register commands
 -- =============================================================================
 
 function M.setup()
-  vim.api.nvim_create_user_command("ThemeCycle", function()
-    M.cycle()
-  end, { desc = "Cycle: OneDark → SP Light → SP Dark → OneDark" })
-
   vim.api.nvim_create_user_command("SoftPaperLight", function()
-    activate_soft_paper("light")
-    cycle_idx = 2
-    vim.notify("Theme: Soft Paper Light", vim.log.levels.INFO)
+    M.activate_soft_paper("light")
   end, { desc = "Activate soft-paper light" })
 
   vim.api.nvim_create_user_command("SoftPaperDark", function()
-    activate_soft_paper("dark")
-    cycle_idx = 3
-    vim.notify("Theme: Soft Paper Dark", vim.log.levels.INFO)
+    M.activate_soft_paper("dark")
   end, { desc = "Activate soft-paper dark" })
-
-  vim.keymap.set("n", "<leader>tp", function()
-    M.cycle()
-  end, { desc = "Cycle theme: OneDark → SP Light → SP Dark", silent = true })
 end
 
 return M

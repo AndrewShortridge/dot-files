@@ -1,0 +1,3 @@
+# work / general  —  label :: url   (or just a url)
+Mail :: https://mail.google.com
+Calendar :: https://calendar.google.com

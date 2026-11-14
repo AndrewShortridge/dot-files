@@ -1,0 +1,56 @@
+{
+  "name": "tmux_multi_session",
+  "created_at": "2026-05-26T13:56:30.945141279Z",
+  "schema": 1,
+  "kitty_version": "",
+  "os_windows": [
+    {
+      "tabs": [
+        {
+          "title": "bash",
+          "layout": "fat",
+          "active_window_idx": 0,
+          "windows": [
+            {
+              "kitty_id": 1,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.bash",
+                  "hook"
+                ]
+              },
+              "scrollback": "/tmp/.tmppATTlS/tmux_multi_session.gen-1779803790544912.state/scrollback/win-1.ansi"
+            }
+          ]
+        },
+        {
+          "title": "tab-1",
+          "layout": "fat",
+          "active_window_idx": 0,
+          "windows": [
+            {
+              "kitty_id": 2,
+              "ksession_id": "",
+              "cwd": "/home/andrew/.config/kitty/scripts/ksession-rs",
+              "program": {
+                "kind": "raw",
+                "argv": [
+                  "/home/andrew/miniconda3/bin/python",
+                  "/home/andrew/miniconda3/bin/conda",
+                  "shell.bash",
+                  "hook"
+                ]
+              },
+              "scrollback": "/tmp/.tmppATTlS/tmux_multi_session.gen-1779803790544912.state/scrollback/win-2.ansi"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

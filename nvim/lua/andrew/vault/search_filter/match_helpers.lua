@@ -59,6 +59,18 @@ function M.compare_date(ts, op, filter_ts, filter_val, invert)
   return M.compare_num(ts, effective_op, filter_ts)
 end
 
+--- Normalize a scalar-or-list field value into a list of candidate values.
+--- A `nil` value yields an empty list; a table is returned as-is; any other
+--- scalar is wrapped in a single-element list. This lets generic matchers
+--- iterate candidate values uniformly: scalars match exactly as before
+--- (single iteration), lists match if ANY element matches.
+---@param v any scalar, list, or nil
+---@return any[] list of candidate values (empty if v is nil)
+function M.to_list(v)
+  if v == nil then return {} end
+  return type(v) == "table" and v or { v }
+end
+
 --- Resolve a field alias path (e.g. "frontmatter.area") into the entry.
 --- Resolve a dot-separated alias path on an entry table.
 ---@param entry table VaultIndexEntry

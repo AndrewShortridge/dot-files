@@ -1,22 +1,108 @@
-local opt_local = vim.opt_local
+vim.wo.spell = true
+vim.bo.spelllang = "en_us"
+vim.wo.conceallevel = 2
 
-opt_local.spell = true
-opt_local.spelllang = "en_us"
-opt_local.conceallevel = 2
+-- Soft wrap (Obsidian-style). Display-only: the file on disk is never rewritten,
+-- and the text reflows for free when the window narrows -- opening the vault
+-- sidebar (a real vsplit, sidebar.lua:102) re-wraps with no code on our side.
+-- This also keeps render-markdown alive: it disables ALL decoration whenever
+-- 'leftcol' ~= 0 (render-markdown/core/ui.lua:100-107), so horizontally
+-- scrolling a nowrap buffer used to silently blank every heading and callout.
+vim.wo.wrap = true
+vim.wo.linebreak = true      -- break at 'breakat', not mid-word
+vim.wo.breakindent = true    -- continuation rows keep the line's indent
+vim.wo.showbreak = ""
+-- list:-1 indents continuation rows by the width of the 'formatlistpat' match,
+-- which is what aligns wrapped list text under its own first character.
+vim.wo.breakindentopt = "list:-1"
+vim.wo.smoothscroll = true   -- scroll by screen row, not whole wrapped lines
+vim.bo.textwidth = 0         -- explicitly no hard wrap
+
+-- The stock 'formatlistpat' only matches NUMBERED lists, so bullets would get no
+-- breakindent at all. This adds `- * +` and makes the optional `[ ]`/`[x]`
+-- checkbox part of the match, so wrapped task text aligns past the checkbox:
+--     - [ ] task item wrapping across
+--           several screen lines okay
+vim.bo.formatlistpat =
+  [[^\s*[-*+]\s\+\%(\[[ x~>!?/-]\]\s\+\)\?\|^\s*\d\+[.)]\s\+\%(\[[ x~>!?/-]\]\s\+\)\?]]
 
 -- Custom spellfile for vault-specific terms.
 -- The first entry is the default (where zg adds words).
 local spell_dir = vim.fn.stdpath("config") .. "/spell"
-vim.fn.mkdir(spell_dir, "p")
-opt_local.spellfile = spell_dir .. "/en.utf-8.add"
+if vim.fn.isdirectory(spell_dir) == 0 then
+  vim.fn.mkdir(spell_dir, "p")
+end
+vim.bo.spellfile = spell_dir .. "/en.utf-8.add"
 
-opt_local.foldmethod = "expr"
-opt_local.foldexpr = "v:lua.vim.treesitter.foldexpr()"
-opt_local.foldlevel = 99
-opt_local.foldcolumn = "1"
-opt_local.foldenable = true
+vim.wo.foldmethod = "expr"
+vim.wo.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+vim.wo.foldlevel = 99
+vim.wo.foldcolumn = "1"
+vim.wo.foldenable = true
+vim.wo.foldnestmax = 6  -- markdown only nests h1-h6; cap fold work
 
-opt_local.foldtext = "v:lua.MarkdownFoldText()"
+vim.wo.foldtext = "v:lua.MarkdownFoldText()"
+
+-- =============================================================================
+-- Teardown for a real filetype change
+-- =============================================================================
+-- Nothing here used to be undone, so every buffer-local mapping below survived
+-- `:setlocal ft=<other>` on a markdown buffer: `o`/`O` kept continuing lists,
+-- `j`/`k` kept walking screen lines, `<Tab>` kept toggling folds and `ac`/`al`/
+-- `aq` kept shadowing text objects in what was now a Lua or Fortran buffer.
+-- That is also how a markdown-only mapping came to be live in a .f90 buffer --
+-- see the gO / ]] / [[ story in after/ftplugin/markdown.lua.
+--
+-- Registered BEFORE the once-per-buffer guard on purpose:
+-- $VIMRUNTIME/ftplugin.vim runs `b:undo_ftplugin` and then unlets it on EVERY
+-- FileType event, so the entry has to be re-added on every event -- including
+-- the ones where the guarded body below is skipped.
+_G.__md_undo_ftplugin = _G.__md_undo_ftplugin
+  or function()
+    -- 'filetype' already holds the NEW value when ftplugin.vim runs this, so a
+    -- still-markdown buffer is the Phase-B / `:edit` re-fire, not a change:
+    -- keep everything (tearing ~110 maps down and back up on every re-fire is
+    -- exactly what __md_ftplugin_done exists to avoid).
+    if vim.bo.filetype == "markdown" then
+      return
+    end
+    local buf = vim.api.nvim_get_current_buf()
+    for _, m in ipairs(vim.b[buf].__md_ft_maps or {}) do
+      pcall(vim.keymap.del, m[1], m[2], { buffer = buf })
+    end
+    for _, name in ipairs({ "VaultListContinue", "TableCreate", "SmartPasteToggle" }) do
+      pcall(vim.api.nvim_buf_del_user_command, buf, name)
+    end
+    vim.b[buf].__md_ft_maps = nil
+    vim.b[buf].__md_ftplugin_done = nil
+  end
+vim.b.undo_ftplugin = (vim.b.undo_ftplugin and vim.b.undo_ftplugin .. " | " or "")
+  .. "call v:lua.__md_undo_ftplugin()"
+
+-- Window-local opts above (spell/conceal/fold/wrap) are cheap + idempotent and
+-- must re-apply on :split / window changes, so they live BEFORE this guard. The rest
+-- of the ftplugin (keymaps, requires, autocmd/command setup) only needs to run
+-- once per buffer; guard against the redundant second source triggered by the
+-- Phase-B FileType re-fire in vault/init.lua.
+if vim.b.__md_ftplugin_done then
+  return
+end
+vim.b.__md_ftplugin_done = true
+
+-- Snapshot of the buffer-local maps that already exist, so the teardown list
+-- below is exactly "what this ftplugin (and the three utils modules it calls)
+-- added" -- no hand-maintained list of ~110 lhs's to drift out of date.
+local MAP_MODES = { "n", "i", "v", "x", "s", "o" }
+local function map_snapshot()
+  local seen = {}
+  for _, mode in ipairs(MAP_MODES) do
+    for _, m in ipairs(vim.api.nvim_buf_get_keymap(0, mode)) do
+      seen[mode .. "\0" .. m.lhs] = true
+    end
+  end
+  return seen
+end
+local maps_before = map_snapshot()
 
 function MarkdownFoldText()
   local first = vim.fn.getline(vim.v.foldstart)
@@ -26,6 +112,18 @@ end
 
 local map = function(lhs, rhs, desc)
   vim.keymap.set("n", lhs, rhs, { buffer = true, desc = desc })
+end
+
+-- Move by SCREEN line under soft wrap, so j/k don't leap over a whole wrapped
+-- paragraph. Count-guarded on purpose: `gj` is exclusive and NOT linewise
+-- (:h gj), so an unconditional map would quietly turn `dj` into a
+-- character-range delete and break `5j` relative-number jumps. With the guard,
+-- a bare j/k walks screen lines and a counted one stays a buffer-line motion.
+-- Normal + visual only -- operator-pending is deliberately left alone.
+for _, key in ipairs({ "j", "k" }) do
+  vim.keymap.set({ "n", "x" }, key, function()
+    return vim.v.count == 0 and ("g" .. key) or key
+  end, { buffer = true, expr = true, desc = "Down/up (screen line when countless)" })
 end
 
 -- Smart fold toggle: if cursor is on a callout header line, use callout-aware
@@ -86,11 +184,29 @@ map("<leader>ml", function()
 end, "Set fold level")
 
 -- =============================================================================
--- Heading Navigation: ]h / [h (any heading), ]1-]6 / [1-[6 (specific level)
+-- Heading Navigation: ]# / [# (any heading), ]1-]6 / [1-[6 (specific level)
 -- =============================================================================
-local heading_query = vim.treesitter.query.parse("markdown", "((atx_heading) @heading)")
+-- ]h / [h are NOT available: vault/highlights.lua binds them buffer-locally
+-- (==highlight== navigation) after this ftplugin runs, so a heading mapping on
+-- ]h would be silently replaced and dead. Hence ]# / [# ("#" = heading).
+-- Compile the heading query once per session (the ftplugin re-sources on every
+-- markdown buffer open; a file-local parse would recompile each time).
+_G.__md_heading_query = _G.__md_heading_query
+  or vim.treesitter.query.parse("markdown", "((atx_heading) @heading)")
+local heading_query = _G.__md_heading_query
+
+-- Memoize headings per (buffer, changedtick): heading navigation re-runs on
+-- every ]#/[#/]1..]6 press, so without this it re-parses the tree and does one
+-- buffer read per heading on every keypress.
+_G.__md_headings_cache = _G.__md_headings_cache or {}
 
 local function get_headings()
+  local buf = vim.api.nvim_get_current_buf()
+  local tick = vim.api.nvim_buf_get_changedtick(buf)
+  local cached = _G.__md_headings_cache[buf]
+  if cached and cached.tick == tick then
+    return cached.headings
+  end
   local parser = vim.treesitter.get_parser(0, "markdown")
   if not parser then
     return {}
@@ -107,10 +223,11 @@ local function get_headings()
     local level = hashes and #hashes or 0
     table.insert(headings, { row = row + 1, level = level }) -- 1-indexed
   end
+  _G.__md_headings_cache[buf] = { tick = tick, headings = headings }
   return headings
 end
 
-map("]h", function()
+map("]#", function()
   local cur = vim.api.nvim_win_get_cursor(0)[1]
   for _, h in ipairs(get_headings()) do
     if h.row > cur then
@@ -121,7 +238,7 @@ map("]h", function()
   end
 end, "Next heading")
 
-map("[h", function()
+map("[#", function()
   local cur = vim.api.nvim_win_get_cursor(0)[1]
   local headings = get_headings()
   for i = #headings, 1, -1 do
@@ -755,8 +872,9 @@ for _, key in ipairs({ "p", "P" }) do
       local did_smart = smart_paste.smart_paste()
       if not did_smart then
         -- Fall through to default paste behavior.
-        -- Re-select the same range and paste normally.
-        vim.cmd("normal! gv" .. key)
+        -- Re-select the same range and paste normally. `silent!`: with an
+        -- empty register this throws E353 out of a vim.schedule callback.
+        vim.cmd("silent! normal! gv" .. key)
       end
     end)
   end, { buffer = true, desc = "Smart paste (auto-link)" })
@@ -812,94 +930,147 @@ vim.api.nvim_buf_create_user_command(0, "SmartPasteToggle", function()
 end, { desc = "Toggle automatic smart paste for this buffer" })
 
 -- =============================================================================
+-- Record what to undo on a real filetype change (see __md_undo_ftplugin above)
+-- =============================================================================
+-- Diffed against the pre-ftplugin snapshot, so this covers the maps made here
+-- AND the ones made by md-textobjects / tex-motions / list-continuation.
+-- `i <CR>` is added by list-continuation on InsertEnter, after this runs, so it
+-- is listed explicitly. Taken before the which-key block below: which-key's own
+-- buffer-local "trigger" maps belong to which-key, not to this ftplugin.
+do
+  local added = { { "i", "<CR>" } }
+  local before = maps_before
+  for _, mode in ipairs(MAP_MODES) do
+    for _, m in ipairs(vim.api.nvim_buf_get_keymap(0, mode)) do
+      if not before[mode .. "\0" .. m.lhs] then
+        added[#added + 1] = { mode, m.lhs }
+      end
+    end
+  end
+  vim.b.__md_ft_maps = added
+end
+
+-- =============================================================================
 -- Which-Key: Register <leader>m subgroups for markdown buffers
 -- =============================================================================
 
 local ok, wk = pcall(require, "which-key")
 if ok then
+  -- Session-once: the static/decorative entries below map keys that exist
+  -- ONLY in markdown buffers and have no global which-key label to conflict
+  -- with. which-key resolves icons/groups by buffer scope at popup time, so a
+  -- global registration only ever renders where the markdown keymap exists.
+  -- Registering them once (not per markdown buffer) avoids re-building the
+  -- which-key trie on every FileType markdown / :e / split.
+  if not vim.g.__md_wk_registered then
+    wk.add({
+      -- ── Formatting ──────────────────────────────────────────────────────
+      { "<leader>mi", icon = { icon = "󰉿", color = "yellow" } },
+      { "<leader>ms", icon = { icon = "󰉿", color = "yellow" } },
+
+      -- ── Headings ────────────────────────────────────────────────────────
+      { "<leader>m1", icon = { icon = "󰉫", color = "purple" } },
+      { "<leader>m2", icon = { icon = "󰉬", color = "purple" } },
+      { "<leader>m3", icon = { icon = "󰉭", color = "purple" } },
+      { "<leader>m4", icon = { icon = "󰉮", color = "purple" } },
+      { "<leader>m5", icon = { icon = "󰉯", color = "purple" } },
+      { "<leader>m6", icon = { icon = "󰉰", color = "purple" } },
+
+      -- ── Blocks (blockquote / callout) ───────────────────────────────────
+      { "<leader>mq", icon = { icon = "", color = "green" } },
+      { "<leader>mQ", icon = { icon = "", color = "green" } },
+      { "<leader>mC", icon = { icon = "", color = "green" } },
+      { "<leader>mz", icon = { icon = "", color = "green" } },
+      { "<leader>mZ", icon = { icon = "", color = "green" } },
+
+      -- ── Links ───────────────────────────────────────────────────────────
+      { "<leader>mP", icon = { icon = "", color = "orange" } },
+
+      -- ── Tasks ───────────────────────────────────────────────────────────
+      { "<leader>mx", icon = { icon = "", color = "red" } },
+
+      -- ── Media ───────────────────────────────────────────────────────────
+      { "<leader>mp", icon = { icon = "", color = "azure" } },
+
+      -- ── Spell ───────────────────────────────────────────────────────────
+      { "<leader>mS", icon = { icon = "󰓆", color = "grey" } },
+
+      -- ── Visual mode: same prefix (non-colliding) ────────────────────────
+      { mode = "v", "<leader>mi", icon = { icon = "󰉿", color = "yellow" } },
+      { mode = "v", "<leader>ms", icon = { icon = "󰉿", color = "yellow" } },
+      { mode = "v", "<leader>mq", icon = { icon = "", color = "green" } },
+      { mode = "v", "<leader>mQ", icon = { icon = "", color = "green" } },
+      { mode = "v", "<leader>mC", icon = { icon = "", color = "green" } },
+      { mode = "v", "<leader>mk", icon = { icon = "", color = "orange" } },
+      { mode = "v", "<leader>mK", icon = { icon = "", color = "orange" } },
+
+      -- Visual "x" mode for smart paste
+      { mode = "x", "<leader>mP", icon = { icon = "", color = "orange" } },
+
+      -- ── Table operations ────────────────────────────────────────────────
+      -- Leaf descriptions only: these lhs's exist ONLY as buffer-local markdown
+      -- keymaps, so a global label never renders elsewhere. The <leader>T /
+      -- <leader>Ti / <leader>Td GROUP entries are registered per buffer below --
+      -- a group is rendered on prefix alone, so registering them globally made
+      -- every other filetype show empty "Table"/"Insert"/"Delete" submenus.
+      { "<leader>Tc",  desc = "Create table (interactive)" },
+      { "<leader>Tir", desc = "Insert row below" },
+      { "<leader>Tdt", desc = "Delete entire table" },
+
+      -- ── List continuation ───────────────────────────────────────────────
+      { "<CR>", desc = "Smart list continue", mode = "i" },
+
+      -- ── Spell motions (built-in, listed for discoverability) ────────────
+      { "]s",  desc = "Next misspelling" },
+      { "[s",  desc = "Prev misspelling" },
+      { "z=",  desc = "Spell suggestions" },
+      { "zg",  desc = "Add word to spellfile" },
+      { "zw",  desc = "Mark word as bad" },
+      { "zug", desc = "Undo add to spellfile" },
+
+      -- ── Heading navigation (bracket motions) ────────────────────────────
+      -- ]h / [h belong to vault/highlights.lua (==highlight== nav), which wins
+      -- buffer-locally; headings live on ]# / [#.
+      { "]#", desc = "Next heading" },
+      { "[#", desc = "Previous heading" },
+    })
+    vim.g.__md_wk_registered = true
+  end
+
+  -- Per-buffer: ONLY the keys whose underlying keymap is GLOBAL must be
+  -- relabeled buffer-locally so the markdown icon/label doesn't leak into
+  -- non-markdown buffers' which-key popups. These are <leader>m, mb, mc, ml
+  -- (collide with the global "Make/Build" labels — see plugins/which-key.lua
+  -- and fortran-build.lua) plus mj/mn (global footnote keymaps in
+  -- vault/init.lua) and mf/mu (collide with buffer-local fold keymaps in
+  -- ftplugin/tex.lua — a buffer-less icon would decorate the tex popup). All
+  -- other markdown icon keys have buffer-local keymaps unique to markdown, so
+  -- their session-once global registration never leaks.
   wk.add({
     -- Override global "Make/Build" label in markdown buffers
     { "<leader>m", group = "Markdown", icon = { icon = "", color = "blue" }, buffer = 0 },
 
-    -- ── Formatting ──────────────────────────────────────────────────────
+    -- ── Formatting (colliding keys) ─────────────────────────────────────
     { "<leader>mb", icon = { icon = "󰉿", color = "yellow" }, buffer = 0 },
-    { "<leader>mi", icon = { icon = "󰉿", color = "yellow" }, buffer = 0 },
-    { "<leader>ms", icon = { icon = "󰉿", color = "yellow" }, buffer = 0 },
     { "<leader>mc", icon = { icon = "", color = "yellow" }, buffer = 0 },
 
-    -- ── Headings ────────────────────────────────────────────────────────
-    { "<leader>m1", icon = { icon = "󰉫", color = "purple" }, buffer = 0 },
-    { "<leader>m2", icon = { icon = "󰉬", color = "purple" }, buffer = 0 },
-    { "<leader>m3", icon = { icon = "󰉭", color = "purple" }, buffer = 0 },
-    { "<leader>m4", icon = { icon = "󰉮", color = "purple" }, buffer = 0 },
-    { "<leader>m5", icon = { icon = "󰉯", color = "purple" }, buffer = 0 },
-    { "<leader>m6", icon = { icon = "󰉰", color = "purple" }, buffer = 0 },
-
-    -- ── Folding ─────────────────────────────────────────────────────────
+    -- ── Folding (colliding keys) ────────────────────────────────────────
     { "<leader>mf", icon = { icon = "", color = "cyan" }, buffer = 0 },
     { "<leader>mu", icon = { icon = "", color = "cyan" }, buffer = 0 },
     { "<leader>ml", icon = { icon = "", color = "cyan" }, buffer = 0 },
 
-    -- ── Blocks (blockquote / callout) ───────────────────────────────────
-    { "<leader>mq", icon = { icon = "", color = "green" }, buffer = 0 },
-    { "<leader>mQ", icon = { icon = "", color = "green" }, buffer = 0 },
-    { "<leader>mC", icon = { icon = "", color = "green" }, buffer = 0 },
-    { "<leader>mz", icon = { icon = "", color = "green" }, buffer = 0 },
-    { "<leader>mZ", icon = { icon = "", color = "green" }, buffer = 0 },
-
-    -- ── Links ───────────────────────────────────────────────────────────
-    { "<leader>mP", icon = { icon = "", color = "orange" }, buffer = 0 },
-
-    -- ── Tasks ───────────────────────────────────────────────────────────
-    { "<leader>mx", icon = { icon = "", color = "red" }, buffer = 0 },
-
-    -- ── Media ───────────────────────────────────────────────────────────
-    { "<leader>mp", icon = { icon = "", color = "azure" }, buffer = 0 },
-
-    -- ── Footnotes ───────────────────────────────────────────────────────
+    -- ── Footnotes (colliding keys) ──────────────────────────────────────
     { "<leader>mj", icon = { icon = "", color = "orange" }, buffer = 0 },
     { "<leader>mn", icon = { icon = "", color = "orange" }, buffer = 0 },
 
-    -- ── Spell ───────────────────────────────────────────────────────────
-    { "<leader>mS", icon = { icon = "󰓆", color = "grey" }, buffer = 0 },
+    -- ── Table groups (prefix-only labels, so they MUST be buffer-local) ──
+    { "<leader>T",  group = "Table",  buffer = 0 },
+    { "<leader>Ti", group = "Insert", buffer = 0 },
+    { "<leader>Td", group = "Delete", buffer = 0 },
 
-    -- ── Visual mode: same prefix ────────────────────────────────────────
+    -- ── Visual mode: colliding prefix ───────────────────────────────────
     { mode = "v", "<leader>m", group = "Markdown", icon = { icon = "", color = "blue" }, buffer = 0 },
-
     { mode = "v", "<leader>mb", icon = { icon = "󰉿", color = "yellow" }, buffer = 0 },
-    { mode = "v", "<leader>mi", icon = { icon = "󰉿", color = "yellow" }, buffer = 0 },
-    { mode = "v", "<leader>ms", icon = { icon = "󰉿", color = "yellow" }, buffer = 0 },
     { mode = "v", "<leader>mc", icon = { icon = "", color = "yellow" }, buffer = 0 },
-    { mode = "v", "<leader>mq", icon = { icon = "", color = "green" }, buffer = 0 },
-    { mode = "v", "<leader>mQ", icon = { icon = "", color = "green" }, buffer = 0 },
-    { mode = "v", "<leader>mC", icon = { icon = "", color = "green" }, buffer = 0 },
-    { mode = "v", "<leader>mk", icon = { icon = "", color = "orange" }, buffer = 0 },
-    { mode = "v", "<leader>mK", icon = { icon = "", color = "orange" }, buffer = 0 },
-
-    -- Visual "x" mode for smart paste
-    { mode = "x", "<leader>mP", icon = { icon = "", color = "orange" }, buffer = 0 },
-
-    -- ── Table operations ────────────────────────────────────────────────
-    { "<leader>T",   group = "Table", buffer = 0 },
-    { "<leader>Tc",  desc = "Create table (interactive)", buffer = 0 },
-    { "<leader>Ti",  group = "Insert", buffer = 0 },
-    { "<leader>Td",  group = "Delete", buffer = 0 },
-    { "<leader>Tir", desc = "Insert row below",   buffer = 0 },
-    { "<leader>Tdt", desc = "Delete entire table", buffer = 0 },
-
-    -- ── List continuation ───────────────────────────────────────────────
-    { "<CR>", desc = "Smart list continue", buffer = 0, mode = "i" },
-
-    -- ── Spell motions (built-in, listed for discoverability) ────────────
-    { "]s",  desc = "Next misspelling",     buffer = 0 },
-    { "[s",  desc = "Prev misspelling",     buffer = 0 },
-    { "z=",  desc = "Spell suggestions",    buffer = 0 },
-    { "zg",  desc = "Add word to spellfile", buffer = 0 },
-    { "zw",  desc = "Mark word as bad",     buffer = 0 },
-    { "zug", desc = "Undo add to spellfile", buffer = 0 },
-
-    -- ── Heading navigation (bracket motions) ────────────────────────────
-    { "]h", desc = "Next heading",     buffer = 0 },
-    { "[h", desc = "Previous heading", buffer = 0 },
   })
 end

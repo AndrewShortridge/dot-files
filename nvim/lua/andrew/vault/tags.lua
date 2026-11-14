@@ -2,6 +2,7 @@ local engine = require("andrew.vault.engine")
 local notify = require("andrew.vault.notify")
 local text_utils = require("andrew.vault.text_utils")
 local vault_index = require("andrew.vault.vault_index")
+local fzf_look = require("andrew.utils.fzf_look")
 
 local M = {}
 
@@ -110,8 +111,7 @@ function M.tag_tree()
   local entries = tag_tree.flatten(root)
 
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(entries, {
-    prompt = "Tag tree> ",
+  fzf.fzf_exec(entries, fzf_look.titled("Tag tree", {
     fzf_opts = {
       ["--ansi"] = "",
       ["--delimiter"] = "\t",
@@ -129,7 +129,7 @@ function M.tag_tree()
         end
       end,
     },
-  })
+  }))
 end
 
 --- Two-step tag picker:
@@ -143,8 +143,7 @@ function M.tags()
     end
 
     local fzf = require("fzf-lua")
-    fzf.fzf_exec(tags, {
-      prompt = "Vault tags> ",
+    fzf.fzf_exec(tags, fzf_look.titled("Vault tags", {
       actions = {
         ["default"] = function(selected)
           if selected and selected[1] then
@@ -152,7 +151,7 @@ function M.tags()
           end
         end,
       },
-    })
+    }))
   end)
 end
 
@@ -318,8 +317,7 @@ function M.remove_tag()
     end
 
     local fzf = require("fzf-lua")
-    fzf.fzf_exec(tags, {
-      prompt = "Remove tag> ",
+    fzf.fzf_exec(tags, fzf_look.titled("Remove tag", {
       actions = {
         ["default"] = function(selected)
           if not selected or not selected[1] then
@@ -443,7 +441,7 @@ function M.remove_tag()
           notify.info("removed #" .. tag .. " from " .. updated .. " file(s)")
         end,
       },
-    })
+    }))
   end)
 end
 

@@ -1,0 +1,10 @@
+{
+  "name": "One Dark",
+  "author": "ported from Obsidian vault",
+  "version": "1.0.0",
+  "description": "Atom One Dark, from the Obsidian one-dark.css snippet (Blue Topaz variant). Dark only.",
+  "modes": "dark",
+  "preview": {
+    "dark": "#61afef"
+  }
+}

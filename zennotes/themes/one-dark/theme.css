@@ -1,0 +1,41 @@
+/* One Dark: ZenNotes port of the Obsidian theme of the same name.
+ * Generated from browser-resolved Obsidian CSS variables; tokens are RGB triplets. */
+
+:root {
+  color-scheme: dark;
+  --z-bg: 40 44 52;
+  --z-bg-softer: 33 37 43;
+  --z-bg-1: 44 49 58;
+  --z-bg-2: 53 58 70;
+  --z-bg-3: 62 68 81;
+  --z-bg-4: 68 74 89;
+  --z-fg: 162 169 182;
+  --z-fg-1: 171 178 191;
+  --z-fg-2: 92 99 112;
+  --z-grey-2: 92 99 112;
+  --z-grey-1: 84 90 106;
+  --z-grey-0: 75 82 99;
+  --z-grey-dim: 68 75 90;
+  --z-accent: 97 175 239;
+  --z-accent-soft: 82 139 204;
+  --z-accent-muted: 95 145 188;
+  --z-red: 224 108 117;
+  --z-green: 152 195 121;
+  --z-yellow: 229 192 123;
+  --z-blue: 97 175 239;
+  --z-purple: 198 120 221;
+  --z-aqua: 86 182 194;
+  --z-shadow: 0 0 0;
+  --z-glass-a1: 0.58;
+  --z-glass-a2: 0.46;
+  --z-glass-a3: 0.32;
+  --z-glass-a4: 0.22;
+}
+
+:root .cm-editor .tok-heading1, :root .prose-zen h1 { color: rgb(224 108 117); }
+:root .cm-editor .tok-heading2, :root .prose-zen h2 { color: rgb(229 192 123); }
+:root .cm-editor .tok-heading3, :root .prose-zen h3 { color: rgb(152 195 121); }
+:root .cm-editor .tok-heading4, :root .prose-zen h4 { color: rgb(86 182 194); }
+:root .cm-editor .tok-heading5, :root .prose-zen h5 { color: rgb(97 175 239); }
+:root .cm-editor .tok-heading6, :root .prose-zen h6 { color: rgb(198 120 221); }
+:root .cm-editor .cm-selectionBackground, :root .cm-editor ::selection { background: rgb(62 68 81 / 0.8) !important; }

@@ -12,31 +12,31 @@ local _engine -- set by T.setup()
 --- @type { pattern: string, replacement: string }[]
 local OBSIDIAN_FORMAT_MAP = {
   -- Year
-  { pattern = "YYYY", replacement = "%%Y" },
-  { pattern = "YY",   replacement = "%%y" },
+  { pattern = "YYYY", replacement = "%Y" },
+  { pattern = "YY",   replacement = "%y" },
   -- Month (name)
-  { pattern = "MMMM", replacement = "%%B" },
-  { pattern = "MMM",  replacement = "%%b" },
+  { pattern = "MMMM", replacement = "%B" },
+  { pattern = "MMM",  replacement = "%b" },
   -- Month (number) — must come after MMMM/MMM
-  { pattern = "MM",   replacement = "%%m" },
+  { pattern = "MM",   replacement = "%m" },
   -- Day of year
-  { pattern = "DDDD", replacement = "%%j" },
+  { pattern = "DDDD", replacement = "%j" },
   -- Day of month (padded)
-  { pattern = "DD",   replacement = "%%d" },
+  { pattern = "DD",   replacement = "%d" },
   -- Weekday names — must come before single-char matches
-  { pattern = "dddd", replacement = "%%A" },
-  { pattern = "ddd",  replacement = "%%a" },
-  { pattern = "dd",   replacement = "%%a" },
+  { pattern = "dddd", replacement = "%A" },
+  { pattern = "ddd",  replacement = "%a" },
+  { pattern = "dd",   replacement = "%a" },
   -- Hour 24h (padded)
-  { pattern = "HH",   replacement = "%%H" },
+  { pattern = "HH",   replacement = "%H" },
   -- Hour 12h (padded)
-  { pattern = "hh",   replacement = "%%I" },
+  { pattern = "hh",   replacement = "%I" },
   -- Minutes (padded)
-  { pattern = "mm",   replacement = "%%M" },
+  { pattern = "mm",   replacement = "%M" },
   -- Seconds (padded)
-  { pattern = "ss",   replacement = "%%S" },
+  { pattern = "ss",   replacement = "%S" },
   -- AM/PM
-  { pattern = "A",    replacement = "%%p" },
+  { pattern = "A",    replacement = "%p" },
 }
 
 --- Unpadded token handlers — evaluated at runtime, not via strftime.
@@ -92,7 +92,7 @@ function T.obsidian_to_strftime(fmt)
       -- Literal character
       local ch = fmt:sub(i, i)
       if ch == "%" then
-        parts[#parts + 1] = "%%%%"  -- escape for os.date
+        parts[#parts + 1] = "%%"  -- escape for os.date
       else
         parts[#parts + 1] = ch
       end

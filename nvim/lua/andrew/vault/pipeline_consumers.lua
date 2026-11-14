@@ -7,6 +7,15 @@
 local link_utils = require("andrew.vault.link_utils")
 local log = require("andrew.vault.vault_log").scope("consumers")
 
+-- linkdiag forms a load-time cycle (linkdiag -> transform_pipeline ->
+-- pipeline_consumers), so it is resolved lazily on first heading-check and
+-- memoized in this upvalue; subsequent per-token calls are an upvalue read.
+local _linkdiag
+local function get_linkdiag()
+  if not _linkdiag then _linkdiag = require("andrew.vault.linkdiag") end
+  return _linkdiag
+end
+
 local M = {}
 
 --- Wikilink consumer: 4+ extmarks per link (brackets + target + heading/alias).
@@ -20,7 +29,7 @@ local function register_wikilink_consumer(pipeline)
   ---@param heading string
   ---@return boolean
   local function heading_exists(filepath, heading)
-    local linkdiag = require("andrew.vault.linkdiag")
+    local linkdiag = get_linkdiag()
     local slug_set = linkdiag.get_headings(filepath)
     local target_slug = link_utils.heading_to_slug(heading)
     return slug_set[target_slug] == true

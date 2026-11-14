@@ -164,7 +164,7 @@ local soft_paper_light = {
   field_value_bool     = "#286983",  -- c.sky
 
   highlight_bg         = "#E2C6A1",  -- c.search_active_bg
-  highlight_fg         = "#4C4F69",  -- c.fg
+  highlight_fg         = "#575279",  -- c.fg
   highlight_delim      = "#CAC1B9",  -- c.surface2
 
   autolink_hint_sp     = "#CAC1B9",  -- c.surface2
@@ -208,7 +208,7 @@ local soft_paper_light = {
   kanban_due_today     = "#D19548",  -- c.yellow
   kanban_p1            = "#BA7184",  -- c.red
   kanban_p2            = "#DD7F67",  -- c.peach
-  kanban_default       = "#4C4F69",  -- c.fg
+  kanban_default       = "#575279",  -- c.fg
   kanban_divider       = "#CAC1B9",  -- c.surface2
 
   -- Timeline
@@ -216,7 +216,7 @@ local soft_paper_light = {
   timeline_today       = "#D19548",  -- c.yellow
   timeline_upcoming    = "#5BA57B",  -- c.green
   timeline_overdue_bg  = "#BA7184",  -- c.red
-  timeline_task        = "#4C4F69",  -- c.fg
+  timeline_task        = "#575279",  -- c.fg
   timeline_dim         = "#CAC1B9",  -- c.surface2
   timeline_undated     = "#9A85AE",  -- c.lavender
 
@@ -228,7 +228,7 @@ local soft_paper_light = {
   hierarchy_progress   = "#D19548",  -- c.yellow
   hierarchy_complete   = "#5BA57B",  -- c.green
   hierarchy_connector  = "#CAC1B9",  -- c.surface2
-  hierarchy_parent     = "#4C4F69",  -- c.fg
+  hierarchy_parent     = "#575279",  -- c.fg
 
   graph_existing       = "#1A7DA4",  -- c.accent
   graph_unresolved     = "#BA7184",  -- c.red
@@ -241,7 +241,7 @@ local soft_paper_light = {
   sidebar_tab_inactive = "#CAC1B9",  -- c.surface2
   sidebar_sep          = "#CAC1B9",  -- c.surface2
   sidebar_header       = "#9A85AE",  -- c.lavender
-  sidebar_file         = "#4C4F69",  -- c.fg
+  sidebar_file         = "#575279",  -- c.fg
   sidebar_context      = "#CAC1B9",  -- c.surface2
   sidebar_line_nr      = "#CAC1B9",  -- c.surface2
   sidebar_field_key    = "#BA7184",  -- c.red
@@ -537,13 +537,27 @@ end
 
 --- (Re-)define all Vault highlight groups based on the active colorscheme.
 --- Called at setup time and on every ColorScheme event.
-local function define_highlights()
+---
+--- `force` controls whether existing definitions are overwritten.
+---
+--- At setup time we pass nothing, so groups are defined with `default = true`
+--- and a colorscheme that ships its own Vault* groups keeps them.
+---
+--- On a ColorScheme event we pass true, and that matters: `default = true` is a
+--- no-op when the group already exists. Switching to soft-paper worked by luck,
+--- because soft-paper's load() runs `hi clear` and wipes these groups first --
+--- but onedarkpro does not clear, so switching BACK left every Vault highlight
+--- on the previous scheme's palette (light colours on a dark background) and
+--- this function silently did nothing. Re-deriving for a new colorscheme is a
+--- deliberate act, so it has to be authoritative.
+---@param force? boolean overwrite existing definitions (colorscheme changed)
+local function define_highlights(force)
   local p = detect_palette()
   M.palette = p
 
   local groups = build_hl_groups(p)
   for group, attrs in pairs(groups) do
-    attrs.default = true
+    attrs.default = not force
     vim.api.nvim_set_hl(0, group, attrs)
   end
 end
@@ -556,7 +570,7 @@ function M.setup()
   vim.api.nvim_create_autocmd("ColorScheme", {
     group = vim.api.nvim_create_augroup("VaultColors", { clear = true }),
     callback = function()
-      define_highlights()
+      define_highlights(true)
     end,
     desc = "Vault: re-apply highlight groups for new colorscheme",
   })

@@ -1,0 +1,5 @@
+# personal / media  —  label :: url   (or just a url)
+YouTube :: https://youtube.com
+Twitch :: https://twitch.tv
+Reddit :: https://reddit.com
+Bandcamp :: https://bandcamp.com

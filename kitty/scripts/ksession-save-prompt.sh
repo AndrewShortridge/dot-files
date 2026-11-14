@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ksession-save-prompt - overlay that asks for a session name, then saves
-# the current OS window via ksession.sh. Bound from kitty.conf.
+# the current OS window via the ksession Rust binary. Bound from kitty.conf.
 #
 # Behavior:
 #   - Shows existing sessions in fzf for autocompletion / overwrite picking.
@@ -12,18 +12,11 @@ set -euo pipefail
 export PATH="${PATH}:/usr/local/bin:/usr/bin:/home/andrew/miniconda3/bin:/home/andrew/.local/bin"
 
 SESSIONS_DIR="${KITTY_PROJECT_SESSIONS_DIR:-$HOME/.config/kitty/sessions}"
-# KSESSION_IMPL can point at ksession-rs (or any alternate impl) so users
-# can switch the save keybinding without renaming ksession.sh.
-# Priority: explicit KSESSION_IMPL > ksession-rs binary > ksession.sh
-if [[ -n "${KSESSION_IMPL:-}" ]]; then
-  KSESSION="$KSESSION_IMPL"
-elif [[ -x "$HOME/.local/bin/ksession-rs" ]]; then
-  KSESSION="$HOME/.local/bin/ksession-rs"
-elif [[ -x "${HOME}/.config/kitty/scripts/ksession-rs/target/release/ksession" ]]; then
-  KSESSION="${HOME}/.config/kitty/scripts/ksession-rs/target/release/ksession"
-else
-  KSESSION="$(dirname "$0")/ksession.sh"
-fi
+# KSESSION_IMPL can point at an alternate ksession binary (kitty.conf pins
+# it to the installed Rust binary). No fallback: if the binary is missing,
+# we fail loudly below rather than silently dispatching elsewhere.
+# Priority: explicit KSESSION_IMPL > ~/.local/bin/ksession
+KSESSION="${KSESSION_IMPL:-$HOME/.local/bin/ksession}"
 
 # Guard against a fat-fingered KSESSION_IMPL pointing at a bare shell name,
 # which would silently misroute saves to /bin/bash etc.
@@ -34,7 +27,8 @@ if [[ "$(basename "$KSESSION")" =~ ^(bash|sh|zsh|dash|fish)$ ]]; then
 fi
 
 if [[ ! -x "$KSESSION" ]]; then
-  echo "ksession-save-prompt: KSESSION='$KSESSION' is not executable." >&2
+  echo "ksession-save-prompt: ksession binary '$KSESSION' is missing or not executable." >&2
+  echo "ksession-save-prompt: run 'make install' in ~/.config/kitty/scripts/ksession-rs to install it." >&2
   read -rp "press enter to close..."
   exit 1
 fi
@@ -153,7 +147,7 @@ if [[ -z "$name" ]]; then
   exit 0
 fi
 
-# Validate (mirror ksession.sh's rule for a friendlier message).
+# Validate (mirror ksession's name rule for a friendlier message).
 if ! [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "ksession-save: invalid name '$name' (use letters, digits, dot, underscore, dash)." >&2
   read -rp "press enter to close..."

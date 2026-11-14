@@ -1,39 +1,9 @@
 -- Unit tests for vault_index snapshot, generation_guard, and _apply_staged logic
 -- Run with: nvim --headless -u NONE -l tests/vault_index_snapshot_spec.lua
 
-local passed = 0
-local failed = 0
-local errors = {}
-
-local function test(name, fn)
-  local ok, err = pcall(fn)
-  if ok then
-    passed = passed + 1
-    print("  PASS: " .. name)
-  else
-    failed = failed + 1
-    table.insert(errors, { name = name, err = tostring(err) })
-    print("  FAIL: " .. name .. " -> " .. tostring(err))
-  end
-end
-
-local function assert_eq(got, expected, msg)
-  if got ~= expected then
-    error((msg or "") .. " expected: " .. vim.inspect(expected) .. ", got: " .. vim.inspect(got))
-  end
-end
-
-local function assert_true(val, msg)
-  if not val then
-    error((msg or "assertion failed") .. " (got falsy)")
-  end
-end
-
-local function assert_nil(val, msg)
-  if val ~= nil then
-    error((msg or "expected nil") .. ", got: " .. vim.inspect(val))
-  end
-end
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+local test, assert_eq, assert_true, assert_nil =
+  _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
 -- ============================================================================
 -- Minimal mock of VaultIndex snapshot/generation logic
@@ -441,18 +411,54 @@ test("snapshot _generation matches index generation at time of snapshot", functi
 end)
 
 -- ============================================================================
+-- Drift guard: the mock VaultIndex:_apply_staged above replicates a *subset*
+-- of the real M.VaultIndex:_apply_staged in vault_index.lua. The real module
+-- cannot be required here (it pulls in heavy live-plugin deps), so instead we
+-- parse the real source signature and fail loudly if it ever drifts from the
+-- parameter list this mock was written against.
+-- ============================================================================
+test("real _apply_staged signature matches what the mock assumes", function()
+  local src_path = vim.fn.stdpath("config") .. "/lua/andrew/vault/vault_index.lua"
+  local fd = io.open(src_path, "r")
+  assert_true(fd, "could not open vault_index.lua at " .. src_path)
+  local src = fd:read("*a")
+  fd:close()
+
+  -- Locate the real method definition and capture its parameter list.
+  local params_str = src:match("function%s+M%.VaultIndex:_apply_staged%s*%(([^)]*)%)")
+  assert_true(params_str, "could not find M.VaultIndex:_apply_staged definition in vault_index.lua")
+
+  local params = {}
+  for p in params_str:gmatch("[%w_]+") do
+    table.insert(params, p)
+  end
+
+  -- Expected real signature (source of truth as of SCHEMA work). The mock above
+  -- intentionally implements only {staged, deleted, changed_rel_paths}; if the
+  -- real signature changes, this guard fires so the mock can be re-reconciled.
+  local expected = { "staged", "deleted", "old_entries", "changed_rel_paths", "is_cold_start" }
+  assert_eq(#params, #expected, "real _apply_staged param count drifted")
+  for i = 1, #expected do
+    assert_eq(params[i], expected[i], "real _apply_staged param #" .. i .. " drifted")
+  end
+
+  -- The mock must drive a subset of the real params, in the same relative order,
+  -- so calls translate cleanly. Assert each mock param exists in the real list
+  -- at a non-decreasing position.
+  local mock_params = { "staged", "deleted", "changed_rel_paths" }
+  local last_pos = 0
+  for _, mp in ipairs(mock_params) do
+    local pos = nil
+    for i, rp in ipairs(expected) do
+      if rp == mp then pos = i break end
+    end
+    assert_true(pos, "mock param '" .. mp .. "' not present in real signature")
+    assert_true(pos > last_pos, "mock param '" .. mp .. "' out of order vs real signature")
+    last_pos = pos
+  end
+end)
+
+-- ============================================================================
 -- Summary
 -- ============================================================================
-print("\n=== Results ===")
-print(string.format("  %d passed, %d failed", passed, failed))
-if #errors > 0 then
-  print("\nFailures:")
-  for _, e in ipairs(errors) do
-    print("  " .. e.name .. ": " .. e.err)
-  end
-end
-
--- Exit with non-zero if any test failed
-if failed > 0 then
-  os.exit(1)
-end
+_H.finish({ style = "results", exit = "os" })

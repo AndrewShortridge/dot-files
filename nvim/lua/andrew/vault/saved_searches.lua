@@ -1,6 +1,7 @@
 local engine = require("andrew.vault.engine")
 local config = require("andrew.vault.config")
 local notify = require("andrew.vault.notify")
+local fzf_look = require("andrew.utils.fzf_look")
 
 local M = {}
 
@@ -91,19 +92,19 @@ local function execute_search(entry)
 
   if entry.type == "type" then
     -- Search by frontmatter note type (same pattern as search.search_by_type)
-    fzf.grep(engine.vault_fzf_opts("Saved [" .. entry.name .. "]", {
+    fzf.grep(engine.vault_search_fzf_opts("Saved [" .. entry.name .. "]", {
       search = "^type:\\s+" .. entry.query,
       no_esc = true,
       rg_opts = engine.rg_base_opts(glob),
     }))
   elseif entry.query == "" then
     -- Empty query -> live grep so the user can type interactively
-    fzf.live_grep(engine.vault_fzf_opts("Saved [" .. entry.name .. " | " .. label .. "]", {
+    fzf.live_grep(engine.vault_search_fzf_opts("Saved [" .. entry.name .. " | " .. label .. "]", {
       rg_opts = engine.rg_base_opts(glob),
     }))
   else
     -- Fixed query grep
-    fzf.grep(engine.vault_fzf_opts("Saved [" .. entry.name .. "]", {
+    fzf.grep(engine.vault_search_fzf_opts("Saved [" .. entry.name .. "]", {
       search = entry.query,
       no_esc = true,
       rg_opts = engine.rg_base_opts(glob),
@@ -180,8 +181,7 @@ function M.list()
   end
 
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(entries, {
-    prompt = "Saved searches> ",
+  fzf.fzf_exec(entries, fzf_look.titled("Saved searches", {
     actions = {
       ["default"] = function(selected)
         if not selected or #selected == 0 then
@@ -193,7 +193,7 @@ function M.list()
         end
       end,
     },
-  })
+  }))
 end
 
 --- Delete a saved search by name.
@@ -235,8 +235,7 @@ function M.pick_delete()
   end
 
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(names, {
-    prompt = "Delete saved search> ",
+  fzf.fzf_exec(names, fzf_look.titled("Delete saved search", {
     actions = {
       ["default"] = function(selected)
         if not selected or #selected == 0 then
@@ -245,7 +244,7 @@ function M.pick_delete()
         M.delete(selected[1])
       end,
     },
-  })
+  }))
 end
 
 --- Save the most recently executed search, prompting for a name.

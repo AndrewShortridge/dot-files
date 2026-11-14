@@ -1,0 +1,22 @@
+# Sourced by ~/.local/bin/bookmarks. Per context:
+#   browser_<ctx>    command that opens a url (url is appended)
+#   app_id_<ctx>     Wayland app_id of that browser (cosmic-wmctl windows shows it)
+#   workspace_<ctx>  COSMIC workspace the browser is kept on (must exist: pinned)
+#   restore_<ctx>    extra args only for a cold start (session restore)
+#   host_<ctx>       bsession native host the browser connects to
+#                    (firefox | brave | chromium | chrome; see bsession install)
+#
+# Firefox has no restore flag; its profile has browser.startup.page=3 in
+# user.js (~/.var/app/org.mozilla.firefox/.mozilla/firefox/*.default-release/).
+
+browser_work="flatpak run org.mozilla.firefox"
+app_id_work="org.mozilla.firefox"
+workspace_work=6
+restore_work=""
+host_work=firefox
+
+browser_personal="flatpak run com.brave.Browser"
+app_id_personal="brave-browser"
+workspace_personal=3
+restore_personal="--restore-last-session"
+host_personal=brave

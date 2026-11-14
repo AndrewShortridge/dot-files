@@ -23,6 +23,9 @@ local function build_rg_pattern(names)
   return "\\b(" .. table.concat(escaped, "|") .. ")\\b"
 end
 
+-- Exposed for tests: pattern building (word boundaries, longest-first, empty->"")
+M._build_rg_pattern = build_rg_pattern
+
 --- Parse a ripgrep output line in the format: file:line:col:text
 ---@param rg_line string
 ---@return { file: string, line: number, col: number, text: string }|nil

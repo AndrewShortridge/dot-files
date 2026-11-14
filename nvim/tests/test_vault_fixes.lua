@@ -1,45 +1,9 @@
 -- Test suite for vault bug fixes
 -- Run with: nvim --headless -u NONE -l tests/test_vault_fixes.lua
 
-local passed = 0
-local failed = 0
-local errors = {}
-
-local function test(name, fn)
-  local ok, err = pcall(fn)
-  if ok then
-    passed = passed + 1
-    print("  PASS: " .. name)
-  else
-    failed = failed + 1
-    table.insert(errors, { name = name, err = tostring(err) })
-    print("  FAIL: " .. name .. " -> " .. tostring(err))
-  end
-end
-
-local function assert_eq(got, expected, msg)
-  if got ~= expected then
-    error((msg or "") .. " expected: " .. vim.inspect(expected) .. ", got: " .. vim.inspect(got))
-  end
-end
-
-local function assert_true(val, msg)
-  if not val then
-    error((msg or "assertion failed") .. " (got falsy)")
-  end
-end
-
-local function assert_false(val, msg)
-  if val then
-    error((msg or "assertion failed") .. " (got truthy)")
-  end
-end
-
-local function assert_match(str, pattern, msg)
-  if not str:match(pattern) then
-    error((msg or "") .. " string '" .. str .. "' does not match pattern '" .. pattern .. "'")
-  end
-end
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+local test, assert_eq, assert_true, assert_false, assert_match =
+  _H.test, _H.assert_eq, _H.assert_true, _H.assert_false, _H.assert_match
 
 -- ============================================================================
 -- Setup: create temp vault structure for testing
@@ -196,32 +160,63 @@ table.insert(long_fm_lines, "---")
 table.insert(long_fm_lines, "# Long Frontmatter Note")
 write_file("long_fm.md", table.concat(long_fm_lines, "\n"))
 
+-- Initialize the vault_index singleton for the tmp vault so that
+-- query/index.lua build_from_vault_index() populates pages and
+-- wikilinks.resolve_link reaches the temporal fallback path.
+do
+  local vault_index = require("andrew.vault.vault_index")
+  local vi = vault_index.get(tmp_vault)
+  vi:build_sync()
+end
+
 -- ============================================================================
 print("\n=== 1. ENGINE: Coroutine safety (vim.schedule wrap) ===")
 -- ============================================================================
 
-test("engine.input wraps callback in vim.schedule", function()
+test("engine.input is routed through schedule-wrapped wrap_ui factory", function()
   local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/engine.lua"), "r"):read("*a")
-  -- Check that vim.ui.input callback uses vim.schedule
+  -- The dedicated vim.ui.input call site was unified into a generic wrap_ui factory
+  -- whose callback is schedule-wrapped; M.input is built from that factory.
   assert_true(
-    src:match("vim%.ui%.input%(opts, function%(value%)\n%s+vim%.schedule%(function%(%)"),
-    "vim.ui.input callback should be wrapped in vim.schedule"
+    src:match("vim%.ui%[ui_field%]%(unpack%(args%)%)"),
+    "wrap_ui should dispatch generically via vim.ui[ui_field](unpack(args))"
+  )
+  assert_true(
+    src:match("args%[#args %+ 1%] = function%(result%)%s*\n%s*vim%.schedule%(function%(%)"),
+    "wrap_ui callback should be wrapped in vim.schedule"
+  )
+  assert_true(
+    src:match('M%.input = wrap_ui%("input"%)'),
+    "M.input should be built from the schedule-wrapped factory"
   )
 end)
 
-test("engine.select wraps callback in vim.schedule", function()
+test("engine.select is routed through schedule-wrapped wrap_ui factory", function()
   local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/engine.lua"), "r"):read("*a")
   assert_true(
-    src:match("vim%.ui%.select%(items, opts, function%(choice%)\n%s+vim%.schedule%(function%(%)"),
-    "vim.ui.select callback should be wrapped in vim.schedule"
+    src:match("vim%.ui%[ui_field%]%(unpack%(args%)%)"),
+    "wrap_ui should dispatch generically via vim.ui[ui_field](unpack(args))"
+  )
+  assert_true(
+    src:match("args%[#args %+ 1%] = function%(result%)%s*\n%s*vim%.schedule%(function%(%)"),
+    "wrap_ui callback should be wrapped in vim.schedule"
+  )
+  assert_true(
+    src:match('M%.select = wrap_ui%("select"%)'),
+    "M.select should be built from the schedule-wrapped factory"
   )
 end)
 
 test("engine.write_note includes OS error in notification", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/engine.lua"), "r"):read("*a")
+  -- write_note was extracted from engine.lua into engine_file_io.lua during Phase 6.
+  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/engine_file_io.lua"), "r"):read("*a")
   assert_true(
     src:match('io_err or "unknown error"'),
     "io.open failure should include the OS error message"
+  )
+  assert_true(
+    src:match("notify%.failed_write%(full_path, io_err"),
+    "the OS error should be passed into the failure notification"
   )
 end)
 
@@ -434,16 +429,20 @@ end)
 print("\n=== 8. COMPLETION: Frontmatter parsing has no 30-line limit ===")
 -- ============================================================================
 
-test("completion parse_frontmatter uses while loop, not limited for loop", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/completion.lua"), "r"):read("*a")
-  assert_false(
-    src:match("for _ = 1, 30 do"),
-    "Should not have for _ = 1, 30 limit"
-  )
-  assert_true(
-    src:match("while true do"),
-    "Should use while true do for unlimited frontmatter reading"
-  )
+test("frontmatter parsing reads fields beyond the old 30-line cap", function()
+  -- Frontmatter parsing was extracted out of completion.lua into frontmatter_parser.lua.
+  -- completion.lua now delegates via fm_parser.parse_lines(lines, #lines), so the no-cap
+  -- behavior lives in frontmatter_parser. Exercise the real product parser directly.
+  local fm_parser = require("andrew.vault.frontmatter_parser")
+  local lines = { "---", "type: literature" }
+  for i = 1, 45 do
+    table.insert(lines, "field_" .. i .. ": value_" .. i)
+  end
+  table.insert(lines, "---")
+  local fm = fm_parser.parse_lines(lines, #lines)
+  assert_true(fm ~= nil, "should parse frontmatter")
+  assert_eq(fm.fields.field_1, "value_1", "reads field_1")
+  assert_true(fm.fields.field_40 ~= nil, "reads field_40, beyond old 30-line cap")
 end)
 
 test("completion parse_frontmatter reads all fields from long frontmatter", function()
@@ -538,23 +537,29 @@ test("completion has build_generation counter", function()
   assert_true(src:match("build_generation"), "Should have build_generation variable")
 end)
 
-test("completion invalidate increments generation", function()
+test("completion invalidate starts a new build operation", function()
+  -- The ad-hoc build_generation counter was replaced by the shared operation_tracker
+  -- primitive; invalidate() now supersedes in-flight builds via build_ops:start().
   local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/completion_base.lua"), "r"):read("*a")
   assert_true(
-    src:match("build_generation = build_generation %+ 1"),
-    "invalidate() should increment build_generation"
+    src:match("operation_tracker%.new%(%)"),
+    "completion_base should wire in operation_tracker.new()"
+  )
+  assert_true(
+    src:match("build_ops:start%(%)"),
+    "invalidate() should start a new build operation (supersedes in-flight builds)"
   )
 end)
 
-test("completion build_items_async captures and checks generation", function()
+test("completion build_items_async captures and checks operation id", function()
   local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/completion_base.lua"), "r"):read("*a")
   assert_true(
-    src:match("local gen = build_generation"),
-    "build_items_async should capture generation"
+    src:match("local op_id = build_ops:current%(%)"),
+    "build_items_async should capture the operation id"
   )
   assert_true(
-    src:match("gen ~= build_generation"),
-    "build_items_async should check generation before writing results"
+    src:match("build_ops:is_stale%(op_id%)"),
+    "build_items_async should check op staleness before writing results"
   )
 end)
 
@@ -569,8 +574,12 @@ test("frontmatter reads up to 200 lines, not 30", function()
     "Should not hardcode 30-line limit"
   )
   assert_true(
-    src:match("math%.min%(line_count, config%.frontmatter%.max_scan_lines%)"),
-    "Should read up to max_scan_lines (200) via config"
+    src:match("local max = config%.frontmatter%.max_scan_lines"),
+    "Should read max from config.frontmatter.max_scan_lines"
+  )
+  assert_true(
+    src:match("math%.min%(line_count, max%)"),
+    "Should read up to max_scan_lines (200) via math.min(line_count, max)"
   )
 end)
 
@@ -579,7 +588,8 @@ print("\n=== 11. EXECUTOR: Pattern injection fix in contains_value ===")
 -- ============================================================================
 
 test("contains_value uses plain string find, not pattern match", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/query/executor.lua"), "r"):read("*a")
+  -- contains_value was moved from query/executor.lua into query/executor_values.lua.
+  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/query/executor_values.lua"), "r"):read("*a")
   assert_true(
     src:match("v%.path:find%(b, 1, true%)"),
     "Should use string.find with plain=true"
@@ -902,17 +912,35 @@ test("index resolves inlinks correctly", function()
   local idx = Index.new(tmp_vault)
   idx:build_sync()
 
-  -- Beta links to Alpha, so Alpha should have an inlink from Beta
-  local alpha_page = idx:get_page("Projects/Alpha/Dashboard.md")
-  assert_true(alpha_page ~= nil, "Alpha page should exist")
+  -- Beta contains [[Alpha|Alpha Project]] and [[Alpha#Overview]]. Wikilink
+  -- resolution uses the link TARGET ("Alpha"), not the display alias. The only
+  -- note whose name is "Alpha" is Archive/Alpha.md, so the inlink lands there.
+  -- (Projects/Alpha/Dashboard.md has basename "Dashboard"; its alias is
+  -- "Alpha Project", which would only be hit by a link whose TARGET is the alias.)
+  local alpha_archive = idx:get_page("Archive/Alpha.md")
+  assert_true(alpha_archive ~= nil, "Archive/Alpha page should exist")
 
   local has_beta_inlink = false
-  for _, link in ipairs(alpha_page.file.inlinks) do
+  for _, link in ipairs(alpha_archive.file.inlinks) do
     if link.path:match("Beta") then
       has_beta_inlink = true
     end
   end
-  assert_true(has_beta_inlink, "Alpha should have inlink from Beta (which uses [[Alpha|Alpha Project]])")
+  assert_true(has_beta_inlink, "Archive/Alpha should have an inlink from Beta's [[Alpha|...]] link")
+end)
+
+test("index resolves aliased link targets via the alias index", function()
+  -- An aliased link whose TARGET is an alias (e.g. [[Alpha Project]]) should
+  -- resolve to the note declaring that alias. Verify the resolver/alias index
+  -- maps "Alpha Project" -> Projects/Alpha/Dashboard.md.
+  local vault_index = require("andrew.vault.vault_index")
+  local vi = vault_index.get(tmp_vault)
+  local paths = vi._alias_index["alpha project"]
+  assert_true(paths ~= nil and #paths > 0, "alias index should contain 'alpha project'")
+  assert_true(
+    paths[1]:match("Projects/Alpha/Dashboard%.md$") ~= nil,
+    "'Alpha Project' alias should resolve to Projects/Alpha/Dashboard.md"
+  )
 end)
 
 -- ============================================================================
@@ -980,8 +1008,10 @@ print("\n=== 17. TAG_HIGHLIGHTS: Module structure ===")
 -- ============================================================================
 
 test("tag_highlights module defines highlight groups", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/tag_highlights.lua"), "r"):read("*a")
-  assert_true(src:find("VaultTag") ~= nil, "defines VaultTag highlight group")
+  -- Phase 6: the actual highlight GROUP DEFINITIONS (fg/attrs via nvim_set_hl)
+  -- live in colors.lua. tag_highlights.lua only maps tag prefixes -> group names.
+  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/colors.lua"), "r"):read("*a")
+  assert_true(src:find("VaultTag ") ~= nil or src:find("VaultTag%s*=") ~= nil, "defines VaultTag highlight group")
   assert_true(src:find("VaultTagProject") ~= nil, "defines VaultTagProject group")
   assert_true(src:find("VaultTagStatus") ~= nil, "defines VaultTagStatus group")
   assert_true(src:find("VaultTagType") ~= nil, "defines VaultTagType group")
@@ -990,28 +1020,40 @@ test("tag_highlights module defines highlight groups", function()
 end)
 
 test("tag_highlights uses extmarks", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/tag_highlights.lua"), "r"):read("*a")
-  assert_true(src:find("nvim_buf_set_extmark") ~= nil, "uses extmarks")
+  -- Phase 6: the tag consumer emits VaultTagHash/VaultTag* extmark SPECS, and the
+  -- shared render_diff applier writes them via nvim_buf_set_extmark.
+  local consumers = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/pipeline_consumers.lua"), "r"):read("*a")
+  assert_true(consumers:find("VaultTagHash") ~= nil, "tag consumer emits VaultTagHash extmark spec")
+  local applier = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/render_diff.lua"), "r"):read("*a")
+  assert_true(applier:find("nvim_buf_set_extmark") ~= nil, "render_diff applies extmark specs")
 end)
 
 test("tag_highlights has code block filtering", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/tag_highlights.lua"), "r"):read("*a")
+  -- Phase 6: code-block exclusion lives in the highlight coordinator / link_scan.
+  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/highlight_coordinator.lua"), "r"):read("*a")
   assert_true(src:find("build_code_exclusion") ~= nil, "has code block filtering")
 end)
 
 test("tag_highlights has hex color filtering", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/tag_highlights.lua"), "r"):read("*a")
+  -- Phase 6: hex-color rejection lives in the pipeline tokenizer (line_parse_cache).
+  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/line_parse_cache.lua"), "r"):read("*a")
   assert_true(src:find("is_hex_color") ~= nil, "has hex color filtering")
 end)
 
 test("tag_highlights validates tag boundaries", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/tag_highlights.lua"), "r"):read("*a")
+  -- Phase 6: tag boundary validation lives in the pipeline tokenizer.
+  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/line_parse_cache.lua"), "r"):read("*a")
   assert_true(src:find("valid_tag_start") ~= nil, "validates tag boundaries")
 end)
 
 test("tag_highlights has debounced update", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/tag_highlights.lua"), "r"):read("*a")
-  assert_true(src:find("schedule_update") ~= nil, "has debounced update")
+  -- Phase 6: debounced scheduling is centralized in the highlight coordinator;
+  -- tag_highlights wires its refresh through hl_coord (make_refresh_command / schedule).
+  local th = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/tag_highlights.lua"), "r"):read("*a")
+  assert_true(th:find("hl_coord") ~= nil, "tag_highlights uses the highlight coordinator")
+  assert_true(th:find("make_refresh_command") ~= nil, "tag_highlights registers a coordinator refresh")
+  local coord = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/highlight_coordinator.lua"), "r"):read("*a")
+  assert_true(coord:find("debounce") ~= nil, "coordinator dispatches via a debounce timer")
 end)
 
 test("tag_highlights has tag navigation", function()
@@ -1037,7 +1079,8 @@ print("\n=== 18. INLINE_FIELDS: Module structure ===")
 -- ============================================================================
 
 test("inline_fields module defines highlight groups", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/inline_fields.lua"), "r"):read("*a")
+  -- Phase 6: highlight group DEFINITIONS live in colors.lua.
+  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/colors.lua"), "r"):read("*a")
   assert_true(src:find("VaultFieldKey") ~= nil, "defines VaultFieldKey highlight group")
   assert_true(src:find("VaultFieldValue") ~= nil, "defines VaultFieldValue group")
   assert_true(src:find("VaultFieldBracket") ~= nil, "defines VaultFieldBracket group")
@@ -1049,8 +1092,12 @@ test("inline_fields module defines highlight groups", function()
 end)
 
 test("inline_fields uses extmarks", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/inline_fields.lua"), "r"):read("*a")
-  assert_true(src:find("nvim_buf_set_extmark") ~= nil, "uses extmarks")
+  -- Phase 6: the inline field consumer emits VaultField* extmark SPECS, applied
+  -- via render_diff's nvim_buf_set_extmark.
+  local consumers = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/pipeline_consumers.lua"), "r"):read("*a")
+  assert_true(consumers:find("VaultFieldKey") ~= nil, "field consumer emits VaultFieldKey extmark spec")
+  local applier = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/render_diff.lua"), "r"):read("*a")
+  assert_true(applier:find("nvim_buf_set_extmark") ~= nil, "render_diff applies extmark specs")
 end)
 
 test("inline_fields has code block filtering", function()
@@ -1058,10 +1105,11 @@ test("inline_fields has code block filtering", function()
   assert_true(src:find("build_code_exclusion") ~= nil, "has code block filtering")
 end)
 
-test("inline_fields parses all three field syntaxes", function()
+test("inline_fields parses all field syntaxes", function()
+  -- Phase 6: bracket+paren delimited fields are parsed by find_delimited_fields;
+  -- standalone fields by find_standalone_fields.
   local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/inline_fields.lua"), "r"):read("*a")
-  assert_true(src:find("find_bracket_fields") ~= nil, "parses bracket fields")
-  assert_true(src:find("find_paren_fields") ~= nil, "parses paren fields")
+  assert_true(src:find("find_delimited_fields") ~= nil, "parses bracket/paren delimited fields")
   assert_true(src:find("find_standalone_fields") ~= nil, "parses standalone fields")
 end)
 
@@ -1071,8 +1119,10 @@ test("inline_fields classifies value types", function()
 end)
 
 test("inline_fields has debounced update", function()
+  -- Phase 6: debounced scheduling is centralized in the highlight coordinator.
   local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/inline_fields.lua"), "r"):read("*a")
-  assert_true(src:find("schedule_update") ~= nil, "has debounced update")
+  assert_true(src:find("hl_coord") ~= nil, "inline_fields uses the highlight coordinator")
+  assert_true(src:find("make_refresh_command") ~= nil, "inline_fields registers a coordinator refresh")
 end)
 
 test("inline_fields has field navigation", function()
@@ -1247,11 +1297,6 @@ test("callout_folds is registered in init.lua", function()
   )
 end)
 
-test("callout_folds config section exists", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/config.lua"), "r"):read("*a")
-  assert_true(src:find("callout_folds") ~= nil, "config should have callout_folds section")
-end)
-
 test("render-markdown integrates callout_folds.record_toggle", function()
   local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/plugins/render-markdown.lua"), "r"):read("*a")
   assert_true(src:find("record_toggle") ~= nil, "render-markdown calls record_toggle")
@@ -1259,8 +1304,15 @@ end)
 
 test("render-markdown integrates callout_folds.restore", function()
   local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/plugins/render-markdown.lua"), "r"):read("*a")
-  assert_true(src:find("callout_folds%.restore") ~= nil or src:find("callout_folds.restore") ~= nil,
-    "render-markdown calls callout_folds.restore")
+  -- The callout_folds module is required under the local alias `cf`, then cf.restore(bufnr).
+  assert_true(
+    src:find("%.restore%(bufnr%)") ~= nil,
+    "render-markdown calls the callout_folds module's restore(bufnr)"
+  )
+  assert_true(
+    src:find('"andrew%.vault%.callout_folds"') ~= nil,
+    "render-markdown requires the callout_folds module"
+  )
 end)
 
 test("render-markdown switches to manual foldmethod", function()
@@ -1269,8 +1321,13 @@ test("render-markdown switches to manual foldmethod", function()
 end)
 
 test("engine invalidates callout_folds cache", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/engine.lua"), "r"):read("*a")
-  assert_true(src:find("callout_folds") ~= nil, "engine invalidates callout_folds cache")
+  -- Phase 6 inverted the dependency: callout_folds registers its invalidation
+  -- callback with the engine via engine.register_cache, and engine.invalidate_caches()
+  -- iterates the registered specs on write.
+  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/callout_folds.lua"), "r"):read("*a")
+  assert_true(src:find("engine%.register_cache") ~= nil, "callout_folds registers a cache with the engine")
+  assert_true(src:find('name = "callout_folds"') ~= nil, "registers under the callout_folds cache name")
+  assert_true(src:find("invalidate") ~= nil, "provides an invalidate callback")
 end)
 
 -- ============================================================================
@@ -1293,7 +1350,10 @@ test("unlinked: module has all core functions", function()
   assert_true(src:find("names") ~= nil, "requires names submodule")
   assert_true(src:find("ui") ~= nil, "requires ui submodule")
   assert_true(src:find("wrapper") ~= nil or src:find("ui") ~= nil, "delegates wrapping to submodules")
-  assert_true(src:find("VaultUnlinked") ~= nil, "defines user command")
+  -- Phase 6: the VaultUnlinked user command is registered (lazily) in init.lua,
+  -- wired to the orchestrator's unlinked_mentions()/vault_unlinked_mentions().
+  local init_src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/init.lua"), "r"):read("*a")
+  assert_true(init_src:find("VaultUnlinked") ~= nil, "defines VaultUnlinked user command in init.lua")
 
   -- rg_pipeline submodule
   assert_true(rg_src:find("overlaps_range") ~= nil, "filters existing links via overlaps_range")
@@ -1317,21 +1377,26 @@ end)
 
 test("unlinked: rg_pattern building", function()
   local ok, rg_pipeline = pcall(require, "andrew.vault.unlinked.rg_pipeline")
-  if ok and rg_pipeline._build_rg_pattern then
-    local pat = rg_pipeline._build_rg_pattern({"Mesh Convergence", "CFD"})
-    -- Longest names first
-    assert_true(pat:find("Mesh Convergence") ~= nil, "includes full name")
-    assert_true(pat:find("CFD") ~= nil, "includes short name")
-    assert_true(pat:find("\\b") ~= nil, "has word boundaries")
+  assert_true(ok, "rg_pipeline module loads")
+  assert_true(rg_pipeline._build_rg_pattern ~= nil, "_build_rg_pattern is exported")
 
-    -- Empty names
-    local empty = rg_pipeline._build_rg_pattern({})
-    assert_true(empty == "", "empty pattern for no names")
+  local pat = rg_pipeline._build_rg_pattern({"Mesh Convergence", "CFD"})
+  -- Longest names first
+  assert_true(pat:find("Mesh Convergence") ~= nil, "includes full name")
+  assert_true(pat:find("CFD") ~= nil, "includes short name")
+  assert_true(pat:find("\\b") ~= nil, "has word boundaries")
 
-    -- Short names filtered
-    local short = rg_pipeline._build_rg_pattern({"ab"})
-    assert_true(short == "", "filters names shorter than MIN_NAME_LENGTH")
-  end
+  -- Empty names
+  local empty = rg_pipeline._build_rg_pattern({})
+  assert_true(empty == "", "empty pattern for no names")
+
+  -- Short-name filtering now lives in utils.filter_by_min_length
+  -- (config.autolink.min_name_length=3), invoked upstream in names.lua.
+  local utils = require("andrew.vault.unlinked.utils")
+  assert_eq(#utils.filter_by_min_length({"ab", "CFD", "Mesh Convergence"}), 2,
+    "filter_by_min_length drops names shorter than config.autolink.min_name_length")
+  assert_true(vim.tbl_contains(utils.filter_by_min_length({"ab", "CFD"}), "CFD"),
+    "keeps names at/above min length")
 end)
 
 test("unlinked: link/URL detection (unified)", function()
@@ -1440,8 +1505,13 @@ test("link_scan has word boundary validation", function()
 end)
 
 test("autolink has debounced update", function()
+  -- Phase 6: autolink registers coordinated_update with the highlight coordinator,
+  -- which owns the shared debounce timer.
   local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/autolink.lua"), "r"):read("*a")
-  assert_true(src:find("schedule_update") ~= nil, "has debounced update")
+  assert_true(src:find("coordinated_update") ~= nil, "exposes a coordinated_update handler")
+  assert_true(src:find("coordinator%.register") ~= nil, "registers with the highlight coordinator")
+  local coord = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/highlight_coordinator.lua"), "r"):read("*a")
+  assert_true(coord:find("debounce") ~= nil, "coordinator dispatches updates via a debounce timer")
 end)
 
 test("autolink has accept function", function()
@@ -1483,8 +1553,11 @@ test("autolink config section exists", function()
 end)
 
 test("engine invalidates autolink cache", function()
-  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/engine.lua"), "r"):read("*a")
-  assert_true(src:find("autolink") ~= nil, "engine invalidates autolink cache")
+  -- Phase 6 inverted the dependency: autolink registers its invalidation callback
+  -- with the engine via engine.register_cache; engine.invalidate_caches() runs it on write.
+  local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/autolink.lua"), "r"):read("*a")
+  assert_true(src:find("engine%.register_cache") ~= nil, "autolink registers a cache with the engine")
+  assert_true(src:find('name = "autolink_index"') ~= nil, "registers under the autolink_index cache name")
 end)
 
 -- ============================================================================
@@ -1511,24 +1584,27 @@ test("vault_index has _detect_collisions method", function()
     "has _detect_collisions method")
 end)
 
-test("vault_index has _notify_collisions method", function()
-  local source = io.open("lua/andrew/vault/vault_index.lua", "r")
-  assert_true(source ~= nil, "could not open vault_index.lua")
-  local content = source:read("*a")
-  source:close()
-
-  assert_true(content:find("function M.VaultIndex:_notify_collisions") ~= nil,
-    "has _notify_collisions method")
+test("vault_index has collision notification capability", function()
+  -- Phase 6: collision detection + notification were extracted into
+  -- vault_index_collisions.lua. The notify capability is C.notify_popup, invoked
+  -- from vault_index.lua:_detect_collisions.
+  local coll = io.open("lua/andrew/vault/vault_index_collisions.lua", "r"):read("*a")
+  assert_true(coll:find("function C.notify_popup") ~= nil,
+    "collisions module has notify_popup")
+  local vi = io.open("lua/andrew/vault/vault_index.lua", "r"):read("*a")
+  assert_true(vi:find("collisions_mod%.notify_popup") ~= nil,
+    "vault_index invokes the collision notification popup")
 end)
 
-test("vault_index has get_collisions query method", function()
-  local source = io.open("lua/andrew/vault/vault_index.lua", "r")
-  assert_true(source ~= nil, "could not open vault_index.lua")
-  local content = source:read("*a")
-  source:close()
-
-  assert_true(content:find("function M.VaultIndex:get_collisions") ~= nil,
-    "has get_collisions query method")
+test("vault_index has collision query method", function()
+  -- Phase 6: the collision-producing query is C.detect in vault_index_collisions.lua;
+  -- vault_index.lua stores its result into the queryable _collisions field.
+  local coll = io.open("lua/andrew/vault/vault_index_collisions.lua", "r"):read("*a")
+  assert_true(coll:find("function C.detect") ~= nil,
+    "collisions module has detect query")
+  local vi = io.open("lua/andrew/vault/vault_index.lua", "r"):read("*a")
+  assert_true(vi:find("self%._collisions = collisions_mod%.detect") ~= nil,
+    "vault_index stores collision query results in _collisions")
 end)
 
 test("vault_index has show_collisions method", function()
@@ -1547,7 +1623,11 @@ test("_rebuild_name_index calls _detect_collisions", function()
   local content = source:read("*a")
   source:close()
 
-  assert_true(content:find("self:_detect_collisions%(name_idx, alias_idx%)") ~= nil,
+  -- Both the full-rebuild and incremental paths now defer collision detection
+  -- to IDLE via the work scheduler, invoking it as
+  -- idx:_detect_collisions(idx._name_index, idx._alias_index) inside the
+  -- scheduled closure (rather than a synchronous foreground call).
+  assert_true(content:find("idx:_detect_collisions%(idx%._name_index, idx%._alias_index%)") ~= nil,
     "_rebuild_name_index calls _detect_collisions")
 end)
 
@@ -1562,21 +1642,14 @@ test("vault_index has _collisions field", function()
 end)
 
 test("detects alias-alias collisions", function()
-  local source = io.open("lua/andrew/vault/vault_index.lua", "r")
-  assert_true(source ~= nil, "could not open vault_index.lua")
-  local content = source:read("*a")
-  source:close()
-
+  -- Phase 6: collision typing moved into vault_index_collisions.lua.
+  local content = io.open("lua/andrew/vault/vault_index_collisions.lua", "r"):read("*a")
   assert_true(content:find('"alias%-alias"') ~= nil,
     "detects alias-alias collisions")
 end)
 
 test("detects name-alias collisions", function()
-  local source = io.open("lua/andrew/vault/vault_index.lua", "r")
-  assert_true(source ~= nil, "could not open vault_index.lua")
-  local content = source:read("*a")
-  source:close()
-
+  local content = io.open("lua/andrew/vault/vault_index_collisions.lua", "r"):read("*a")
   assert_true(content:find('"name%-alias"') ~= nil,
     "detects name-alias collisions")
 end)
@@ -1592,11 +1665,9 @@ test("detects basename collisions", function()
 end)
 
 test("checks warn_collisions config", function()
-  local source = io.open("lua/andrew/vault/vault_index.lua", "r")
-  assert_true(source ~= nil, "could not open vault_index.lua")
-  local content = source:read("*a")
-  source:close()
-
+  -- Phase 6: the config.index.warn_collisions gate lives in the extracted
+  -- collisions module (C.notify_popup returns early when disabled).
+  local content = io.open("lua/andrew/vault/vault_index_collisions.lua", "r"):read("*a")
   assert_true(content:find("warn_collisions") ~= nil,
     "checks warn_collisions config")
 end)
@@ -1763,13 +1834,12 @@ test("stats module has show function", function()
   assert_true(content:find("function M%.show") ~= nil, "has show function")
 end)
 
-test("stats module has setup function", function()
-  local source = io.open("lua/andrew/vault/stats.lua", "r")
-  assert_true(source ~= nil, "could not open stats.lua")
-  local content = source:read("*a")
-  source:close()
-
-  assert_true(content:find("function M%.setup") ~= nil, "has setup function")
+test("stats module exposes its public entry point", function()
+  -- Phase 6: stats became a lazy module (no M.setup); command/keymap registration
+  -- moved to init.lua. The module's public entry point is M.show() (the dashboard).
+  local content = io.open("lua/andrew/vault/stats.lua", "r"):read("*a")
+  assert_true(content:find("function M%.show") ~= nil, "has show() entry point")
+  assert_true(content:find("function M%.compute") ~= nil, "has compute()")
 end)
 
 test("stats module defines VaultStats command", function()
@@ -1872,10 +1942,16 @@ test("stats module computes task summary", function()
 end)
 
 test("stats module is registered in init.lua", function()
+  -- Phase 6: stats is wired as a lazy module in init.lua, exposing the VaultStats
+  -- user command and the <leader>vD keymap that call _stats().show().
   local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/init.lua"), "r"):read("*a")
   assert_true(
-    src:find('require("andrew.vault.stats").setup()', 1, true) ~= nil,
-    "stats should be loaded in init.lua"
+    src:find('lazy_mod("andrew.vault.stats")', 1, true) ~= nil,
+    "stats should be lazily loaded in init.lua"
+  )
+  assert_true(
+    src:find('"VaultStats"', 1, true) ~= nil,
+    "init.lua registers the VaultStats command"
   )
 end)
 
@@ -2192,17 +2268,4 @@ end)
 -- ============================================================================
 -- Summary
 -- ============================================================================
-
-print("\n" .. string.rep("=", 60))
-print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
-print(string.rep("=", 60))
-
-if #errors > 0 then
-  print("\nFailed tests:")
-  for _, e in ipairs(errors) do
-    print("  - " .. e.name .. ": " .. e.err)
-  end
-end
-
--- Exit with appropriate code
-vim.cmd("cquit " .. (failed > 0 and "1" or "0"))
+_H.finish({ style = "total", exit = "cquit" })

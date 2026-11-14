@@ -5,11 +5,60 @@ local executor = require("andrew.vault.query.executor")
 local api = require("andrew.vault.query.api")
 local render = require("andrew.vault.query.render")
 local js2lua = require("andrew.vault.query.js2lua")
-local palette = require("andrew.vault.command_palette")
 local notify = require("andrew.vault.notify")
 local gen_cache = require("andrew.vault.gen_cache")
 local pat = require("andrew.vault.patterns")
+local config = require("andrew.vault.config")
+local lru_cache = require("andrew.vault.lru_cache")
 local M = {}
+
+-- Bounded result cache wrapping execute_dql/execute_lua/execute_js. The output
+-- of a query block is a pure function of (block kind, content, the resolved
+-- query index contents, current_file). The query index contents are fully
+-- determined by vault_index.current()._generation (the same generation
+-- gen_cache keys on), so including that generation in the key makes the cache
+-- invalidation-correct: any vault file change bumps the generation and stale
+-- entries simply never match (and age out via LRU). current_file matters
+-- because executor resolves this.* / current_page from it.
+-- NOTE: cached result tables are returned shared on a hit; render only READS
+-- them (it builds new content_lines and never mutates items), so this is safe.
+-- Downstream consumers of these results MUST remain read-only.
+local _result_cache = lru_cache.new(config.cache.query_result_max or 64)
+local _result_hits = 0
+local _result_misses = 0
+
+-- Bounded content->AST cache for DQL parsing. parser.parse() is a pure function
+-- of the query text, so the AST never goes stale and can be memoized by content
+-- ALONE (independent of vault generation), exactly like the js2lua transpile
+-- cache. The executor/results treat the AST as read-only (they only READ ast.*,
+-- never mutate it — do not mutate), so the cached AST table is safely shared
+-- across generation bumps. This means a vault save (which bumps the generation
+-- and misses the result cache) no longer re-tokenizes and rebuilds the AST for
+-- an unchanged query string. Reuses the shared LRU helper (same one backing the
+-- result cache above) rather than a hand-rolled bounded map.
+local _ast_cache = lru_cache.new(config.cache.query_ast_max or 128) -- content -> { ast, err }
+
+local function clear_ast_cache()
+  _ast_cache:clear()
+end
+
+local function parse_cached(content)
+  local hit = _ast_cache:get(content)
+  if hit then
+    return hit[1], hit[2]
+  end
+  local ast, err = parser.parse(content)
+  _ast_cache:put(content, { ast, err })
+  return ast, err
+end
+
+--- Current vault index generation (mirrors gen_cache.current_index) without a
+--- hard require, so a vault switch / generation bump changes the cache key.
+local function current_gen()
+  local vi = package.loaded["andrew.vault.vault_index"]
+  local idx = vi and vi.current() or nil
+  return idx and idx._generation or 0
+end
 
 -- Generation-cached query index.
 -- key_fn returns vault_path so the cache rebuilds when the vault changes.
@@ -20,6 +69,7 @@ local _prev_index = nil -- retained between builds for incremental updates
 local _index_cache = gen_cache.gen_cache(function(_idx)
   local vault_path = engine.vault_path
   if _prev_index and _prev_index.vault_path == vault_path then
+    -- No ctx → full rebuild from the vault index (same-vault refresh path).
     _prev_index:update_incremental()
   else
     _prev_index = index_mod.Index.new(vault_path)
@@ -28,6 +78,15 @@ local _index_cache = gen_cache.gen_cache(function(_idx)
   return _prev_index
 end, {
   key_fn = function() return engine.vault_path end,
+  -- Scoped update for a small batch of changed files: re-convert only the
+  -- affected pages instead of rebuilding every page. Returns _prev_index so it
+  -- stays cached. Bail to a full rebuild (return nil) if the retained index is
+  -- not the cached value (vault switched between builds).
+  partial_fn = function(cached, idx, ctx)
+    if not _prev_index or cached ~= _prev_index then return nil end
+    _prev_index:update_incremental(idx, ctx)
+    return _prev_index
+  end,
 })
 
 --- Get or build the vault index. Rebuilds if vault was modified.
@@ -61,6 +120,25 @@ engine.register_cache({
   end,
 })
 
+-- Register the bounded query result cache (belt-and-suspenders invalidation:
+-- generation is part of the key, but a forced rebuild / cache-clear must drop
+-- stale entries too).
+engine.register_cache({
+  name = "query_result",
+  module = "andrew.vault.query",
+  invalidate = function()
+    _result_cache:clear()
+    clear_ast_cache()
+  end,
+  stats = function()
+    return {
+      entries = _result_cache:size(),
+      hits = _result_hits,
+      misses = _result_misses,
+    }
+  end,
+})
+
 do
   local profiler = require("andrew.vault.memory_profiler")
   profiler.register_cache({
@@ -72,6 +150,14 @@ do
     get_capacity = function() return nil end,
     get_hits = function() return _index_cache.get_hits() end,
     get_misses = function() return _index_cache.get_misses() end,
+    get_evictions = function() return 0 end,
+  })
+  profiler.register_cache({
+    name = "query_result",
+    get_size = function() return _result_cache:size() end,
+    get_capacity = function() return config.cache.query_result_max end,
+    get_hits = function() return _result_hits end,
+    get_misses = function() return _result_misses end,
     get_evictions = function() return 0 end,
   })
 end
@@ -127,37 +213,73 @@ local function find_code_block_at_cursor()
   return block_type, content, open_line, close_line
 end
 
+--- Build a result-cache key. A type tag keeps dataview/lua/js blocks with
+--- identical content from colliding. The \0 separator cannot appear in any
+--- component (kind/current_file/content are all NUL-free in practice).
+local function result_key(kind, content, current_file)
+  return kind .. "\0" .. tostring(current_gen()) .. "\0" .. (current_file or "") .. "\0" .. content
+end
+
+--- Run `compute` through the bounded result cache under (kind, content,
+--- current_file). On a hit the cached result table is returned shared (render
+--- only reads it); on a miss `compute` runs and its result is stored.
+---@param kind string block-kind tag for the cache key
+---@param content string raw block content
+---@param current_file string|nil resolves this.* / current_page
+---@param compute fun(): table
+---@return table
+local function memoized(kind, content, current_file, compute)
+  local key = result_key(kind, content, current_file)
+  local hit = _result_cache:get(key)
+  if hit ~= nil then
+    _result_hits = _result_hits + 1
+    return hit
+  end
+  _result_misses = _result_misses + 1
+  local results = compute()
+  _result_cache:put(key, results)
+  return results
+end
+
 --- Execute a dataview DQL query and return render results.
 local function execute_dql(content, current_file)
-  local idx = get_index()
-  local ast, parse_err = parser.parse(content)
-  if not ast then
-    return { { type = "error", message = "Parse error: " .. (parse_err or "unknown") } }
-  end
-  local results, exec_err = executor.execute(ast, idx, current_file)
-  if not results then
-    return { { type = "error", message = "Execution error: " .. (exec_err or "unknown") } }
-  end
-  return results
+  return memoized("dataview", content, current_file, function()
+    local idx = get_index()
+    local ast, parse_err = parse_cached(content)
+    if not ast then
+      return { { type = "error", message = "Parse error: " .. (parse_err or "unknown") } }
+    end
+    local exec_results, exec_err = executor.execute(ast, idx, current_file)
+    if not exec_results then
+      return { { type = "error", message = "Execution error: " .. (exec_err or "unknown") } }
+    end
+    return exec_results
+  end)
 end
 
 --- Execute a Lua vault block and return render results.
 local function execute_lua(content, current_file)
-  local idx = get_index()
-  local results, err = api.execute_block(content, idx, current_file)
-  if not results then
-    return { { type = "error", message = "Lua error: " .. (err or "unknown") } }
-  end
-  return results
+  return memoized("vault", content, current_file, function()
+    local idx = get_index()
+    local results, err = api.execute_block(content, idx, current_file)
+    if not results then
+      return { { type = "error", message = "Lua error: " .. (err or "unknown") } }
+    end
+    return results
+  end)
 end
 
 --- Transpile JavaScript to Lua, then execute.
 local function execute_js(content, current_file)
-  local lua_code, transpile_err = js2lua.transpile(content)
-  if not lua_code then
-    return { { type = "error", message = "Transpile error: " .. (transpile_err or "unknown") } }
-  end
-  return execute_lua(lua_code, current_file)
+  return memoized("dataviewjs", content, current_file, function()
+    local lua_code, transpile_err = js2lua.transpile(content)
+    if not lua_code then
+      return { { type = "error", message = "Transpile error: " .. (transpile_err or "unknown") } }
+    end
+    -- execute_lua keys the transpiled lua under the "vault" tag; the JS result
+    -- is keyed here under "dataviewjs" so JS keys stay human-correspondent.
+    return execute_lua(lua_code, current_file)
+  end)
 end
 
 --- Render the query block under the cursor, or inline expr on current line.
@@ -171,6 +293,9 @@ function M.render_block()
     local line = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or ""
     local found_inline = false
     local current_file = vim.api.nvim_buf_get_name(buf)
+    -- Clear this row's inline marks first so re-rendering the same line does not
+    -- stack duplicate virtual text (render_inline only adds extmarks).
+    render.clear_inline_line(buf, row)
     local search_start = 1
     while true do
       local s, e, expr = line:find("`%$=(.-)%`", search_start)
@@ -230,12 +355,21 @@ end
 
 --- Clear rendered output under the cursor.
 function M.clear_block()
+  local buf = vim.api.nvim_get_current_buf()
   local block_type, _, _, close_line = find_code_block_at_cursor()
   if not block_type then
+    -- Not in a block: clear inline `$=` output on the cursor line instead, so
+    -- <leader>vqc undoes what <leader>vqr rendered there.
+    local row = vim.api.nvim_win_get_cursor(0)[1] - 1
+    local line = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or ""
+    if line:find("`%$=") then
+      render.clear_inline_line(buf, row)
+      return
+    end
     notify.warn("query: cursor not inside a code block")
     return
   end
-  render.clear(vim.api.nvim_get_current_buf(), close_line)
+  render.clear(buf, close_line)
 end
 
 --- Toggle rendered output under the cursor.
@@ -344,6 +478,10 @@ end
 --- Render all inline `$=expr` expressions in the current buffer.
 function M.render_inline_all()
   local buf = vim.api.nvim_get_current_buf()
+  -- Drop any previously rendered inline marks first: render_inline() only ADDS
+  -- extmarks, so re-running (e.g. pressing <leader>vqa twice) otherwise stacked
+  -- a second copy of every `$=` result next to the first.
+  render.clear_all_inline(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local current_file = vim.api.nvim_buf_get_name(buf)
   local count = 0
@@ -396,58 +534,8 @@ function M.clear_all()
   render.clear_all_inline(buf)
 end
 
--- =============================================================================
--- Commands
--- =============================================================================
-
-vim.api.nvim_create_user_command("VaultQuery", function()
-  M.render_block()
-end, { desc = "Render vault query under cursor" })
-
-vim.api.nvim_create_user_command("VaultQueryAll", function()
-  M.render_all()
-end, { desc = "Render all vault queries in buffer" })
-
-vim.api.nvim_create_user_command("VaultQueryClear", function()
-  M.clear_block()
-end, { desc = "Clear rendered output under cursor" })
-
-vim.api.nvim_create_user_command("VaultQueryClearAll", function()
-  M.clear_all()
-end, { desc = "Clear all rendered output in buffer" })
-
-vim.api.nvim_create_user_command("VaultQueryToggle", function()
-  M.toggle_block()
-end, { desc = "Toggle vault query output under cursor" })
-
-vim.api.nvim_create_user_command("VaultQueryRebuild", function()
-  M.rebuild_index()
-end, { desc = "Rebuild vault query index" })
-
--- =============================================================================
--- Keybindings
--- =============================================================================
-
-local keymap = vim.keymap.set
-local opts = function(desc)
-  return { desc = desc, silent = true }
-end
-
-keymap("n", "<leader>vqr", function() M.render_block() end, opts("Query: render"))
-keymap("n", "<leader>vqa", function() M.render_all() end, opts("Query: render all"))
-keymap("n", "<leader>vqc", function() M.clear_block() end, opts("Query: clear output"))
-keymap("n", "<leader>vqx", function() M.clear_all() end, opts("Query: clear all"))
-keymap("n", "<leader>vqq", function() M.toggle_block() end, opts("Query: toggle"))
-keymap("n", "<leader>vqi", function() M.rebuild_index() end, opts("Query: rebuild index"))
-
--- ---------------------------------------------------------------------------
--- Palette registrations: Search
--- ---------------------------------------------------------------------------
-palette.register_command("VaultQuery", "Render vault query under cursor", "Search", function() M.render_block() end, "<leader>vqr")
-palette.register_command("VaultQueryAll", "Render all vault queries in buffer", "Search", function() M.render_all() end, "<leader>vqa")
-palette.register_command("VaultQueryClear", "Clear rendered output under cursor", "Search", function() M.clear_block() end, "<leader>vqc")
-palette.register_command("VaultQueryClearAll", "Clear all rendered output in buffer", "Search", function() M.clear_all() end, "<leader>vqx")
-palette.register_command("VaultQueryToggle", "Toggle vault query output under cursor", "Search", function() M.toggle_block() end, "<leader>vqq")
-palette.register_command("VaultQueryRebuild", "Rebuild vault query index", "Search", function() M.rebuild_index() end, "<leader>vqi")
+-- Commands, keymaps and palette entries are registered as Tier-3 lazy stubs in
+-- andrew.vault.init (so opening a markdown buffer does not pull in this module's
+-- js2lua transpiler tree); they require this module on first :VaultQuery* use.
 
 return M

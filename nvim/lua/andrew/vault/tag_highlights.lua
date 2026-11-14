@@ -25,18 +25,41 @@ local default_categories = {
   { prefix = "person/", highlight = "VaultTagPerson" },
 }
 
+--- Memo: raw tag string -> matching category (or `false` for "no match", so
+--- the absence of a category is itself cached and distinguishable from "never
+--- computed"). Categories are static config (set once at load; no runtime
+--- mutation path — verified), so the memo never needs per-session invalidation.
+--- As a safety net we still rebind the memo if the categories TABLE IDENTITY
+--- changes (e.g. a test or hot-reload swaps config.tag_highlights.categories),
+--- so a stale category set can never serve a wrong result.
+local _category_memo = {}
+local _category_memo_src = nil
+
 --- Find the category that matches a tag based on its prefix.
 ---@param tag string the tag text (without #)
 ---@return table|nil category the matching category ({ prefix, highlight }) or nil
 function M.find_tag_category(tag)
   local categories = config.tag_highlights.categories or default_categories
+  -- Invalidate the memo if the backing categories table was swapped out.
+  if categories ~= _category_memo_src then
+    _category_memo = {}
+    _category_memo_src = categories
+  end
+  local memoized = _category_memo[tag]
+  if memoized ~= nil then
+    return memoized or nil
+  end
+
   local lower = tag:lower()
+  local result = nil
   for _, cat in ipairs(categories) do
     if lower:sub(1, #cat.prefix) == cat.prefix then
-      return cat
+      result = cat
+      break
     end
   end
-  return nil
+  _category_memo[tag] = result or false
+  return result
 end
 
 -- ---------------------------------------------------------------------------

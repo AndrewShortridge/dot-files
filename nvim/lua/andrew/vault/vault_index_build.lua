@@ -11,46 +11,18 @@ local coalescer = require("andrew.vault.request_coalescer")
 local pat = require("andrew.vault.patterns")
 local sharing = require("andrew.vault.structural_sharing")
 local log = require("andrew.vault.vault_log").scope("index.build")
-local bit = require("bit")
+local crc32 = require("andrew.vault.vault_crc32")
 
 -- ---------------------------------------------------------------------------
 -- File-level content hashing (CRC32 / SHA-256)
 -- ---------------------------------------------------------------------------
-
-local crc32_table
-local function ensure_crc32_table()
-  if crc32_table then return end
-  crc32_table = {}
-  for i = 0, 255 do
-    local crc = i
-    for _ = 1, 8 do
-      if bit.band(crc, 1) == 1 then
-        crc = bit.bxor(bit.rshift(crc, 1), 0xEDB88320)
-      else
-        crc = bit.rshift(crc, 1)
-      end
-    end
-    crc32_table[i] = crc
-  end
-end
-
-local function compute_crc32(data)
-  ensure_crc32_table()
-  local crc = 0xFFFFFFFF
-  for i = 1, #data do
-    local byte = data:byte(i)
-    local idx = bit.band(bit.bxor(crc, byte), 0xFF)
-    crc = bit.bxor(bit.rshift(crc, 8), crc32_table[idx])
-  end
-  return string.format("%08x", bit.bxor(crc, 0xFFFFFFFF))
-end
 
 local function compute_sha256(data)
   return vim.fn.sha256(data)
 end
 
 local hash_functions = {
-  crc32 = compute_crc32,
+  crc32 = crc32.crc32,
   sha256 = compute_sha256,
 }
 
@@ -100,52 +72,151 @@ local function compute_batch_size(elapsed_ns, files_processed, base)
   return math.max(MIN_BATCH, math.min(adaptive, base * 4))
 end
 
---- Compute digests and parsed_data for each chunk, reusing cached data where available.
---- When cached_chunks and changed_set are provided, only re-parses changed chunks.
---- Strips raw lines from chunks after processing.
+--- Re-apply a line delta to an unchanged chunk's cached parsed_data.
+--- Only headings/block_ids/tasks carry .line numbers; outlinks/inline_fields/tags
+--- have none, so they are reused by reference. A fresh copy is produced (rather
+--- than mutating the cached pd) so the cached chunk keeps its original absolute
+--- lines for the NEXT diff. The result is byte-identical to re-parsing the chunk
+--- at its new position (parse_chunk offsets by start_line-1).
+---@param pd table Cached parsed_data
+---@param delta number new_chunk.start_line - cached_chunk.start_line
+---@return table shifted parsed_data
+local function offset_parsed_data(pd, delta)
+  local function shift(arr)
+    local out = {}
+    for i, item in ipairs(arr) do
+      local copy = {}
+      for k, v in pairs(item) do copy[k] = v end
+      copy.line = item.line + delta
+      out[i] = copy
+    end
+    return out
+  end
+  return {
+    headings = shift(pd.headings or {}),
+    block_ids = shift(pd.block_ids or {}),
+    tasks = shift(pd.tasks or {}),
+    outlinks = pd.outlinks,
+    inline_fields = pd.inline_fields,
+    tags = pd.tags,
+  }
+end
+
+--- Compute digests and parse parsed_data for each chunk from its own lines.
+--- Every chunk is parsed from its in-memory lines (no disk re-read); this is
+--- cheap (string ops over already-split lines) and removes the need to persist
+--- parsed_data, which verbatim duplicates the entry's merged top-level fields.
+--- When changed_set is supplied (partial update), unchanged chunks reuse the
+--- prior entry's cached parsed_data instead of re-parsing: shared by reference
+--- when the position is identical, or line-shifted when the chunk moved but its
+--- digest is unchanged. changed_set == nil means "parse every chunk" (cold build
+--- and fallback paths). Strips raw lines from chunks after processing.
 ---@param chunks table[] Chunks from chunk_by_headings (with .lines)
 ---@param has_fm boolean Whether the file has frontmatter (chunk 1 is FM)
----@param fm_fields table|nil Parsed frontmatter fields
----@param cached_chunks table[]|nil Previous chunks with .parsed_data
----@param changed_set table<integer, boolean>|nil Set of changed chunk indices (nil = all changed)
+---@param fm_fields table|nil Parsed frontmatter fields (needed so an FM chunk's YAML isn't mis-parsed as body)
+---@param cached_chunks table[]|nil Prior entry's chunks (positionally aligned; carry parsed_data)
+---@param changed_set table<integer,boolean>|nil Set of 1-indexed changed chunks (nil = parse all)
 local function process_chunks(chunks, has_fm, fm_fields, cached_chunks, changed_set)
   for i, chunk in ipairs(chunks) do
     if not chunk.digest then
       chunk.digest = chunker.chunk_digest(chunk.lines)
     end
-    if not changed_set or changed_set[i] then
-      local is_fm = (i == 1 and has_fm)
+    local is_fm = (i == 1 and has_fm)
+    local cached = cached_chunks and cached_chunks[i]
+    -- Reuse cached parsed_data for an unchanged chunk whose digest still matches.
+    -- Requires cached.parsed_data to exist (loaded-from-disk chunks have none, so
+    -- they fall through to a full parse — see strip_derived in vault_index.lua).
+    if changed_set and not changed_set[i]
+      and cached and cached.parsed_data and cached.digest == chunk.digest then
+      if cached.start_line == chunk.start_line then
+        chunk.parsed_data = cached.parsed_data
+      else
+        chunk.parsed_data = offset_parsed_data(
+          cached.parsed_data, chunk.start_line - cached.start_line
+        )
+      end
+    else
       chunk.parsed_data = parser.parse_chunk(
         chunk.lines, chunk.start_line, is_fm and fm_fields or nil
       )
-    else
-      chunk.parsed_data = cached_chunks[i].parsed_data
     end
     chunk.lines = nil
   end
 end
 
---- Build entry by copying old_entry fields and applying selective overrides.
---- Shallow-copies raw fields from old_entry (skipping metatable-derived values),
---- updates stat fields, applies overrides, then delegates to make_entry which
---- is the single source of truth for the entry shape.
----@param old_entry table Previous entry to copy fields from
+--- Warm a loaded entry's per-chunk parsed_data in the background.
+--- Post-load entries carry only slim chunks ({start_line, end_line, digest}, see
+--- strip_derived); without parsed_data the reuse guard in process_chunks misses,
+--- so the file's FIRST incremental update re-parses ALL chunks instead of only
+--- the touched one(s). This pre-derives parsed_data from the on-disk chunk lines
+--- so that first save hits the fast reuse path. Pure-additive: only attaches
+--- parsed_data onto the live chunks (start_line/end_line/digest untouched), so a
+--- race with a real update can at worst waste a parse, never corrupt the entry.
+--- Reads from DISK (not the buffer) so it is safe off the open path; an alignment
+--- guard skips warming entirely if the file diverged from the loaded chunks
+--- (the next update_file then does the correct diff). Idempotent: a no-op once
+--- parsed_data is present (the live/post-update state).
+---@param index VaultIndex
+---@param abs_path string
+function B.warm_chunk_cache(index, abs_path)
+  if not config.index.chunking_enabled then return end
+
+  local rel_path = index:_rel_path(abs_path)
+  if not rel_path or not rel_path:match(pat.MD_EXTENSION) then return end
+
+  local entry = index.files[rel_path]
+  if not entry or not entry._chunks or #entry._chunks <= 1 then return end
+
+  -- Already warmed (live entry after a real update) — nothing to do.
+  if entry._chunks[1].parsed_data ~= nil then return end
+
+  local content = parser.read_file(abs_path)
+  if not content then return end
+
+  local lines = vim.split(content, "\n", { plain = true })
+  if #lines < config.index.min_chunk_lines then return end
+
+  local new_chunks, has_fm = chunker.chunk_by_headings(lines)
+  if #new_chunks <= 1 then return end
+
+  for _, chunk in ipairs(new_chunks) do
+    chunk.digest = chunker.chunk_digest(chunk.lines)
+  end
+
+  -- Safety guard: only warm when the file on disk still matches the loaded
+  -- chunks (same count AND positionally-aligned digests). If they diverge the
+  -- file changed since persist/load, so attaching parsed_data keyed to new
+  -- digests onto the old slim chunks would be inconsistent — skip and let the
+  -- next real update_file diff and re-parse correctly.
+  if #new_chunks ~= #entry._chunks then return end
+  for i = 1, #new_chunks do
+    if new_chunks[i].digest ~= entry._chunks[i].digest then return end
+  end
+
+  -- Parse every chunk fresh (changed_set=nil) — the exact "parse everything"
+  -- path a cold parse_file_chunked uses, so the result is byte-identical.
+  process_chunks(new_chunks, has_fm, entry.frontmatter, nil, nil)
+  for i = 1, #new_chunks do
+    entry._chunks[i].parsed_data = new_chunks[i].parsed_data
+  end
+end
+
+--- Build entry from old_entry with updated stat fields and selective overrides.
+--- Delegates straight to make_entry, which inherits any unset named field from
+--- old_entry — so there is no intermediate shallow copy, and the lazy
+--- metatable-derived keys (abs_path, tag_set, …) on old_entry are never
+--- forwarded. The overrides table doubles as make_entry's `fields` arg; we
+--- write the stat updates into it (callers at the chunk paths pass a fresh
+--- literal; the no-change path passes nil, so allocate one).
+---@param old_entry table Previous entry to inherit unset fields from
 ---@param stat table File stat
 ---@param overrides table|nil Fields to override (any key in make_entry's fields table)
 ---@return VaultIndexEntry
 local function entry_from_old(old_entry, stat, overrides)
-  local fields = {}
-  for k, v in pairs(old_entry) do
-    fields[k] = v
-  end
-  fields.mtime = stat.mtime.sec
-  fields.size = stat.size
-  if overrides then
-    for k, v in pairs(overrides) do
-      fields[k] = v
-    end
-  end
-  return parser.make_entry(fields)
+  overrides = overrides or {}
+  overrides.mtime = stat.mtime.sec
+  overrides.size = stat.size
+  return parser.make_entry(overrides, old_entry)
 end
 
 --- Validate a chunked-parse entry against a full parse of the same content.
@@ -268,6 +339,13 @@ local function parse_file_chunked(abs_path, rel_path, stat, old_entry, pre_conte
   local cached_chunks = old_entry._chunks
   local changed_indices = chunker.diff_chunks(new_chunks, cached_chunks)
 
+  -- Set form of changed_indices, used by process_chunks to skip re-parsing
+  -- unchanged chunks (reusing their cached parsed_data instead).
+  local changed_set = {}
+  for _, idx in ipairs(changed_indices) do
+    changed_set[idx] = true
+  end
+
   -- Nothing changed: create new entry with updated mtime/size,
   -- reusing all sub-tables from old_entry (avoids mutating the live index entry).
   if #changed_indices == 0 then
@@ -290,13 +368,16 @@ local function parse_file_chunked(abs_path, rel_path, stat, old_entry, pre_conte
     return entry
   end
 
-  -- Build changed set for O(1) lookup
-  local changed_set = {}
-  for _, idx in ipairs(changed_indices) do
-    changed_set[idx] = true
+  -- Whether the frontmatter chunk (always chunk 1) is among the changed set.
+  -- process_chunks re-parses only changed chunks (reusing cached parsed_data for
+  -- the rest); this only selects between re-parsing frontmatter vs reusing the
+  -- old entry's frontmatter.
+  local fm_changed = false
+  if has_fm then
+    for _, idx in ipairs(changed_indices) do
+      if idx == 1 then fm_changed = true break end
+    end
   end
-
-  local fm_changed = (has_fm and changed_set[1])
 
   local entry
   if fm_changed then
@@ -330,8 +411,10 @@ local function parse_file_chunked(abs_path, rel_path, stat, old_entry, pre_conte
       _chunks = new_chunks,
     })
   else
-    -- FM unchanged (or no FM): reuse old frontmatter and file-level fields
-    process_chunks(new_chunks, has_fm, nil, cached_chunks, changed_set)
+    -- FM unchanged (or no FM): reuse old frontmatter and file-level fields.
+    -- Pass old_entry.frontmatter so an unchanged FM chunk re-parses with its
+    -- frontmatter fields (else parse_chunk treats the YAML as body, mis-extracting tags).
+    process_chunks(new_chunks, has_fm, old_entry.frontmatter, cached_chunks, changed_set)
 
     local merged = chunker.merge_chunk_data(new_chunks)
 
@@ -568,9 +651,29 @@ function B.update_files_batch(index, abs_paths)
   end
 
   if #changed_rel_paths > 0 or #deleted_rel_paths > 0 then
+    local vi_mod = package.loaded["andrew.vault.vault_index"]
     index:_update_name_index_incremental(old_entries, changed_rel_paths, deleted_rel_paths)
-    index:_recompute_inlinks_incremental(changed_rel_paths, deleted_rel_paths)
+    -- Only sources whose outlink SET actually changed contribute new inlink
+    -- edges; prose-only edits leave the outlink set byte-identical and are
+    -- skipped to avoid re-resolving every outlink on every save.
+    local outlinks_changed = nil
+    if vi_mod and vi_mod._build_outlinks_changed_set then
+      outlinks_changed = vi_mod._build_outlinks_changed_set(old_entries, index.files, changed_rel_paths)
+    end
+    index:_recompute_inlinks_incremental(changed_rel_paths, deleted_rel_paths, outlinks_changed)
     index:_update_precomputed_sets_incremental(old_entries, changed_rel_paths, deleted_rel_paths)
+    -- Keep the summary tree fresh so all_tags()/tags_with_counts()/
+    -- all_frontmatter_keys()/all_inline_field_keys() reflect this save without
+    -- waiting for the next full build. apply_delta is O(depth * fields-changed)
+    -- — no sibling sweep. Run it unconditionally for changed files: inline_field
+    -- keys feed the tree but aren't tracked by the diff machinery, so a
+    -- diff-based skip-guard would reintroduce staleness for inline keys.
+    for _, rp in ipairs(changed_rel_paths) do
+      index._summary_tree:apply_delta(rp, old_entries[rp], index.files[rp])
+    end
+    for _, rp in ipairs(deleted_rel_paths) do
+      index._summary_tree:apply_delta(rp, old_entries[rp], nil)
+    end
     index:_schedule_persist(changed_rel_paths, deleted_rel_paths)
 
     -- Separate added (new) vs modified paths for tiered invalidation
@@ -584,11 +687,13 @@ function B.update_files_batch(index, abs_paths)
       end
     end
 
-    -- Compute change_types by diffing old vs new entries for interest-based filtering
-    local vi_mod = package.loaded["andrew.vault.vault_index"]
-    local change_types = vi_mod and vi_mod._compute_change_types
-      and vi_mod._compute_change_types(old_entries, index.files, modified, added, deleted_rel_paths)
-      or nil
+    -- Compute change_types by diffing old vs new entries for interest-based
+    -- filtering. Skip the diff entirely when no subscriber declares interests —
+    -- nil change_types is treated as "all changed" by interests_overlap().
+    local change_types = nil
+    if vi_mod and vi_mod._compute_change_types and index:_has_interest_subscribers() then
+      change_types = vi_mod._compute_change_types(old_entries, index.files, modified, added, deleted_rel_paths)
+    end
 
     -- Pass relative paths (normalized at source) for consistent subscriber handling
     local ctx = {

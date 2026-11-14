@@ -9,8 +9,10 @@ return {
   -- Repository: https://github.com/folke/todo-comments.nvim
   "folke/todo-comments.nvim",
 
-  -- Load when reading files
-  event = { "BufReadPre", "BufNewFile" },
+  -- Load only for code filetypes (shared list) for its own highlight/nav. It is
+  -- ALSO a dependency of fzf-lua and trouble, which load it on demand for the
+  -- todo pickers regardless of this ft gate.
+  ft = require("andrew.lsp_filetypes"),
 
   -- Dependencies
   dependencies = { "nvim-lua/plenary.nvim" },

@@ -4,7 +4,7 @@
 #
 # A "project session" is any OS window whose wm_class matches
 # `kitty-project-<name>` (the convention used by session-picker.sh's spawn
-# path and by ksession.sh restore output). This helper enumerates every
+# path and by `ksession restore` output). This helper enumerates every
 # kitty process by walking /tmp/kitty-* sockets, queries each via
 # `kitty @ ls`, and emits the deduped set of project names.
 #
@@ -15,7 +15,7 @@
 #   running_session_names
 #       Prints one project name per line to stdout (sorted, deduped).
 #       Excludes the `ssh-*` ephemeral namespace (those windows count as
-#       running for session-picker.sh's dedup, but ksession.sh / .conf
+#       running for session-picker.sh's dedup, but ksession / .conf
 #       files never reference them; surfacing them here would just add
 #       noise).
 #

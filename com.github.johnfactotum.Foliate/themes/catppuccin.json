@@ -1,0 +1,5 @@
+{
+    "label": "Catppuccin",
+    "light": { "fg": "#4c4f69", "bg": "#eff1f5", "link": "#1e66f5" },
+    "dark":  { "fg": "#cdd6f4", "bg": "#1e1e2e", "link": "#89b4fa" }
+}

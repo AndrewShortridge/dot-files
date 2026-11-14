@@ -10,27 +10,9 @@ local body_template = [==[
 **Maturity:** `{{maturity}}`
 
 ---
-
-## Core Idea
-
-> [!abstract] State the concept in 2-3 sentences. If you can't, it might need to be split into multiple notes.
->
-
-## Explanation
+## Introduction
 
 
-
-## Evidence / Support
-
-> [!check] What observations, data, or literature support this idea?
-
-- [[]]
-
-## Counterpoints / Limitations
-
-> [!warning] Where does this idea break down or not apply?
-
--
 
 ## Connections
 
@@ -40,26 +22,15 @@ local body_template = [==[
 
 - [[]]
 
-### Relevant Methods
+### Related Papers
 
 - [[]]
-
-### Projects Where This Applies
-
-- [[]]
-
-## Origin
-
-> Where did this idea first come up?
-
-- First noted in: [[]]
-- Triggered by:
 
 ## Open Questions
 
 - [ ]
 
-## Notes
+## Atomic Literature Notes
 ]==]
 
 function M.run(e, p)

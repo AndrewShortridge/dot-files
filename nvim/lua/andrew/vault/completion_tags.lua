@@ -1,7 +1,12 @@
 local base = require("andrew.vault.completion_base")
+local config = require("andrew.vault.config")
 local pat = require("andrew.vault.patterns")
+local char_bag = require("andrew.vault.char_bag")
 
 local _prefix_index = nil
+
+-- Flat-mode CharBag pre-filter (own superset-narrowing cache).
+local flat_filter = base.new_charbag_filter()
 
 --- Build tag completion items from the vault index.
 ---@param vault_path string
@@ -43,13 +48,25 @@ local function build(_vault_path, callback)
     local count = counts[tag]
     local has_children = has_children_set[tag] or false
 
-    items[#items + 1] = base.make_item("#" .. tag, tag, tag,
+    local item = base.make_item("#" .. tag, tag, tag,
       has_children and base.KIND.Folder or base.KIND.Keyword, {
       sortText = base.freq_sort_text(count, tag),
       description = has_children
         and base.count_label(count) .. " +"
         or base.count_label(count),
     })
+    items[#items + 1] = item
+  end
+
+  -- Attach per-item char bags only if the tag list can reach the prefilter
+  -- threshold; the distinct-tag count is unrelated to file_count, so gate on the
+  -- exact item count. Below threshold the flat-mode sweep never fires.
+  local pf = config.prefilter
+  if pf.enabled and pf.completion_char_bag
+    and #items >= (pf.min_candidates_for_charbag or 500) then
+    for _, item in ipairs(items) do
+      item._char_bag = char_bag.from_string(item.filterText)
+    end
   end
 
   -- Pre-index: prefix_string -> { immediate = items[], descendants = items[] }
@@ -86,6 +103,14 @@ end
 local function get_completions(self, ctx, items, callback)
   local before = ctx.line:sub(1, ctx.cursor[2])
 
+  -- Cheap pre-gate: a tag completion is impossible unless a '#' is present.
+  -- A plain-byte find (~0.07us) short-circuits the common prose case before
+  -- the two unanchored/backtracking matches below (~3us on a 176-char line).
+  if not before:find("#", 1, true) then
+    callback(base.empty_response)
+    return
+  end
+
   -- Only trigger after a # that looks like a tag start
   if not before:match(pat.TAG_TRIGGER) and not before:match("^#[%w_/-]*$") then
     callback(base.empty_response)
@@ -116,8 +141,19 @@ local function get_completions(self, ctx, items, callback)
       callback(base.empty_response)
     end
   else
-    -- Flat mode: return all items
-    callback(base.response(items))
+    -- Flat mode: apply CharBag pre-filter before returning. `typed` already
+    -- excludes the leading '#', so a bare '#' trigger leaves it empty and the
+    -- full list is returned unchanged. The sweep is skipped for small lists —
+    -- blink re-filters returned lists with its own fuzzy matcher.
+    local pf = config.prefilter
+    if pf.enabled and pf.completion_char_bag
+      and #items >= (pf.min_candidates_for_charbag or 500)
+      and #typed >= (pf.min_query_length or 2) then
+      local query_bag = char_bag.from_string(typed)
+      callback(base.response(flat_filter(items, query_bag)))
+    else
+      callback(base.response(items))
+    end
   end
 end
 
