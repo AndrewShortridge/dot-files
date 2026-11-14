@@ -543,31 +543,6 @@ local function build_highlights(c)
     SnacksIndentScope          = { fg = c.accent },
 
     -- =========================================================================
-    -- Bufferline
-    -- CSS: inactive tab bg = --background-secondary-alt (crust)
-    --      active tab bg = --background-primary (base)
-    --      active tab text = #1A7DA4 (accent, hardcoded in CSS)
-    --      inactive tab text = --text-faint
-    --      tab container bg = accent
-    -- =========================================================================
-    BufferLineFill             = { bg = c.bg_dark },
-    BufferLineBackground      = { fg = c.fg_faint, bg = c.bg_dark },
-    BufferLineBuffer           = { fg = c.fg_faint, bg = c.bg_dark },
-    BufferLineBufferSelected   = { fg = c.accent, bg = c.bg, bold = true },
-    BufferLineBufferVisible    = { fg = c.fg_dim, bg = c.bg },
-    BufferLineTab              = { fg = c.fg_faint, bg = c.bg_dark },
-    BufferLineTabSelected      = { fg = c.accent, bg = c.bg, bold = true },
-    BufferLineTabClose         = { fg = c.red, bg = c.bg_dark },
-    BufferLineSeparator        = { fg = c.bg_dark, bg = c.bg_dark },
-    BufferLineSeparatorSelected = { fg = c.bg_dark, bg = c.bg },
-    BufferLineSeparatorVisible = { fg = c.bg_dark, bg = c.bg },
-    BufferLineIndicatorSelected = { fg = c.accent },
-    BufferLineModified         = { fg = c.yellow },
-    BufferLineModifiedSelected = { fg = c.yellow, bg = c.bg },
-    BufferLineCloseButton      = { fg = c.fg_faint, bg = c.bg_dark },
-    BufferLineCloseButtonSelected = { fg = c.red, bg = c.bg },
-
-    -- =========================================================================
     -- Trouble
     -- =========================================================================
     TroubleNormal              = { fg = c.fg, bg = c.bg_alt },

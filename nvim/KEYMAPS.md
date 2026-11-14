@@ -17,6 +17,7 @@
 - [Git (`<leader>g`)](#git-leaderg)
 - [Git Hunks (`<leader>gh`)](#git-hunks-leadergh)
 - [Diff Overlay (mini.diff)](#diff-overlay-minidiff)
+- [Diff Review (codediff.nvim)](#diff-review-codediffnvim)
 - [LSP & Code Actions (`<leader>c`, `g*`)](#lsp--code-actions-leaderc-g)
 - [Rust (`<leader>r`)](#rust-leaderr)
 - [Debug (`<leader>d`)](#debug-leaderd)
@@ -78,6 +79,7 @@ listed before generic ones. Covered by `tests/which_key_icons_spec.lua`.
 | `<leader>T` | Table Mode | Markdown table editing |
 | `<leader>v` | Vault | Obsidian vault operations (70+ keymaps) |
 | `<leader>x` | Trouble/Diag | Diagnostics and quickfix |
+| `<leader>y` | Yank Path | Copy a file path (with the selected lines, from Visual mode) for an agent prompt |
 
 **Vault sub-groups:**
 
@@ -109,6 +111,35 @@ listed before generic ones. Covered by `tests/which_key_icons_spec.lua`.
 
 **Auto-behavior:** Yanked text is highlighted for 300ms after `y` operations (TextYankPost autocmd).
 
+**Copying a reference for a coding agent:**
+
+| Mode | Key | Copies | Example |
+|------|-----|--------|---------|
+| n | `<leader>yf` | Path relative to the working directory | `src/solver.f90` |
+| n | `<leader>yp` | Absolute path | `/home/andrew/proj/src/solver.f90` |
+| v | `<leader>yf` | Relative path, plus the selected lines as a range | `src/solver.f90#L10-L24` |
+| v | `<leader>yp` | Absolute path, plus the selected lines as a range | `/home/andrew/proj/src/solver.f90#L10-L24` |
+
+Line numbers are added only when there is a selection; a selection within one
+line gives `#L10`. The reference goes to the system clipboard, and a message
+shows what was copied. Only the location is copied, never the text itself. A
+file outside the working directory keeps its absolute path under `<leader>yf`
+too. A buffer that is not a file (unnamed, a terminal, a plugin panel) copies
+nothing.
+
+Messages do not print on the row under the statusline. They appear in a small
+box at the bottom-right corner, just above the statusline: `3 lines yanked`,
+`3 fewer lines`, `3 more lines` after a put or an undo, `3 lines >ed 1 time`,
+a write confirmation, errors such as `E486: Pattern not found`, and whatever
+`vim.notify` prints. Several in a row stack in the same box, oldest at the top,
+and each line disappears 5 seconds after it arrived. Output taller than 10
+lines (`:map`, a long traceback) and `:!command` output open in a split at the
+bottom instead; `q` closes it. `:messages` still lists everything.
+
+The keys of the command being typed (`2d`, the size of a Visual selection) and
+`recording @q` moved from that row into the statusline, left of the
+diagnostics. The keys stay there until the next command.
+
 ---
 
 ## Navigation & Window Management
@@ -138,6 +169,12 @@ Seamlessly move between Neovim splits and tmux panes with the same keys:
 | n | `<leader>sx` | Close current split | Closes the focused split pane |
 | n | `<leader>sm` | Maximize/restore current split | Toggles between maximized and normal split size |
 
+**Auto-behavior:** only the split the cursor is in highlights its current line;
+the highlight moves with focus. A picker or the floating terminal opening on
+top does not take it away from the split underneath, and panels that use the
+line as their selection marker (Trouble, quickfix, the vault sidebar) keep
+theirs. `:set nocursorline` in a split turns it off there for good.
+
 ### Tabs (`<leader>t`)
 
 **Source:** `lua/andrew/core/keymaps.lua`, `lua/andrew/custom/plugins/terminal.lua`
@@ -150,6 +187,23 @@ Seamlessly move between Neovim splits and tmux panes with the same keys:
 | n | `<leader>tp` | Previous tab | Switch to the tab on the left |
 | n | `<leader>tf` | Open current buffer in new tab | Useful for temporarily maximizing a file |
 | n | `<leader>tt` | Toggle floating terminal | Opens/closes a persistent floating terminal window |
+
+**How tabs and splits are labelled:** the line at the top shows one slanted tab
+per tab page, named after the file its focused split holds; the current tab
+page is the green one, and `[+]` marks unsaved changes. Tabs are clickable.
+Each split also carries a small label with its file's icon and name at its
+top-right corner, which steps aside while the cursor is on the text under it.
+The label of the split the cursor is in is filled cyan; the others show the
+name in bold white with no box around it.
+`<leader>uA` hides or shows the tab line.
+
+**What the statusline says about the file:** after the git branch come the
+project name (only when the project is not the directory Neovim is working
+in), the file type's icon, and the file's path with the name in bold. The name
+turns cyan while the buffer has unsaved changes, and a lock follows it when the
+buffer cannot be written. A project is the nearest folder holding `.git`,
+`lua`, `package.json`, `Makefile`, `Cargo.toml`, `go.mod`, `pyproject.toml`, an
+Obsidian vault's `.obsidian` or a ZenNotes vault's `.zennotes`.
 
 ### Tabs -- LazyVim group (`<leader><Tab>`)
 
@@ -186,9 +240,9 @@ When inside the floating terminal:
 
 | Mode | Key | Description | How to Use |
 |------|-----|-------------|------------|
-| n | `<leader>ff` | Find files in current directory | Fuzzy search file names; type partial names to filter |
+| n | `<leader>ff` | Find files in current directory | Same picker as `<leader><space>`; dotfiles included. `:let g:file_picker_backend = "snacks"` opens the snacks picker instead for the session; see `lua/andrew/utils/file_picker.lua` |
 | n | `<leader>fr` | Find recently opened files | Quickly reopen files you worked on recently |
-| n | `<leader>fs` | Live grep (search string in cwd) | Search file contents; results update as you type |
+| n | `<leader>fs` | Live grep (search string in cwd) | Search file contents; results update as you type. Includes dotfiles (not `.git/`, not gitignored files) |
 | n | `<leader>fc` | Grep word under cursor | Place cursor on a word, press this to find all occurrences |
 | n | `<leader>fk` | Search keybindings | Fuzzy-search all active keymaps to find any binding |
 | n | `<leader>fh` | Search `:help` tags | Find Neovim help topics |
@@ -197,12 +251,24 @@ When inside the floating terminal:
 
 ### Inside fzf Picker
 
+Every fzf-lua picker shares one look, set in `lua/andrew/utils/fzf_look.lua`:
+the snacks picker's layout (the picker's name as the box title, an icon for a
+prompt, list and preview side by side from 120 columns, stacked below that)
+with the colours of fzf-lua's `telescope` profile.
+
+The pickers that are snacks' own — the GitHub ones on `<leader>gi` / `gI` /
+`gp` / `gP` and every `vim.ui.select` menu — are given the same colours by
+`lua/andrew/utils/snacks_look.lua`. Their keys are snacks' (`<C-j>` / `<C-k>`
+move the list), except that `<C-d>` / `<C-u>` page the preview in the GitHub
+pickers.
+
 These keys work when the fzf picker window is open:
 
 | Key | Description |
 |-----|-------------|
 | `<C-n>` / `<C-p>` | Navigate list down/up |
-| `<C-j>` / `<C-k>` | Scroll preview down/up |
+| `<C-j>` / `<C-k>` | Scroll preview down/up by line |
+| `<C-d>` / `<C-u>` | Scroll preview down/up by page (`<C-u>` no longer clears the query) |
 | `<C-q>` | Select all + accept |
 | `<CR>` (Enter) | Open in current window |
 | `ctrl-s` | Open in horizontal split |
@@ -231,31 +297,44 @@ Inside Yazi: `<f1>` = help, `<C-s>` = grep in directory.
 
 **Source:** `lua/andrew/plugins/git.lua` (a spec fragment for snacks.nvim)
 
-Ported from LazyVim. Every key is a direct snacks.nvim call, so nothing depends
-on LazyVim's util module. Hunk operations live one level deeper, under
+Ported from LazyVim key for key. The pickers (`gl` through `gD` below) are
+fzf-lua pickers: they look like every other fzf-lua picker, and their preview
+box shows the commit or diff through git-delta. Lazygit and git browse are
+direct snacks.nvim calls. Hunk operations live one level deeper, under
 [`<leader>gh`](#git-hunks-leadergh).
 
 | Mode | Key | Description | How to Use |
 |------|-----|-------------|------------|
-| n | `<leader>gg` | Lazygit (root dir) | Full lazygit TUI, opened at the git root |
+| n | `<leader>gg` | Lazygit (root dir) | Full lazygit TUI, opened at the git root. `e` on a file opens it in the window you launched from |
 | n | `<leader>gG` | Lazygit (cwd) | Same, but rooted at the current working directory |
-| n | `<leader>gl` | Git log | Commit picker for the repo |
-| n | `<leader>gL` | Git log (cwd) | Commits touching the current working directory |
-| n | `<leader>gc` | Commits (fzf-lua) | Same idea as `gl`, through the fzf-lua UI |
-| n | `<leader>gf` | Current file history | Every commit that touched this file |
-| n | `<leader>gb` | Blame line | Commits behind the line under the cursor |
-| n | `<leader>gs` | Git status | Changed files, with a diff preview |
-| n | `<leader>gS` | Git stash | Browse stashes; `<CR>` applies one |
-| n | `<leader>gd` | Git diff (hunks) | Every unstaged hunk in the repo |
-| n | `<leader>gD` | Git diff (origin) | Diff against `origin`, grouped by file |
+| n | `<leader>gl` | Git log | Commits of the repo the current file is in. `<CR>` checks the commit out, `<C-y>` copies its hash, `<A-d>` lists the files it changed |
+| n | `<leader>gL` | Git log (cwd) | Same, for the repo of the current working directory |
+| n | `<leader>gc` | Commits (fzf-lua) | Identical to `<leader>gL` |
+| n | `<leader>gf` | Current file history | Every commit that touched this file, followed across renames. `<CR>` opens the file as of that commit (`<C-s>` / `<C-v>` / `<C-t>` in a split / vsplit / tab) |
+| n | `<leader>gb` | Blame line | Commits that changed the line under the cursor (`git log -L`); same keys as `gf` |
+| n | `<leader>gs` | Git status | Changed files, with a diff preview. `<Left>` stages, `<Right>` unstages, `<C-x>` discards the change |
+| n | `<leader>gS` | Git stash | Browse stashes; `<CR>` applies one, `<C-x>` drops it |
+| n | `<leader>gd` | Git diff (hunks) | Every uncommitted changed line in the repo, staged or not; `<CR>` jumps to it |
+| n | `<leader>gD` | Git diff (origin) | Files changed since the branch forked from `origin`; `<A-d>` lists that file's changed lines |
 | n, x | `<leader>gB` | Git browse (open) | Open the current line or selection on the remote host |
 | n, x | `<leader>gY` | Git browse (copy) | Copy that URL to the clipboard instead |
+
+`<C-d>` / `<C-u>` page the preview in these pickers as in any other, which is
+why the two actions fzf-lua itself puts on `<C-d>` (in `gl` and `gD`) are on
+`<A-d>` here. A preview longer than 5000 lines is cut there.
 
 **Conditional keys.** `<leader>gg` / `<leader>gG` appear only when the `lazygit`
 binary is on `$PATH` (it is). The GitHub keys `<leader>gi` `<leader>gI`
 (issues) and `<leader>gp` `<leader>gP` (pull requests) appear only when the
-`gh` binary is installed — it is **not**, so they are currently inactive.
-Install `gh` and restart to get them.
+`gh` binary is installed (it is, from conda). They need a repo with a GitHub
+remote; elsewhere they report "no git remotes found". The pull-request list
+can take 10-30 seconds to fill on a large repo.
+
+**Editing from lazygit.** Pressing `e` on a file (or on a line in the diff
+view) quits lazygit and opens the file in the window `<leader>gg` was pressed
+in, at that line. Snacks' stock behaviour is a new tab; the override is ported
+from craftzdog's dotfiles and lives in `lua/andrew/utils/lazygit.lua`. The
+active panel border uses `WarningMsg` instead of snacks' `MatchParen`.
 
 ---
 
@@ -357,6 +436,52 @@ extra disables gitsigns; this config does not). The split of work:
 > overlay off. A `User MiniDiffUpdated` hook re-applies your choice whenever
 > mini.diff re-attaches, so it survives reloads. Turning it *off* is remembered
 > just as well; it is never forced back on.
+
+## Diff Review (codediff.nvim)
+
+**Source:** `lua/andrew/plugins/codediff.lua`
+
+A dedicated **tab** for reviewing a whole changeset: changed-files explorer on
+the left, VSCode-style two-pane diff on the right, refreshed as the repository
+changes. Options mirror craftzdog's dotfiles; his `<leader>d` keys are moved
+into the `<leader>g` git group, because `<leader>d` is the DAP group here. `t`
+is for "timeline": `h` could not carry over, `<leader>gh` being the Hunks prefix.
+
+| Mode | Key | Description | How to Use |
+|------|-----|-------------|------------|
+| n | `<leader>gv` | Toggle the review tab | Working-tree changes vs the index/HEAD; press again inside the tab (or `q`) to close it |
+| n | `<leader>gt` | File history | Commits that touched the current file; `<CR>` on one shows its diff |
+| n | `<leader>gT` | Repository history | Every commit with its changed files |
+
+Inside the review tab the plugin binds its own buffer-local keys and removes
+them when the tab closes. `g?` lists all of them; the ones used most:
+
+| Key | Description |
+|-----|-------------|
+| `q` | Close the review tab |
+| `]c` / `[c` | Next / previous change |
+| `]f` / `[f` | Next / previous file |
+| `j` / `k` (explorer) | Move and open the file under the cursor |
+| `gc` | Toggle compact mode (unchanged regions folded, 8 context lines) |
+| `t` | Toggle side-by-side / inline layout |
+| `-` | Stage / unstage the current file |
+| `<leader>hs` / `<leader>hu` / `<leader>hr` | Stage / unstage / discard the hunk under the cursor |
+| `do` / `dp` | Get / put the change from / to the other pane |
+| `<leader>b` / `<leader>e` | Toggle / focus the explorer |
+
+| Command | Description |
+|---------|-------------|
+| `:CodeDiff main` | Compare a branch, tag or commit with the working tree |
+| `:CodeDiff main...` | Changes since the merge base with `main` |
+| `:CodeDiff --staged` | Index vs HEAD only |
+| `:CodeDiff pr 512` | Review a pull request without checking it out |
+| `:CodeDiff install` | (Re)download the diff library |
+
+> **Keys it shadows while the tab is open.** `gc` replaces Comment.nvim's
+> operator (so `gcc` does not comment there), `gS` replaces substitute-to-EOL,
+> `[c` replaces treesitter-context's jump, and in the explorer `S` / `gs`
+> replace Flash treesitter-select / substitute. All are upstream defaults,
+> left as shipped; they revert when the tab closes.
 
 ## LSP & Code Actions (`<leader>c`, `g*`)
 

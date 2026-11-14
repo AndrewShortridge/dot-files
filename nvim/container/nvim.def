@@ -310,7 +310,7 @@ From: condaforge/miniforge3:latest
     # ultimately decides whether the bake worked.
     nvim --headless "+Lazy! load nvim-treesitter" \
                     "+TSUpdateSync" +qa                || echo "WARN: treesitter parser build incomplete"
-    # mason is ft-gated in this config, so force it loaded before installing
+    # mason is command-gated in this config, so force it loaded before installing
     nvim --headless "+Lazy! load mason.nvim" \
                     "+Lazy! load mason-tool-installer.nvim" \
                     "+MasonToolsInstallSync" +qa       || echo "WARN: mason servers incomplete"

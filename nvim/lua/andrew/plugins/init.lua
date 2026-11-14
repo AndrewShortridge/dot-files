@@ -83,9 +83,9 @@ return {
   -- Shows indentation levels with vertical lines
   require("andrew.plugins.indent-blankline"),
 
-  -- Tab/buffer line for managing multiple tabs
-  -- Shows open tabs with close buttons and status indicators
-  require("andrew.plugins.bufferline"),
+  -- Window labels: file icon and name at the top-right of every split
+  -- (the tabline itself is andrew/utils/tabline.lua, set up from init.lua)
+  require("andrew.plugins.incline"),
 
   -- Highlight and search for TODO, FIXME, HACK, etc. comments
   -- Keybindings: ]t (next), [t (previous), <leader>ft (fuzzy search)

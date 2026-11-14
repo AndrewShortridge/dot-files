@@ -19,49 +19,11 @@ return {
   -- Version constraint: Use latest 1.x stable version
   version = "1.*",
 
-  -- =============================================================================
-  -- Plugin Dependencies
-  -- =============================================================================
-  dependencies = {
-    -- Snippet engine for snippet expansion
-    {
-      "L3MON4D3/LuaSnip",
-      version = "v2.*",
-      build = "make install_jsregexp",
-
-      -- friendly-snippets MUST be a dependency of LuaSnip, not merely a sibling
-      -- in the list below. lazy.nvim loads dependencies in order and runs each
-      -- one's `config` before adding the next to the runtimepath, so the
-      -- pathless lazy_load() in this config ran while friendly-snippets was
-      -- still off the rtp -- it found ZERO snippet directories and every
-      -- language came up empty.
-      dependencies = { "rafamadriz/friendly-snippets" },
-
-      config = function()
-        local ls = require("luasnip")
-        ls.config.set_config({ enable_autosnippets = true })
-
-        -- Load VSCode-style snippets from friendly-snippets.
-        -- Fortran is excluded: friendly-snippets ships 84 generic Fortran
-        -- snippets that collide with the custom ones loaded from ./snippets
-        -- below (8 prefixes overlap outright).
-        require("luasnip.loaders.from_vscode").lazy_load({ exclude = { "fortran" } })
-        -- Load custom snippets (Modern Fortran style with full keywords)
-        require("luasnip.loaders.from_vscode").lazy_load({
-          paths = { vim.fn.stdpath("config") .. "/snippets" },
-        })
-        -- Load Lua snippets (math autosnippets for tex/markdown)
-        require("luasnip.loaders.from_lua").lazy_load({
-          paths = { vim.fn.stdpath("config") .. "/luasnippets" },
-        })
-      end,
-    },
-
-    -- Pre-built snippet collections for various languages. Also declared as a
-    -- dependency of LuaSnip above, which is what guarantees the load ORDER;
-    -- this entry just keeps it visible in blink.cmp's dependency list.
-    "rafamadriz/friendly-snippets",
-  },
+  -- No `dependencies`. The snippet engine (LuaSnip, `snippets.preset` below)
+  -- has its own spec in plugins/luasnip.lua and loads on InsertEnter only:
+  -- as a dependency it also loaded on the first ':' (CmdlineEnter above),
+  -- where nothing uses it. Should blink ever reach for it first, lazy.nvim
+  -- loads it on that require("luasnip").
 
   -- =============================================================================
   -- Plugin Configuration

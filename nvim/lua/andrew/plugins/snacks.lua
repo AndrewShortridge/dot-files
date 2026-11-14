@@ -26,11 +26,7 @@ return {
     -- invalidate the cache so the next access re-evaluates. This handles
     -- edge cases where another plugin's init() accessed Snacks.image before
     -- this spec was parsed.
-    if vim.env.SNACKS_KITTY == "1"
-      and Snacks
-      and Snacks.image
-      and Snacks.image.terminal
-    then
+    if vim.env.SNACKS_KITTY == "1" and Snacks and Snacks.image and Snacks.image.terminal then
       local term = Snacks.image.terminal
       if term._env and not term._env.placeholders then
         -- Cache was poisoned — clear it so next env() call picks up SNACKS_KITTY
@@ -70,15 +66,19 @@ return {
     },
 
     -- =======================================================================
-    -- vim.ui.select  (was dressing.nvim)
+    -- Picker: vim.ui.select (was dressing.nvim) + the file finder
     -- =======================================================================
-    -- `ui_select` is the ONLY reason the picker module is enabled: fzf-lua
-    -- stays the config's interactive picker (files/grep/LSP/colorschemes and
-    -- the fortran Makefile picker all call fzf-lua directly, and
+    -- fzf-lua stays the config's main interactive picker (grep/LSP/colorschemes
+    -- and the fortran Makefile picker all call fzf-lua directly, and
     -- lsp_keymaps.lua's <leader>ca uses fzf-lua's own temporary ui_select).
+    -- The snacks picker is used for two things: vim.ui.select (`ui_select`)
+    -- and the "snacks" backend of the file finder on <leader>ff /
+    -- <leader><space> (andrew/utils/file_picker.lua). The git pickers in
+    -- plugins/git.lua are fzf-lua pickers.
+    --
     -- snacks.picker.setup() does nothing except `vim.ui.select = Snacks.picker.select`
-    -- (snacks/picker/init.lua:92-96) -- no keymaps, no user commands -- so this
-    -- adds a vim.ui.select backend without displacing fzf-lua anywhere.
+    -- (snacks/picker/init.lua:92-96) -- no keymaps, no user commands -- so
+    -- enabling it displaces fzf-lua nowhere by itself.
     -- `format_item` is honoured via Snacks.picker.format.ui_select, and
     -- `opts.kind` selects a `kinds[<kind>]` override table (none needed here;
     -- snacks already special-cases kind == "codeaction" in its formatter).
@@ -86,13 +86,19 @@ return {
       enabled = true,
       ui_select = true,
 
+      -- See the module for why the box title cannot be coloured with a
+      -- highlight group alone.
+      on_show = function(picker)
+        require("andrew.utils.snacks_look").style_box_titles(picker)
+      end,
+
       -- dressing delegated vim.ui.select to fzf-lua here (fzf-lua was the
       -- highest-priority backend installed), where ONE <Esc> aborts. The snacks
       -- picker starts in insert mode and maps <Esc> to `cancel` in NORMAL mode
       -- only (snacks/picker/config/defaults.lua:233), so the first <Esc> merely
       -- left insert mode and a second was needed. Scoped to the `select` source
-      -- so that this only affects vim.ui.select -- if a real snacks picker is
-      -- ever enabled it keeps snacks' own two-stage <Esc>.
+      -- so that this only affects vim.ui.select -- the real snacks pickers
+      -- (files, git) keep snacks' own two-stage <Esc>.
       sources = {
         select = {
           win = {
@@ -103,24 +109,60 @@ return {
             },
           },
         },
+
+        -- File finder, as in craftzdog's dotfiles: the stock picker plus
+        -- `hidden = true`, so dotfiles are listed. .gitignore is still
+        -- respected and snacks always skips .git.
+        --
+        -- `exclude` is this config's addition, mirroring the `--exclude
+        -- .obsidian` on fzf-lua's fd command (plugins/fzf-lua.lua): with hidden
+        -- files on, Obsidian's config folder would otherwise add ~100
+        -- JSON/CSS/JS files whenever the cwd is the vault. The folder exists
+        -- nowhere else, so it is a no-op in every other project.
+        files = {
+          hidden = true,
+          exclude = { ".obsidian" },
+        },
+
+        -- The GitHub pickers (<leader>gi / gI / gp / gP in plugins/git.lua)
+        -- and the diff picker they open: <C-d> / <C-u> page the preview, as
+        -- in every fzf-lua picker. Their colours come from the same module,
+        -- applied in config() below.
+        gh_issue = require("andrew.utils.snacks_look").preview_paging_opts(),
+        gh_pr = require("andrew.utils.snacks_look").preview_paging_opts(),
+        gh_diff = require("andrew.utils.snacks_look").preview_paging_opts(),
       },
     },
 
-    -- Smooth scrolling (LazyVim parity). snacks.scroll animates window scroll
-    -- via snacks.animate; both are gated behind vim.g.snacks_animate, which
-    -- <leader>ua flips. Terminal buffers are excluded by scroll's own default
-    -- filter. Enabling `animate` here is what gives <leader>ua something to
-    -- turn off -- dim and scroll are its only consumers in this config.
+    -- Smooth (animated) scrolling is OFF by default -- a deliberate divergence
+    -- from LazyVim, which ships `scroll = { enabled = true }`. <leader>uS
+    -- (Snacks.toggle.scroll, below) calls Snacks.scroll.enable() directly, so
+    -- it still turns the animation on for a session.
     --
-    -- Both are deliberately BARE. LazyVim passes `scroll = { enabled = true }`
-    -- with no overrides (lazyvim/plugins/ui.lua:279) and no top-level `animate`
-    -- table at all, so snacks' own defaults ARE the LazyVim scroll speed:
-    -- 10ms/step capped at 200ms, linear; a scroll repeated within 100ms uses
-    -- the faster 5ms/step, 50ms-cap profile (snacks/scroll.lua:28-43), and
-    -- animate contributes fps=120 (snacks/animate/init.lua:33). Adding a
-    -- duration/easing override here would silently break that parity.
+    -- `animate` stays enabled: dim still consumes it, and scroll does when
+    -- toggled on -- both are gated behind vim.g.snacks_animate (<leader>ua).
+    --
+    -- The speed is spelled out below so it can be tuned here; the values are
+    -- snacks' own defaults (snacks/scroll.lua:28-38), which are also LazyVim's
+    -- speed. Lower numbers are faster. The top-level `animate` table is left
+    -- bare: it contributes fps=120 (snacks/animate/init.lua:33).
     animate = { enabled = true },
-    scroll = { enabled = true },
+    scroll = {
+      enabled = false,
+      -- A single scroll: `step` ms per line scrolled, capped at `total` ms
+      -- for the whole animation.
+      animate = {
+        duration = { step = 2, total = 200 },
+        easing = "linear",
+      },
+      -- A scroll repeated within `delay` ms of the previous one (held <C-d>,
+      -- mouse wheel) uses this faster profile instead.
+      animate_repeat = {
+        delay = 100,
+        duration = { step = 5, total = 50 },
+        easing = "linear",
+      },
+    },
 
     -- Scratch buffer (toggled via <leader>. in core/keymaps.lua)
     scratch = { enabled = true },
@@ -133,6 +175,25 @@ return {
     -- so the keys would appear bound and simply do nothing.
     words = { enabled = true },
 
+    -- Lazygit float (<leader>gg / <leader>gG in plugins/git.lua). Both settings
+    -- come from craftzdog's dotfiles. Only the differences from snacks' defaults
+    -- are listed: `configure = true` and `os.editPreset = "nvim-remote"` stay,
+    -- and `os.edit` / `os.editAtLine` take precedence over the preset's own.
+    lazygit = {
+      config = {
+        -- `e` on a file opens it in the window lazygit was launched from,
+        -- instead of the preset's new tab. See andrew/utils/lazygit.lua.
+        os = {
+          edit = require("andrew.utils.lazygit").edit_command(),
+          editAtLine = require("andrew.utils.lazygit").edit_command({ at_line = true }),
+        },
+      },
+      -- Active panel border; snacks' default is MatchParen.
+      theme = {
+        activeBorderColor = { fg = "WarningMsg", bold = true },
+      },
+    },
+
     -- Inline image rendering in markdown buffers
     image = {
       enabled = true,
@@ -143,8 +204,23 @@ return {
 
       -- Add SVG to supported formats (not in snacks defaults, requires magick)
       formats = {
-        "png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "heic", "avif",
-        "svg", "mp4", "mov", "avi", "mkv", "webm", "pdf", "icns",
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "bmp",
+        "webp",
+        "tiff",
+        "heic",
+        "avif",
+        "svg",
+        "mp4",
+        "mov",
+        "avi",
+        "mkv",
+        "webm",
+        "pdf",
+        "icns",
       },
 
       doc = {
@@ -205,7 +281,15 @@ return {
           -- Third try: search common image directories at vault root.
           -- Handles wikilink embeds like ![[image.png]] where the file
           -- lives in <vault_root>/attachments/image.png.
-          for _, dir in ipairs({ "attachments", "assets", "images", "img", "media", "static", "public" }) do
+          for _, dir in ipairs({
+            "attachments",
+            "assets",
+            "images",
+            "img",
+            "media",
+            "static",
+            "public",
+          }) do
             candidate = vault_root .. "/" .. dir .. "/" .. src
             if vim.uv.fs_stat(candidate) then
               return candidate
@@ -271,6 +355,9 @@ return {
 
   config = function(_, opts)
     require("snacks").setup(opts)
+
+    -- Colour snacks' pickers like the fzf-lua ones (andrew/utils/fzf_look.lua).
+    require("andrew.utils.snacks_look").setup()
 
     -- Inline math: skip the equation under the cursor while it is being typed
     -- (otherwise every keystroke is a fresh pdflatex + convert job) and never
@@ -338,11 +425,13 @@ return {
     Snacks.toggle.option("relativenumber", { name = "Relative Number" }):map("<leader>uL")
     Snacks.toggle.line_number():map("<leader>ul")
     Snacks.toggle.diagnostics():map("<leader>ud")
-    Snacks.toggle.option("conceallevel", {
-      off = 0,
-      on = vim.o.conceallevel > 0 and vim.o.conceallevel or 2,
-      name = "Conceal Level",
-    }):map("<leader>uc")
+    Snacks.toggle
+      .option("conceallevel", {
+        off = 0,
+        on = vim.o.conceallevel > 0 and vim.o.conceallevel or 2,
+        name = "Conceal Level",
+      })
+      :map("<leader>uc")
     Snacks.toggle.treesitter():map("<leader>uT")
     Snacks.toggle.inlay_hints():map("<leader>uh")
     Snacks.toggle.dim():map("<leader>uD")
@@ -356,16 +445,16 @@ return {
     require("andrew.utils.autoformat").snacks_toggle():map("<leader>uf")
     require("andrew.utils.autoformat").snacks_toggle(true):map("<leader>uF")
 
-    -- Tabline. bufferline owns showtabline by default and re-asserts it on
-    -- every redraw, which would undo this toggle; bufferline.lua sets
-    -- auto_toggle_bufferline = false to hand the option over, and
-    -- core/options.lua pins the visible value at 2.
-    Snacks.toggle.option("showtabline", {
-      off = 0,
-      on = 2,
-      global = true,
-      name = "Tabline",
-    }):map("<leader>uA")
+    -- Tabline. Nothing else manages 'showtabline' (andrew/utils/tabline.lua
+    -- only sets 'tabline'); core/options.lua pins the visible value at 2.
+    Snacks.toggle
+      .option("showtabline", {
+        off = 0,
+        on = 2,
+        global = true,
+        name = "Tabline",
+      })
+      :map("<leader>uA")
 
     -- Light / dark. LazyVim just flips vim.o.background, which only works for
     -- schemes that redraw themselves on OptionSet background. This config needs

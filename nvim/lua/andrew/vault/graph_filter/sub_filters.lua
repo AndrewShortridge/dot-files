@@ -8,24 +8,24 @@ local config = require("andrew.vault.config")
 local date_utils = require("andrew.vault.date_utils")
 local engine = require("andrew.vault.engine")
 local fzf = require("fzf-lua")
+local fzf_look = require("andrew.utils.fzf_look")
 local tags_mod = require("andrew.vault.tags")
 local ui = require("andrew.vault.ui")
 local search_query = require("andrew.vault.search_query")
 
 --- Open an fzf multi-select picker and return selected items.
 ---@param items string[]
----@param prompt string
+---@param label string picker title
 ---@param on_select fun(selected: string[])
-local function fzf_multi_select(items, prompt, on_select)
-  fzf.fzf_exec(items, {
-    prompt = prompt,
+local function fzf_multi_select(items, label, on_select)
+  fzf.fzf_exec(items, fzf_look.titled(label, {
     fzf_opts = { ["--multi"] = "" },
     actions = {
       ["default"] = function(selected)
         on_select(selected or {})
       end,
     },
-  })
+  }))
 end
 
 -- ---------------------------------------------------------------------------
@@ -103,8 +103,8 @@ end
 -- ---------------------------------------------------------------------------
 
 ---@param field_name string state field to update
----@param prompt string fzf prompt
-local function handle_tags(field_name, prompt)
+---@param label string picker title
+local function handle_tags(field_name, label)
   return function(state, on_done)
     tags_mod.collect_tags(function(tags)
       if #tags == 0 then
@@ -112,7 +112,7 @@ local function handle_tags(field_name, prompt)
         on_done()
         return
       end
-      fzf_multi_select(tags, prompt, function(selected)
+      fzf_multi_select(tags, label, function(selected)
         state[field_name] = selected
         on_done()
       end)
@@ -121,7 +121,7 @@ local function handle_tags(field_name, prompt)
 end
 
 local function handle_note_type(state, on_done)
-  fzf_multi_select(config.note_types, "Note types> ", function(selected)
+  fzf_multi_select(config.note_types, "Note types", function(selected)
     state.note_types = selected
     on_done()
   end)
@@ -197,7 +197,7 @@ local function handle_path_exclude(state, on_done)
       items[#items + 1] = scope.label
     end
   end
-  fzf_multi_select(items, "Exclude paths> ", function(selected)
+  fzf_multi_select(items, "Exclude paths", function(selected)
     if #selected == 0 then
       on_done()
       return
@@ -280,8 +280,8 @@ end
 
 ---@type table<number, fun(state: GraphFilterState, on_done: fun())>
 local category_handlers = {
-  [1] = handle_tags("tags_include", "Include tags> "),
-  [2] = handle_tags("tags_exclude", "Exclude tags> "),
+  [1] = handle_tags("tags_include", "Include tags"),
+  [2] = handle_tags("tags_exclude", "Exclude tags"),
   [3] = handle_note_type,
   [4] = handle_date_range,
   [5] = handle_depth,

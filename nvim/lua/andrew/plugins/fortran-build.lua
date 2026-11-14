@@ -67,14 +67,11 @@ local function pick_makefile_and_run(target)
   -- Lazy require: the keymap itself is what triggers fzf-lua's load.
   local fzf = require("fzf-lua")
 
-  fzf.files({
-    prompt = "Select Makefile> ",
+  fzf.files(require("andrew.utils.fzf_look").titled("Select Makefile", {
     -- `files` defaults to cwd_prompt = true, which OVERWRITES opts.prompt with
-    -- the shortened cwd (fzf-lua core.lua:818-825) -- so the prompt above never
-    -- reached the screen and the picker was indistinguishable from :FzfLua
-    -- files. Title added for the same reason: the default is " Files ".
+    -- the shortened cwd (fzf-lua core.lua:818-825), and to the title " Files ".
+    -- Left alone, either makes the picker indistinguishable from :FzfLua files.
     cwd_prompt = false,
-    winopts = { title = " Select Makefile ", title_pos = "center" },
     cmd = "find . -name 'Makefile' -o -name '*.mk' -o -name 'GNUmakefile' 2>/dev/null",
     actions = {
       ["default"] = function(selected)
@@ -85,7 +82,7 @@ local function pick_makefile_and_run(target)
         end
       end,
     },
-  })
+  }))
 end
 
 return {

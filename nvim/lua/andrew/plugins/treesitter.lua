@@ -21,12 +21,6 @@ return {
   -- Build command: Run after installation to parse and generate syntax files
   build = ":TSUpdate",
 
-  -- Dependencies
-  dependencies = {
-    -- Auto-close HTML/XML tags
-    "windwp/nvim-ts-autotag",
-  },
-
   -- =============================================================================
   -- Plugin Configuration
   -- =============================================================================
@@ -104,13 +98,14 @@ return {
       -- Emptied under a read-only image: the parsers are already compiled into
       -- it at build time and load from the plugin directory via the
       -- runtimepath. Left as-is, nvim-treesitter sees the (deliberately
-      -- relocated, empty) install dir and recompiles all 23 on first launch --
+      -- relocated, empty) install dir and recompiles every one on first launch --
       -- which needs network and a C compiler, neither of which an air-gapped
       -- compute node has.
       ensure_installed = vim.env.NVIM_CONTAINER == "1" and {} or {
         -- Data formats
         "json",
         "yaml",
+        "toml",       -- Cargo.toml, pyproject.toml
         "markdown",
         "markdown_inline",
 
@@ -126,12 +121,14 @@ return {
         "bash",
         "dockerfile",
         "gitignore",
+        "make",       -- Makefile, *.mk
 
         -- Programming languages
         "lua",
         "vim",
         "rust",
         "c",
+        "cpp",
         "fortran",
         "python",
         "latex",

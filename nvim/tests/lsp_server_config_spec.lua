@@ -38,9 +38,6 @@ local test, assert_eq, assert_true, assert_nil, assert_deep_eq =
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
--- blink.cmp is a dependency of the spec's capabilities call; stub it.
-package.loaded["blink.cmp"] = { get_lsp_capabilities = function() return {} end }
-
 local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/lsp/lspconfig.lua")
 
 --- Run the real config() with vim.lsp.config/enable captured.
@@ -147,6 +144,32 @@ test("resolved servers ARE enabled, and rust_analyzer never is", function()
 
   -- rust_analyzer belongs to rustaceanvim and must never be enabled here.
   assert_true(not is_enabled("rust_analyzer"), "rust_analyzer is owned by rustaceanvim")
+end)
+
+-- mason-lspconfig used to enable every server mason had installed. It was
+-- removed (it parsed the mason registry on every file open), so lspconfig.lua
+-- now does it. Losing one of these is silent: the buffer simply opens with one
+-- client fewer.
+test("mason-installed servers are enabled, and only while mason has them", function()
+  for _, name in ipairs({ "emmet_ls", "eslint", "prismals" }) do
+    assert_true(is_enabled(name), name .. " is in mason's ensure_installed and must be enabled")
+  end
+
+  local _, _, _, en = run_config("emmet-ls")
+  assert_true(not vim.tbl_contains(en, "emmet_ls"), "emmet_ls must NOT be enabled without its mason binary")
+  assert_true(vim.tbl_contains(en, "eslint"), "the other mason servers must be unaffected")
+end)
+
+-- Capabilities go out once, in `initialize`. They used to come from
+-- require("blink.cmp"), which is no longer loaded when a file opens; if the
+-- static replacement is dropped, servers stop sending snippet completions and
+-- nothing reports it.
+test("every server is told the client supports snippet completion", function()
+  local defaults = captured["*"]
+  assert_true(defaults ~= nil, "vim.lsp.config('*') must be declared")
+  local item = defaults.capabilities.textDocument.completion.completionItem
+  assert_true(item.snippetSupport, "snippetSupport must be advertised")
+  assert_true(item.insertReplaceSupport, "insertReplaceSupport must be advertised")
 end)
 
 _H.finish({ style = "results", exit = "os" })

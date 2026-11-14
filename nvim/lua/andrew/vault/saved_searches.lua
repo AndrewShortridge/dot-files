@@ -1,6 +1,7 @@
 local engine = require("andrew.vault.engine")
 local config = require("andrew.vault.config")
 local notify = require("andrew.vault.notify")
+local fzf_look = require("andrew.utils.fzf_look")
 
 local M = {}
 
@@ -180,8 +181,7 @@ function M.list()
   end
 
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(entries, {
-    prompt = "Saved searches> ",
+  fzf.fzf_exec(entries, fzf_look.titled("Saved searches", {
     actions = {
       ["default"] = function(selected)
         if not selected or #selected == 0 then
@@ -193,7 +193,7 @@ function M.list()
         end
       end,
     },
-  })
+  }))
 end
 
 --- Delete a saved search by name.
@@ -235,8 +235,7 @@ function M.pick_delete()
   end
 
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(names, {
-    prompt = "Delete saved search> ",
+  fzf.fzf_exec(names, fzf_look.titled("Delete saved search", {
     actions = {
       ["default"] = function(selected)
         if not selected or #selected == 0 then
@@ -245,7 +244,7 @@ function M.pick_delete()
         M.delete(selected[1])
       end,
     },
-  })
+  }))
 end
 
 --- Save the most recently executed search, prompting for a name.

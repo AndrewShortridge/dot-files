@@ -201,15 +201,13 @@ local function lsp_info()
     entries = { "(no LSP clients attached to this buffer)" }
   end
 
-  require("fzf-lua").fzf_exec(entries, {
-    prompt = "LSP Clients> ",
-    winopts = { title = " LSP Info ", title_pos = "center" },
+  require("fzf-lua").fzf_exec(entries, require("andrew.utils.fzf_look").titled("LSP Info", {
     actions = {
       ["default"] = function()
         vim.cmd("checkhealth vim.lsp")
       end,
     },
-  })
+  }))
 end
 
 --- Document / workspace symbol picker, Fortran-aware.
@@ -288,7 +286,7 @@ M._keys = {
     -- the "registering ui_select" info message that would otherwise fire on
     -- every invocation. The default "codeaction" previewer renders the action's
     -- diff in the preview pane; switching to "codeaction_native" additionally
-    -- pipes it through git-delta, which is NOT installed here.
+    -- pipes it through git-delta.
     fzf("lsp_code_actions", { silent = true }),
     desc = "Code Action",
     mode = { "n", "x" },

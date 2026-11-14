@@ -3,6 +3,7 @@ local link_utils = require("andrew.vault.link_utils")
 local vault_index = require("andrew.vault.vault_index")
 local block_patterns = require("andrew.vault.block_patterns")
 local file_cache = require("andrew.vault.file_cache")
+local fzf_look = require("andrew.utils.fzf_look")
 local notify = require("andrew.vault.notify")
 local log = require("andrew.vault.vault_log").scope("linkcheck")
 local semaphore = require("andrew.vault.process_semaphore")
@@ -249,12 +250,11 @@ function M.check_buffer()
     entries[#entries + 1] = string.format("%d: [[%s]]%s", b.lnum, b.display, kind_label)
   end
 
-  require("fzf-lua").fzf_exec(entries, {
-    prompt = "Broken links> ",
+  require("fzf-lua").fzf_exec(entries, fzf_look.titled("Broken links", {
     actions = {
       ["default"] = fzf_jump_to_line,
     },
-  })
+  }))
 end
 
 --- Scan all markdown files in the vault for broken wikilinks.
@@ -495,12 +495,11 @@ function M.check_urls_buffer()
 
       notify.info(#dead .. " dead URL(s) found")
 
-      require("fzf-lua").fzf_exec(dead, {
-        prompt = "Dead URLs> ",
+      require("fzf-lua").fzf_exec(dead, fzf_look.titled("Dead URLs", {
         actions = {
           ["default"] = fzf_jump_to_line,
         },
-      })
+      }))
     end
   )
 end

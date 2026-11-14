@@ -69,12 +69,13 @@ test("config runs against the stubbed lint module", function()
   assert_true(ok, "config must run: " .. tostring(err))
 end)
 
--- Fire the real autocmd the bug reproduced through.
+-- Fire the real autocmd the bug reproduced through. That was BufReadPost at
+-- the time; opens are linted from FileType now (see the trigger test below).
 local filter
-test("the BufReadPost lint autocmd supplies a filter", function()
+test("the on-open lint autocmd supplies a filter", function()
   calls = {}
-  vim.api.nvim_exec_autocmds("BufReadPost", { group = "AndrewLinting" })
-  assert_true(#calls > 0, "BufReadPost must reach try_lint")
+  vim.api.nvim_exec_autocmds("FileType", { group = "AndrewLinting" })
+  assert_true(#calls > 0, "FileType must reach try_lint")
 
   local opts = calls[#calls].opts
   assert_true(type(opts) == "table", "try_lint must be called with an opts table")
@@ -117,6 +118,28 @@ test("every configured filetype linter is guarded, not just javascript", functio
   -- The autocmd is filetype-agnostic, so proving the single filter handles an
   -- arbitrary missing binary covers all of them.
   assert_false(filter({ cmd = ABSENT }), "the shared filter must reject any missing binary")
+end)
+
+-- Each trigger must lint exactly once. Two regressions this pins, both of which
+-- only ever showed up as wasted compiler runs:
+--   * Fortran on InsertLeave: its linter compiles the file ON DISK, so the run
+--     re-checks the last save while blocking every <Esc> on the spawn.
+--   * A second autocmd (or BufReadPost beside FileType) matching the same
+--     buffer: every open or save then lints twice.
+test("each trigger lints once, and Fortran skips InsertLeave", function()
+  local function lint_runs(event, filetype)
+    vim.bo.filetype = filetype
+    calls = {}
+    vim.api.nvim_exec_autocmds(event, {})
+    return #calls
+  end
+  assert_eq(lint_runs("FileType", "fortran"), 1, "opening a Fortran buffer lints once")
+  assert_eq(lint_runs("BufReadPost", "fortran"), 0, "BufReadPost must not lint again on top of FileType")
+  assert_eq(lint_runs("BufWritePost", "fortran"), 1, "saving a Fortran buffer lints once")
+  for _, filetype in ipairs({ "fortran", "fortran_free", "fortran_fixed" }) do
+    assert_eq(lint_runs("InsertLeave", filetype), 0, filetype .. " must not lint on InsertLeave")
+  end
+  assert_eq(lint_runs("InsertLeave", "python"), 1, "other filetypes still lint on InsertLeave")
 end)
 
 _H.finish({ style = "results", exit = "os" })

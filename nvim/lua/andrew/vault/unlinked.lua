@@ -129,7 +129,7 @@ function M.autolink_vault()
 
   scan_and_pick("no auto-linkable mentions found", function(results)
     return {
-      prompt = "Auto-link vault (" .. #results .. " mentions)> ",
+      label = "Auto-link vault (" .. #results .. " mentions)",
       multi = true,
       all_results = results,
     }
@@ -164,7 +164,7 @@ function M.unlinked_mentions()
     local entries, entry_map = ui.build_vault_entries(results, { include_match = false, sort = false })
 
     ui.open_vault_picker(entries, entry_map, {
-      prompt = "Unlinked mentions (" .. search_names[1] .. ")> ",
+      label = "Unlinked mentions (" .. search_names[1] .. ")",
       all_results = results,
       with_wikilinks = true,
     })
@@ -177,7 +177,7 @@ function M.vault_unlinked_mentions()
 
   scan_and_pick("no unlinked mentions found", function(results)
     return {
-      prompt = "Vault unlinked mentions (" .. #results .. ")> ",
+      label = "Vault unlinked mentions (" .. #results .. ")",
     }
   end)
 end

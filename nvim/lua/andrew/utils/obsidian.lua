@@ -44,6 +44,27 @@ function M.picker_opts(cwd)
   return { file_ignore_patterns = vim.deepcopy(patterns) }
 end
 
+--- Snacks.picker option fragment applying the same exclusions, for the snacks
+--- file finder (andrew.utils.file_picker). The counterpart of picker_opts().
+---
+--- A `transform` rather than snacks' `exclude` list: `exclude` becomes `fd -E`,
+--- which is case-sensitive, while the vault's exclusions are deliberately not
+--- (see vault/search_exclude.lua). Returning false from a transform drops the
+--- item, so this reuses that module's own matcher instead of restating it.
+---@param cwd? string directory the picker will run in (default: current working directory)
+---@return table opts empty outside a vault
+function M.snacks_picker_opts(cwd)
+  if not M.vault_root(cwd) then return {} end
+  local search_exclude = require("andrew.vault.search_exclude")
+  if not search_exclude.active() then return {} end
+  return {
+    transform = function(item)
+      -- `item.file` is relative to the picker's cwd, as fzf-lua's patterns expect.
+      return not search_exclude.is_excluded(item.file)
+    end,
+  }
+end
+
 --- picker_opts() merged with caller-supplied options. Caller keys win, except
 --- `file_ignore_patterns`, which is concatenated (matching fzf-lua's own
 --- append-don't-replace semantics for that one option).

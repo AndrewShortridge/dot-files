@@ -8,6 +8,7 @@ local engine = require("andrew.vault.engine")
 local config = require("andrew.vault.config")
 local frecency = require("andrew.vault.frecency")
 local notify = require("andrew.vault.notify")
+local fzf_look = require("andrew.utils.fzf_look")
 
 local M = {}
 
@@ -115,8 +116,7 @@ function M.pick()
   end
 
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(entries, {
-    prompt = "Search history> ",
+  fzf.fzf_exec(entries, fzf_look.titled("Search history", {
     actions = {
       ["default"] = function(selected)
         if not selected or #selected == 0 then return end
@@ -126,11 +126,13 @@ function M.pick()
           if item.type == "advanced" then
             require("andrew.vault.search").execute_advanced_query(item.query)
           else
-            -- Re-execute as live grep with the query pre-filled
+            -- Re-execute as live grep with the query pre-filled. `hidden`
+            -- as in search.lua's M.search(), which this repeats.
             local fzf2 = require("fzf-lua")
             fzf2.live_grep(
               engine.vault_search_fzf_opts("Vault search", {
                 search = item.query,
+                hidden = false,
               })
             )
           end
@@ -149,7 +151,7 @@ function M.pick()
     fzf_opts = {
       ["--no-sort"] = "",  -- preserve frecency order
     },
-  })
+  }))
 end
 
 --- Delete a query from history.

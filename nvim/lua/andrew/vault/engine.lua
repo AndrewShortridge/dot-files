@@ -626,7 +626,11 @@ function M.rg_base_opts(glob)
   if excl ~= "" then
     opts = opts .. " " .. excl
   end
-  return opts
+  -- `-e` last, as in fzf-lua's own rg_opts: fzf-lua appends the pattern right
+  -- after these, and without it ripgrep reads one that starts with a dash as
+  -- a flag. The stock "Open tasks" saved search (`- \[ \]`) found nothing
+  -- because of that.
+  return opts .. " -e"
 end
 
 --- Escape special regex/PCRE2 characters for use in ripgrep patterns.
@@ -637,13 +641,22 @@ function M.rg_escape(str)
 end
 
 --- Common fzf-lua options for vault pickers.
---- @param prompt string  The prompt text (without trailing "> ")
+---
+--- `prompt` is the picker's NAME: it becomes the box title, and the prompt
+--- itself is the shared icon (utils/fzf_look.lua). A trailing "> ", ": " or
+--- "❯ " is tolerated and stripped, so "Vault tags" and "Vault tags> " are the
+--- same label.
+---
+--- Precedence: `extra` wins over the defaults here (cwd, file_icons, git_icons)
+--- key by key, but the label always wins over `extra.prompt` and
+--- `extra.winopts.title` / `title_pos`. Other `extra.winopts` keys are kept. To
+--- title a picker differently, pass that title as `prompt`.
+--- @param prompt string  The picker name (shown as the window title)
 --- @param extra? table   Additional options to merge
 --- @return table
 function M.vault_fzf_opts(prompt, extra)
   local opts = {
     cwd = M.vault_path,
-    prompt = prompt .. "> ",
     file_icons = true,
     git_icons = false,
   }
@@ -652,7 +665,9 @@ function M.vault_fzf_opts(prompt, extra)
       opts[k] = v
     end
   end
-  return opts
+  local label = vim.trim(prompt)
+  label = label:gsub("[>:]$", ""):gsub("❯$", "")
+  return require("andrew.utils.fzf_look").titled(vim.trim(label), opts)
 end
 
 --- Common fzf-lua options for vault SEARCH pickers.
@@ -669,7 +684,7 @@ end
 --- `file_ignore_patterns` is the right hook because it is the one fzf-lua option
 --- that APPENDS across the call-site/provider/global layers instead of replacing
 --- (fzf-lua config.lua:415-425), so a caller passing its own patterns keeps them.
---- @param prompt string  The prompt text (without trailing "> ")
+--- @param prompt string  The picker name; see vault_fzf_opts() for how it is shown
 --- @param extra? table   Additional options to merge
 --- @return table
 function M.vault_search_fzf_opts(prompt, extra)

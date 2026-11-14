@@ -200,13 +200,21 @@ keymap.set("n", "<leader>qq", "<cmd>qa<CR>", { desc = "Quit All" })
 -- in custom/plugins/terminal.lua where the module is in scope. See <leader>tt
 -- for the same terminal toggle.
 
--- Find files (fuzzy file picker) — mirrors <leader>ff
--- Inside an Obsidian vault these two also drop .obsidian/ and the templates
--- folder (andrew.utils.obsidian); outside one the helper returns {} and they
--- behave exactly as before.
+-- Find files (fuzzy file picker). <leader>ff is the same picker, kept on the
+-- <leader>f find group; <leader><space> is the top-level shortcut.
+--
+-- Both go through andrew.utils.file_picker, which owns the choice of picker
+-- (fzf-lua or snacks) and documents how to switch with
+-- `vim.g.file_picker_backend`. Whichever opens, inside an Obsidian
+-- vault it drops .obsidian/ and the templates folder (andrew.utils.obsidian);
+-- outside one it lists everything.
 keymap.set("n", "<leader><space>", function()
-  require("fzf-lua").files(require("andrew.utils.obsidian").picker_opts())
+  require("andrew.utils.file_picker").find_files()
 end, { desc = "Find files" })
+
+keymap.set("n", "<leader>ff", function()
+  require("andrew.utils.file_picker").find_files()
+end, { desc = "Fuzzy find files in current directory" })
 
 -- Grep across the project root (live grep). Unlike <leader>fs, which greps the
 -- current working directory, this anchors to the detected project root:
@@ -241,6 +249,27 @@ keymap.set("n", "<leader>K", function()
 end, { desc = "All keymaps" })
 
 -- =============================================================================
+-- Yank Path Keybindings
+-- =============================================================================
+-- Copy a reference to the current file for pasting into a coding agent's
+-- prompt: `lua/andrew/core/keymaps.lua`. From Visual mode the selected lines
+-- are added as a range, `...keymaps.lua#L12-L30`. The keys are craftzdog's
+-- (andrew/utils/path_reference.lua says how the result differs from his).
+keymap.set("n", "<leader>yf", function()
+  require("andrew.utils.path_reference").yank(":.")
+end, { desc = "Yank relative path" })
+keymap.set("x", "<leader>yf", function()
+  require("andrew.utils.path_reference").yank(":.")
+end, { desc = "Yank relative path with the selected lines" })
+
+keymap.set("n", "<leader>yp", function()
+  require("andrew.utils.path_reference").yank(":p")
+end, { desc = "Yank absolute path" })
+keymap.set("x", "<leader>yp", function()
+  require("andrew.utils.path_reference").yank(":p")
+end, { desc = "Yank absolute path with the selected lines" })
+
+-- =============================================================================
 -- Window Autocommands
 -- =============================================================================
 
@@ -254,6 +283,72 @@ vim.api.nvim_create_autocmd("VimResized", {
     local current_tab = vim.fn.tabpagenr()
     vim.cmd("tabdo wincmd =")
     vim.cmd("tabnext " .. current_tab)
+  end,
+})
+
+-- Show 'cursorline' in the focused split only, so with several splits open the
+-- highlighted line says which one the cursor is in. Modelled on craftzdog's
+-- dotfiles (`setlocal cursorline` on WinEnter, `setlocal nocursorline` on
+-- WinLeave); the differences are deliberate:
+--
+-- * What a window SHOWS is its local value; whether it WANTS a cursorline is
+--   its global one, which every window carries separately and a split
+--   inherits (:help local-options). Only the local value is written here, so
+--   `:set nocursorline` still turns the highlight off in that window for good.
+-- * Floating windows are ignored in both directions: a picker or the floating
+--   terminal taking focus leaves the split underneath marked.
+-- * Windows on a plugin's own buffer (Trouble, quickfix, the vault sidebar,
+--   terminals) are left alone. There the highlighted line marks the selected
+--   entry and is meant to stay visible from another window.
+-- * Window options are remembered per buffer, so `:buffer N` in the focused
+--   split brings along the "off" that buffer had in an unfocused one; hence
+--   BufWinEnter. That event, like WinNew, also fires with a window current
+--   that an API call is only visiting (nvim_win_set_buf, nvim_open_win
+--   without entering), so the focused split is remembered from WinEnter and
+--   never read from the current window there.
+local SELF_MANAGED_BUFFER_TYPES = { nofile = true, prompt = true, quickfix = true, terminal = true }
+local focused_split = vim.api.nvim_get_current_win()
+
+local function is_floating_window(window)
+  return vim.api.nvim_win_get_config(window).relative ~= ""
+end
+
+local function update_cursorline(window)
+  local buffer_type = vim.bo[vim.api.nvim_win_get_buf(window)].buftype
+  if is_floating_window(window) or SELF_MANAGED_BUFFER_TYPES[buffer_type] then
+    return
+  end
+  local wants_cursorline =
+    vim.api.nvim_get_option_value("cursorline", { win = window, scope = "global" })
+  local should_show_cursorline = window == focused_split and wants_cursorline
+  if vim.wo[window].cursorline ~= should_show_cursorline then
+    vim.wo[window][0].cursorline = should_show_cursorline
+  end
+end
+
+local focused_split_cursorline_group =
+  vim.api.nvim_create_augroup("focused-split-cursorline", { clear = true })
+
+vim.api.nvim_create_autocmd({ "VimEnter", "WinEnter" }, {
+  desc = "Move the cursorline to the split that took focus",
+  group = focused_split_cursorline_group,
+  callback = function()
+    local entered_window = vim.api.nvim_get_current_win()
+    if is_floating_window(entered_window) then
+      return
+    end
+    focused_split = entered_window
+    for _, window in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      update_cursorline(window)
+    end
+  end,
+})
+
+vim.api.nvim_create_autocmd({ "BufWinEnter", "WinNew" }, {
+  desc = "Keep the cursorline in the focused split when a window gets a buffer",
+  group = focused_split_cursorline_group,
+  callback = function()
+    update_cursorline(vim.api.nvim_get_current_win())
   end,
 })
 

@@ -3,11 +3,10 @@
 -- Covers the files that have to agree with each other:
 --   * plugins/snacks.lua      -- the <leader>u toggle block + scroll/animate opts
 --   * plugins/gitsigns.lua    -- <leader>uG, registered from opts()
---   * plugins/bufferline.lua  -- hands 'showtabline' to <leader>uA
 --   * core/options.lua        -- pins showtabline = 2
 --   * themes/toggle.lua       -- light/dark backing the <leader>ub toggle
 --
--- FIVE THINGS THIS PROTECTS.
+-- FOUR THINGS THIS PROTECTS.
 --
 -- 1. The LazyVim letter alignment. ud/uD are diagnostics/dimming, which is the
 --    REVERSE of what this config used before; ui -> ug and ur -> uL moved too.
@@ -22,10 +21,7 @@
 -- 3. <leader>uG comes from gitsigns' opts(), not from snacks.lua. Registering it
 --    eagerly would make which-key's `get` pull gitsigns in ahead of BufReadPre.
 --
--- 4. bufferline must not manage showtabline, or it re-asserts the option on the
---    next redraw and silently undoes <leader>uA.
---
--- 5. The removals stay removed: the <leader>ut cycler, the duplicate <leader>ub
+-- 4. The removals stay removed: the <leader>ut cycler, the duplicate <leader>ub
 --    colourscheme picker, and :ThemeCycle.
 --
 -- Drives the REAL plugin specs (dofile) against a stubbed Snacks that records
@@ -37,7 +33,6 @@
 --   * Making ug's `get` call require("ibl.config") -> fails the lazy-get test.
 --   * Moving uG into snacks.lua -> fails both the gitsigns and the
 --     not-in-snacks assertions.
---   * Dropping auto_toggle_bufferline -> fails the bufferline test.
 --   * Re-adding <leader>ut or the ub picker -> fails the removals test.
 --   * Dropping scroll/animate from opts -> fails the smooth-scroll test.
 --
@@ -194,16 +189,10 @@ test("the theme module exposes light/dark and has dropped the cycler", function(
   assert_nil(rawget(T, "cycle"), "M.cycle must be gone")
 end)
 
-test("bufferline hands showtabline over to the toggle", function()
-  local spec = dofile(cfg .. "/lua/andrew/plugins/bufferline.lua")
-  assert_eq(spec.opts.options.auto_toggle_bufferline, false,
-    "bufferline must not manage showtabline, or <leader>uA is undone on redraw:")
-end)
-
 test("showtabline is pinned so the tabline is visible by default", function()
   local src = table.concat(vim.fn.readfile(cfg .. "/lua/andrew/core/options.lua"), "\n")
   assert_true(src:match("opt%.showtabline%s*=%s*2") ~= nil,
-    "core/options.lua must set showtabline = 2 now that bufferline no longer does")
+    "core/options.lua must set showtabline = 2: nothing else turns the tabline on")
 end)
 
 _H.finish()

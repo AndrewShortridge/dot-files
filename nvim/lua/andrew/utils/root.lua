@@ -68,11 +68,8 @@ function M.detectors.lsp(buf)
   end, roots)
 end
 
--- Nearest ancestor directory containing one of `patterns`
-function M.detectors.pattern(buf, patterns)
-  patterns = type(patterns) == "string" and { patterns } or patterns
-  local start = M.bufpath(buf) or vim.uv.cwd()
-
+-- Nearest directory at or above `start` containing one of `patterns`
+local function nearest_ancestor_with(start, patterns)
   local match = vim.fs.find(function(name)
     for _, pattern in ipairs(patterns) do
       if name == pattern then
@@ -86,7 +83,13 @@ function M.detectors.pattern(buf, patterns)
     return false
   end, { path = start, upward = true })[1]
 
-  return match and { vim.fs.dirname(match) } or {}
+  return match and vim.fs.dirname(match) or nil
+end
+
+-- Nearest ancestor directory containing one of `patterns`
+function M.detectors.pattern(buf, patterns)
+  patterns = type(patterns) == "string" and { patterns } or patterns
+  return { nearest_ancestor_with(M.bufpath(buf) or vim.uv.cwd(), patterns) }
 end
 
 -- Turn a spec entry into a detector function
@@ -145,13 +148,56 @@ function M.get(buf)
   return root
 end
 
+-- =============================================================================
+-- Project root by markers alone
+-- =============================================================================
+-- What the statusline calls the project (utils/statusline_path.lua): the
+-- nearest directory at or above the buffer's file that holds one of these
+-- entries, or the working directory when none does. Unlike M.get() it never
+-- asks the LSP, so the name shown says where the file sits on disk and does
+-- not change when a server attaches.
+M.project_markers = {
+  ".git",
+  "lua",
+  "package.json",
+  "Makefile",
+  "Cargo.toml",
+  "go.mod",
+  "pyproject.toml",
+  ".obsidian", -- an Obsidian vault
+  ".zennotes", -- a ZenNotes vault
+}
+
+M.project_cache = {}
+
+function M.project(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local cached = M.project_cache[buf]
+  if cached then
+    return cached
+  end
+
+  -- A file not written yet still belongs to the directory it will land in.
+  local name = vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf) or ""
+  local start = M.bufpath(buf)
+    or (name ~= "" and vim.uv.fs_realpath(vim.fs.dirname(name)))
+    or vim.uv.cwd()
+  local root = nearest_ancestor_with(start, M.project_markers) or vim.uv.cwd()
+  root = vim.fs.normalize(vim.uv.fs_realpath(root) or root)
+
+  M.project_cache[buf] = root
+  return root
+end
+
 -- Root can change when an LSP attaches, the file moves, or :cd runs
 vim.api.nvim_create_autocmd({ "LspAttach", "BufWritePost", "DirChanged", "BufDelete" }, {
   group = vim.api.nvim_create_augroup("andrew_root_cache", { clear = true }),
   callback = function(event)
     M.cache[event.buf] = nil
+    M.project_cache[event.buf] = nil
     if event.event == "DirChanged" then
       M.cache = {}
+      M.project_cache = {}
     end
   end,
 })

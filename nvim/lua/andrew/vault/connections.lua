@@ -875,8 +875,7 @@ function M.related_notes()
       end
 
       local fzf = require("fzf-lua")
-      fzf.fzf_exec(entries, {
-        prompt = "Related notes> ",
+      fzf.fzf_exec(entries, require("andrew.utils.fzf_look").titled("Related notes", {
         fzf_opts = {
           ["--ansi"] = "",
           ["--delimiter"] = "\t",
@@ -889,7 +888,7 @@ function M.related_notes()
           ["ctrl-v"] = function(s) open_selected(s, "vsplit") end,
           ["ctrl-t"] = function(s) open_selected(s, "tabedit") end,
         },
-      })
+      }))
     end,
   })
 end

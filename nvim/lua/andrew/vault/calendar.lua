@@ -590,8 +590,7 @@ function M.calendar()
       entry_map[label] = task
     end
 
-    fzf.fzf_exec(entries, {
-      prompt = date .. "> ",
+    fzf.fzf_exec(entries, require("andrew.utils.fzf_look").titled(date, {
       previewer = "builtin",
       actions = {
         ["default"] = function(selected)
@@ -619,7 +618,7 @@ function M.calendar()
           end
         end,
       },
-    })
+    }))
   end
 
   --- Open (or create) the daily log for the day under cursor.

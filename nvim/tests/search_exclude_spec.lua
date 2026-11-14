@@ -181,6 +181,10 @@ test("rg_base_opts carries the exclusion globs", function()
   assert_true(opts:find('--glob "*.md"', 1, true) ~= nil, "original *.md glob is preserved")
   assert_true(opts:find('--iglob "!**/Templates/**"', 1, true) ~= nil, "Templates excluded")
   assert_true(opts:find('--iglob "!**/.obsidian/**"', 1, true) ~= nil, ".obsidian excluded")
+  -- fzf-lua appends the search pattern straight after these. Without a final
+  -- -e, ripgrep takes a pattern that starts with a dash (`- \[ \]`, the stock
+  -- "Open tasks" saved search) for a flag and the picker opens empty.
+  assert_true(opts:match(" %-e$") ~= nil, "the pattern slot is introduced by -e: " .. opts)
 
   -- A caller-supplied glob must still win for the include side.
   local scoped = require("andrew.vault.engine").rg_base_opts("*.txt")
@@ -201,7 +205,7 @@ test("vault_search_fzf_opts excludes; plain vault_fzf_opts does not", function()
   assert_true(search.file_ignore_patterns ~= nil, "search wrapper adds patterns")
   assert_true(#search.file_ignore_patterns > 0, "patterns are non-empty")
   assert_eq(search.cwd, plain.cwd, "wrapper keeps vault_fzf_opts' cwd")
-  assert_eq(search.prompt, "Vault search> ", "wrapper keeps the prompt contract")
+  assert_eq(search.winopts.title, " Vault search ", "wrapper keeps the label contract")
 
   -- A caller's own patterns must survive (fzf-lua appends this option).
   local merged = engine.vault_search_fzf_opts("X", { file_ignore_patterns = { "^zzz/" } })

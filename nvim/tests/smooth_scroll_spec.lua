@@ -1,32 +1,18 @@
--- Spec for the LazyVim smooth-scroll / animation parity.
+-- Spec for the smooth-scroll / animation setup.
 --
 -- Covers:
---   * plugins/snacks.lua   -- animate + scroll opts, and that they stay BARE
+--   * plugins/snacks.lua   -- animate + scroll opts
 --   * core/options.lua     -- global 'smoothscroll' and vim.g.snacks_animate
 --
--- WHY "BARE" IS THE WHOLE POINT.
+-- Animated scrolling (snacks.scroll) is OFF by default; <leader>uS turns it on
+-- for a session. Test 1 pins the default.
 --
--- The request was to match LazyVim's scroll SPEED. LazyVim does not configure a
--- speed: it passes `scroll = { enabled = true }` with no overrides
--- (lazyvim/plugins/ui.lua:279) and never passes a top-level `animate` table at
--- all. So the LazyVim scroll speed IS snacks' own default, and parity is
--- maintained by adding nothing. That makes this the easiest thing in the config
--- to "improve" into a regression -- someone tuning `duration` here would be
--- diverging from LazyVim while believing they were matching it. Test 2 and 3
--- make that unwritable.
---
--- Test 4 pins the upstream default values themselves, read out of the installed
--- snacks.nvim. Bare opts only equal LazyVim's speed for as long as snacks'
--- defaults are what they were when this was ported; a snacks upgrade that
--- retunes scroll would change the speed silently, and this is what notices.
+-- The scroll speed is set explicitly under `scroll` in plugins/snacks.lua and
+-- is meant to be tuned there, so it is not pinned here. The top-level `animate`
+-- table is still expected to carry no override (test 2): LazyVim passes none.
 --
 -- Drives the REAL specs (dofile) with a stubbed Snacks; options.lua is EXECUTED
 -- and the resulting vim.o / vim.g state asserted, rather than pattern-matched.
---
--- Discriminating power (verified by reintroducing each bug):
---   * Adding `duration`/`easing` under scroll or animate -> fails test 2 / 3.
---   * Dropping `opt.smoothscroll` -> fails test 5.
---   * Upstream retuning scroll's defaults -> fails test 4 with both values.
 --
 -- Run with: nvim --headless -u NONE -l tests/smooth_scroll_spec.lua
 
@@ -50,45 +36,19 @@ local function snacks_spec()
 end
 
 -- ---------------------------------------------------------------------------
-test("snacks enables both scroll and animate", function()
+test("snacks keeps animate on but scroll off by default", function()
   local o = snacks_spec().opts
-  assert_true(o.scroll ~= nil and o.scroll.enabled == true, "scroll must be enabled")
-  -- animate is what gives <leader>ua something to switch off: scroll consults
-  -- Snacks.animate.enabled(), so without it the toggle has no effect on scroll.
+  assert_true(o.scroll ~= nil and o.scroll.enabled == false, "scroll must be disabled by default")
+  -- animate stays on for dim, and for scroll when <leader>uS turns it on:
+  -- scroll consults Snacks.animate.enabled().
   assert_true(o.animate ~= nil and o.animate.enabled == true, "animate must be enabled")
 end)
 
-test("scroll opts carry no speed override (LazyVim passes none)", function()
-  local scroll = snacks_spec().opts.scroll
-  for _, k in ipairs({ "animate", "animate_repeat", "duration", "easing", "fps", "filter" }) do
-    assert_nil(scroll[k], "scroll." .. k .. " diverges from LazyVim, which overrides nothing")
-  end
-  local n = 0
-  for _ in pairs(scroll) do n = n + 1 end
-  assert_eq(n, 1, "scroll must be exactly { enabled = true }, got extra keys:")
-end)
-
-test("animate opts carry no override either", function()
+test("top-level animate opts carry no override", function()
   local animate = snacks_spec().opts.animate
   for _, k in ipairs({ "duration", "easing", "fps" }) do
     assert_nil(animate[k], "animate." .. k .. " diverges from LazyVim, which passes no animate table")
   end
-end)
-
-test("the installed snacks defaults are still the speed this was ported against", function()
-  local src = vim.fn.resolve(vim.fn.expand("~/.local/share/nvim/lazy/snacks.nvim/lua/snacks/scroll.lua"))
-  if vim.fn.filereadable(src) ~= 1 then
-    print("  (skipped: snacks.nvim not installed at the expected path)")
-    return
-  end
-  local text = table.concat(vim.fn.readfile(src), "\n")
-  -- The defaults block, not any doc comment: step/total inside `duration = {}`.
-  local step, total = text:match("animate%s*=%s*{%s*duration%s*=%s*{%s*step%s*=%s*(%d+)%s*,%s*total%s*=%s*(%d+)")
-  assert_eq(step, "10", "snacks scroll default step changed; scroll speed no longer matches the port:")
-  assert_eq(total, "200", "snacks scroll default total changed; scroll speed no longer matches the port:")
-  local rstep, rtotal = text:match("animate_repeat%s*=%s*{.-duration%s*=%s*{%s*step%s*=%s*(%d+)%s*,%s*total%s*=%s*(%d+)")
-  assert_eq(rstep, "5", "snacks animate_repeat step changed:")
-  assert_eq(rtotal, "50", "snacks animate_repeat total changed:")
 end)
 
 test("options.lua sets smoothscroll globally and declares the animate switch", function()

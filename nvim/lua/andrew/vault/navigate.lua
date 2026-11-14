@@ -1,6 +1,7 @@
 local engine = require("andrew.vault.engine")
 local config = require("andrew.vault.config")
 local fm_parser = require("andrew.vault.frontmatter_parser")
+local fzf_look = require("andrew.utils.fzf_look")
 local link_utils = require("andrew.vault.link_utils")
 local notify = require("andrew.vault.notify")
 local log = require("andrew.vault.vault_log").scope("navigate")
@@ -155,7 +156,9 @@ local function get_weekly_reviews_sorted(callback)
     return
   end
 
-  find_by_subtype("weekly%-review", function(files)
+  -- A plain value: find_by_subtype() puts it in a ripgrep regex, where the
+  -- Lua-pattern spelling "weekly%-review" matches nothing.
+  find_by_subtype("weekly-review", function(files)
     local entries = {}
     for _, fpath in ipairs(files) do
       local week_of = fm_parser.file_field(fpath, "week_of")
@@ -281,11 +284,10 @@ function M.weekly_list()
     end
 
     local fzf = require("fzf-lua")
-    fzf.fzf_exec(display, {
-      prompt = "Weekly reviews> ",
+    fzf.fzf_exec(display, fzf_look.titled("Weekly reviews", {
       previewer = "builtin",
       actions = make_file_actions(path_map),
-    })
+    }))
   end)
 end
 
@@ -421,11 +423,10 @@ function M.review_list()
         end
 
         local fzf = require("fzf-lua")
-        fzf.fzf_exec(display, {
-          prompt = "All reviews> ",
+        fzf.fzf_exec(display, fzf_look.titled("All reviews", {
           previewer = "builtin",
           actions = make_file_actions(path_map),
-        })
+        }))
       end)
     end)
   end)

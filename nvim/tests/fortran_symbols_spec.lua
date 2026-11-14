@@ -474,6 +474,45 @@ test("a colorscheme change drops the cached styles", function()
   end
 end)
 
+test("line and column colours are read from a function-valued hls", function()
+  -- THE REGRESSION: fzf-lua accepts `hls` as a function it calls per picker,
+  -- and andrew/utils/fzf_look.lua sets one. build_entries() indexed it as a
+  -- table, which raised "attempt to index local 'hls' (a function value)" on
+  -- every key and command that opens this picker.
+  local saved_config = package.loaded["fzf-lua.config"]
+  local saved_utils = package.loaded["fzf-lua.utils"]
+  package.loaded["fzf-lua.utils"] = {
+    nbsp = SEP,
+    -- The second return value is the escape sequence; name it after its group.
+    ansi_from_hl = function(hl, str) return str, "<" .. hl .. ">" end,
+    ansi_escseq = { clear = "</>" },
+  }
+  package.loaded["fzf-lua.config"] = {
+    globals = {
+      hls = function() return { path_linenr = "LookLineNr" } end,
+      lsp = { symbols = STUB_CFG },
+    },
+  }
+  symbols._reset_style_cache()
+
+  local ok, err = pcall(function()
+    local shown = split(symbols.build_entries({
+      rec("a.f90", 12, 8, "Heating", "call", "  call Heating(t)"),
+    }, ROOT)[1])[2]
+    assert_true(shown:find("<LookLineNr>12</>", 1, true) ~= nil,
+      "the line number takes the group the function returned: " .. shown)
+    assert_true(shown:find("<FzfLuaPathColNr>8</>", 1, true) ~= nil,
+      "and the column falls back to fzf-lua's default group: " .. shown)
+  end)
+
+  package.loaded["fzf-lua.config"] = saved_config
+  package.loaded["fzf-lua.utils"] = saved_utils
+  symbols._reset_style_cache()
+  if not ok then
+    error(err, 0)
+  end
+end)
+
 test("columns line up under colour and glyphs", function()
   with_symbol_config(STUB_CFG, function()
     local entries = symbols.build_entries({

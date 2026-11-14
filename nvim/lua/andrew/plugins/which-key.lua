@@ -261,6 +261,7 @@ return {
         end,
       },
       { "<leader>x", group = "Trouble/Diagnostics" },
+      { "<leader>y", group = "Yank Path", icon = { icon = "󰈔 ", color = "cyan" } },
     }
 
     -- LazyVim registers its whole group block under `mode = { "n", "x" }`

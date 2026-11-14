@@ -2,7 +2,8 @@
 -- Linter Configuration (nvim-lint)
 -- =============================================================================
 -- Configures nvim-lint for running external linters on code.
--- Linters run automatically on buffer read/write and insert leave.
+-- Linters run automatically when a buffer gets its filetype (i.e. on open), on
+-- write, and on insert leave (Fortran: open and write only).
 
 return {
   -- Plugin: nvim-lint - Asynchronous linter plugin for Neovim
@@ -610,19 +611,24 @@ return {
     -- =============================================================================
     -- Run linters automatically on various events
 
-    -- General linting autocommand (all filetypes)
-    vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost", "InsertLeave", "FileType" }, {
-      group = vim.api.nvim_create_augroup("AndrewLinting", { clear = true }),
-      callback = function()
-        try_lint_available()
-      end,
-    })
+    -- Fortran is linted on open and save only, as VS Code's Modern Fortran
+    -- does. Its linter is a compiler run on the file ON DISK (stdin = false),
+    -- so an InsertLeave run re-checked the last saved text, not the edit just
+    -- made -- while holding up every <Esc> for ~8 ms to spawn it.
+    local FORTRAN_FILETYPES = { fortran = true, fortran_free = true, fortran_fixed = true }
 
-    -- Fortran-specific linting (matches VS Code Modern Fortran behavior)
-    vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
-      group = vim.api.nvim_create_augroup("FortranLinting", { clear = true }),
-      pattern = { "*.f90", "*.F90", "*.f95", "*.f03", "*.f08", "*.f", "*.F" },
-      callback = function()
+    -- The ONE auto-lint autocmd, for every filetype, firing once per event:
+    --   * A second, Fortran-only autocmd on BufReadPost/BufWritePost used to
+    --     sit beside it. This one already matched those buffers, so every
+    --     save compiled twice.
+    --   * BufReadPost is not listed: FileType follows every read (first open,
+    --     :edit!, an autoread reload), so listing both linted each open twice.
+    vim.api.nvim_create_autocmd({ "FileType", "BufWritePost", "InsertLeave" }, {
+      group = vim.api.nvim_create_augroup("AndrewLinting", { clear = true }),
+      callback = function(event)
+        if event.event == "InsertLeave" and FORTRAN_FILETYPES[vim.bo[event.buf].filetype] then
+          return
+        end
         try_lint_available()
       end,
     })

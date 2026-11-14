@@ -14,6 +14,8 @@
 -- Bug 2 (fortran-build.lua): `prompt = "Select Makefile> "` never reached the
 -- screen, because the `files` provider defaults to cwd_prompt = true and
 -- OVERWRITES opts.prompt with the shortened cwd (fzf-lua core.lua:818-825).
+-- The picker's name has since moved to the box title (utils/fzf_look.lua), but
+-- cwd_prompt must stay off or the shared icon prompt is overwritten the same way.
 --
 -- Bug 3 (lspconfig.lua): fortls was passed to vim.lsp.enable() unconditionally
 -- even though it has an explicit cmd, so a machine without fortls spawned a
@@ -124,11 +126,11 @@ test("1b. <leader>ml re-runs the stripped path, not the decorated entry", functi
   assert_match(last_cmd, "cd '%./code'", "<leader>ml: wrong cd target")
 end)
 
-test("2. the Makefile picker disables cwd_prompt so its prompt survives", function()
+test("2. the Makefile picker disables cwd_prompt and carries its name as the title", function()
   captured_opts = nil
   key_for("<leader>mb")[2]()
   assert_eq(captured_opts.cwd_prompt, false, "cwd_prompt must be false")
-  assert_eq(captured_opts.prompt, "Select Makefile> ", "prompt must be kept")
+  assert_eq(captured_opts.winopts.title, " Select Makefile ", "the picker must be named")
 end)
 
 test("3. fortls is enabled only when its binary resolved", function()

@@ -19,9 +19,6 @@ return {
   -- Plugin Dependencies
   -- =============================================================================
   dependencies = {
-    -- blink.cmp: Provides LSP capabilities for completion
-    "saghen/blink.cmp",
-
     -- File operations: Rename/move files with LSP awareness
     { "antosha417/nvim-lsp-file-operations", config = true },
 
@@ -57,20 +54,15 @@ return {
     -- =============================================================================
     -- LSP Capabilities Configuration
     -- =============================================================================
-    -- On Neovim 0.11+, blink.cmp integration is mostly automatic.
-    -- We still call get_lsp_capabilities() to ensure full feature support.
-
-    -- Get base capabilities from Neovim
-    local capabilities = vim.lsp.protocol.make_client_capabilities()
-
-    -- Safely get blink.cmp capabilities and merge
-    local ok, blink = pcall(require, "blink.cmp")
-    if ok and blink.get_lsp_capabilities then
-      local blink_caps = blink.get_lsp_capabilities()
-      if type(blink_caps) == "table" then
-        capabilities = vim.tbl_deep_extend("force", capabilities, blink_caps)
-      end
-    end
+    -- Neovim's defaults plus the completion capabilities blink.cmp implements.
+    -- Those come from a static copy, NOT from require("blink.cmp"): that call
+    -- loaded blink.cmp and LuaSnip while the file was opening, just to read a
+    -- constant table. See andrew.lsp_capabilities.
+    local capabilities = vim.tbl_deep_extend(
+      "force",
+      vim.lsp.protocol.make_client_capabilities(),
+      require("andrew.lsp_capabilities").COMPLETION
+    )
 
     -- nvim-lsp-file-operations advertises workspace.fileOperations, which is
     -- what <leader>cR (Rename File) is gated on. It installs itself by patching
@@ -662,7 +654,7 @@ return {
     -- resolved. Enabling one that did not is the failure mode this replaces:
     -- nvim spawns it, the client dies immediately, and the only trace is
     -- :LspLog. pylsp has no explicit cmd, so lspconfig resolves it from $PATH
-    -- (mason prepends its bin dir) and it needs no guard.
+    -- (init.lua puts mason's bin dir on it) and it needs no guard.
     local missing = {}
 
     ---@param server string
@@ -686,6 +678,27 @@ return {
     vim.lsp.enable("pylsp")        -- Python development (resolved from $PATH)
     enable_if("ctags_lsp", ctags_lsp_bin, "ctags-lsp (go install github.com/netmute/ctags-lsp@latest)")
     -- Note: rust_analyzer is handled by rustaceanvim plugin
+
+    -- Servers with no settings of their own, started with lspconfig's stock
+    -- lsp/<name>.lua. Each is enabled when mason has installed its binary --
+    -- the rule mason-lspconfig's automatic_enable applied before it was
+    -- removed (see mason.lua), kept as-is so the set of attached clients did
+    -- not change. Mason's directory ONLY, not resolve_bin(): conda also ships
+    -- a `ruff`, and finding that one would start a ruff client on machines
+    -- that never had it. A server installed mid-session needs a restart.
+    local MASON_MANAGED_SERVERS = {
+      clangd = "clangd",
+      emmet_ls = "emmet-ls",
+      eslint = "vscode-eslint-language-server",
+      prismals = "prisma-language-server",
+      ruff = "ruff",
+      ty = "ty",
+    }
+    for server, binary in pairs(MASON_MANAGED_SERVERS) do
+      if vim.fn.executable(mason_bin .. binary) == 1 then
+        vim.lsp.enable(server)
+      end
+    end
 
     if #missing > 0 then
       vim.schedule(function()

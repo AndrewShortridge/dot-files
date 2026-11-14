@@ -369,8 +369,7 @@ function M.list()
   end
 
   local fzf = require("fzf-lua")
-  fzf.fzf_exec(display_list, {
-    prompt = "Footnotes> ",
+  fzf.fzf_exec(display_list, require("andrew.utils.fzf_look").titled("Footnotes", {
     actions = {
       ["default"] = function(selected)
         if selected[1] then
@@ -381,7 +380,7 @@ function M.list()
         end
       end,
     },
-  })
+  }))
 end
 
 -- ============================================================================

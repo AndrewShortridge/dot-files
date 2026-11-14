@@ -156,7 +156,7 @@ function M.cycle_task(direction)
 end
 
 --- Collect tasks from the vault index matching an optional filter predicate.
----@param prompt string fzf prompt label
+---@param prompt string picker title
 ---@param filter? fun(task: table): boolean predicate (default: accept all)
 local function index_tasks(prompt, filter)
   local fzf = require("fzf-lua")

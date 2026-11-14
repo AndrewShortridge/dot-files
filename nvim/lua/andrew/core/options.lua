@@ -49,8 +49,8 @@ opt.cursorline = true
 opt.termguicolors = true  -- Enable 24-bit RGB color in terminal
 opt.background = "dark"   -- Set background color scheme to dark
 opt.signcolumn = "yes"    -- Always show sign column for diagnostics/git signs
-opt.showtabline = 2       -- Always show the tabline (bufferline no longer
-                          -- manages this; <leader>uA toggles it)
+opt.showtabline = 2       -- Always show the tabline (andrew/utils/tabline.lua
+                          -- draws it; <leader>uA toggles it)
 
 -- =============================================================================
 -- Backspace Behavior

@@ -3,7 +3,7 @@
 -- =============================================================================
 -- Provides file type icons for various UI components:
 -- - lualine statusline
--- - bufferline tabs
+-- - the tabline and the window labels (utils/tabline.lua, plugins/incline.lua)
 -- - fzf-lua fuzzy finder
 -- - and other plugins
 --
@@ -97,7 +97,6 @@ return {
       ["yazi"]                    = { icon = "󰝰", color = "#E5C07B", cterm_color = "180", name = "Yazi" }, -- md-folder_open
       ["dap_ui"]                  = { icon = "󰃤", color = "#E06C75", cterm_color = "168", name = "Dap" }, -- md-bug
       ["dap-repl"]                = { icon = "󰞷", color = "#E06C75", cterm_color = "168", name = "DapRepl" }, -- md-console_line
-      ["opencode_ask"]            = { icon = "󱙺", color = "#61AFEF", cterm_color = "75", name = "OpenCode" }, -- md-robot_outline
       ["gitsigns-blame"]          = { icon = "󰘬", color = "#F14C28", cterm_color = "202", name = "GitBlame" }, -- md-source_branch
       ["blink-cmp-documentation"] = { icon = "󰧭", color = "#6D8086", cterm_color = "66", name = "CmpDoc" }, -- md-text_box_outline
       ["lspinfo"]                 = { icon = "󰋽", color = "#61AFEF", cterm_color = "75", name = "LspInfo" }, -- md-information_outline
@@ -143,7 +142,6 @@ return {
       ["wk"]                      = "wk",
       ["noice"]                   = "noice",
       ["yazi"]                    = "yazi",
-      ["opencode_ask"]            = "opencode_ask",
       ["gitsigns-blame"]          = "gitsigns-blame",
       ["blink-cmp-documentation"] = "blink-cmp-documentation",
       ["DressingInput"]           = "input_ui",

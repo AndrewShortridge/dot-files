@@ -32,6 +32,7 @@ return {
     local onedark = require("andrew.themes.lualine_theme")
     local colors = onedark.colors
     local my_lualine_theme = onedark.theme
+    local statusline_path = require("andrew.utils.statusline_path")
 
     -- Use global status line (single line for all windows)
     vim.opt.laststatus = 3
@@ -85,23 +86,48 @@ return {
           },
         },
 
-        -- Center section: Filename
+        -- Center section: which project, what kind of file, where it is.
+        -- The project name appears only while the project root is not the
+        -- working directory; the path is relative to the working directory
+        -- (andrew/utils/statusline_path.lua).
         lualine_c = {
-          {
-            "filename",
-            file_status = true, -- Show modified/readonly status
-            newfile_status = true, -- Show [New] for unsaved files
-            path = 1, -- Show relative path
-            symbols = {
-              modified = " ●", -- Modified indicator
-              readonly = " ", -- Readonly indicator
-              unnamed = "[No Name]", -- Placeholder for unnamed buffers
-            },
-          },
+          statusline_path.root_name({ fg = colors.blue }),
+          -- The icon alone, tight against the path it belongs to
+          { "filetype", icon_only = true, separator = "", padding = { left = 1, right = 0 } },
+          statusline_path.pretty_path(),
         },
 
         -- Right section: Diagnostics, encoding, format, filetype
         lualine_x = {
+          -- The keys of the command being typed ('showcmd': `2d`, a Visual
+          -- selection's size) and "recording @q". Neovim drew both on the
+          -- message row; noice owns what appears there now
+          -- (andrew/plugins/noice.lua) and draws neither.
+          --
+          -- noice does keep the latest 'showcmd' text, and never clears it, so
+          -- the keys of the last command stay until the next one starts.
+          -- 'showcmdloc' = "statusline" with a `%S` item would clear them, but
+          -- loses the Visual size: lualine redraws from inside nvim_win_call(),
+          -- which resets it. noice loads on VeryLazy, hence the guard.
+          {
+            function()
+              return require("noice").api.status.command.get()
+            end,
+            cond = function()
+              return package.loaded["noice"] ~= nil and require("noice").api.status.command.has()
+            end,
+            color = { fg = colors.purple },
+          },
+          {
+            function()
+              return "recording @" .. vim.fn.reg_recording()
+            end,
+            cond = function()
+              return vim.fn.reg_recording() ~= ""
+            end,
+            color = { fg = colors.red },
+          },
+
           -- Lazy plugin updates indicator
           {
             lazy_status.updates,

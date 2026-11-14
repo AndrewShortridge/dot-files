@@ -285,6 +285,13 @@ local function location_ansi()
   end
   local cfg = select(2, pcall(require, "fzf-lua.config"))
   local hls = (type(cfg) == "table" and (cfg.globals or cfg.defaults) or {}).hls or {}
+  -- fzf-lua lets `hls` be a function it calls per picker, and
+  -- andrew/utils/fzf_look.lua sets one. Indexing it raised on every key that
+  -- opens this picker.
+  if type(hls) == "function" then
+    local resolved_ok, resolved = pcall(hls, {})
+    hls = resolved_ok and type(resolved) == "table" and resolved or {}
+  end
   local _, linenr = utils.ansi_from_hl(hls.path_linenr or "FzfLuaPathLineNr", "x")
   local _, colnr = utils.ansi_from_hl(hls.path_colnr or "FzfLuaPathColNr", "x")
   return {
@@ -428,7 +435,7 @@ end
 ---@param entries string[]
 ---@param title string
 ---@param root string
----@param opts { prompt?: string, whole_row?: boolean, empty?: string }|nil
+---@param opts { whole_row?: boolean, empty?: string }|nil
 local function pick(entries, title, root, opts)
   opts = opts or {}
   local fzf = require("fzf-lua")
@@ -449,17 +456,15 @@ local function pick(entries, title, root, opts)
     -- Match the symbol alone. Field 2 OF THE VIEW is field 3 of the entry.
     fzf_opts["--nth"] = "2"
   end
-  fzf.fzf_exec(entries, {
-    prompt = opts.prompt or "Fortran Symbols> ",
+  fzf.fzf_exec(entries, require("andrew.utils.fzf_look").titled(title, {
     cwd = root,
     previewer = "builtin",
     -- A TABLE keyed by the fzf binding, never the bare function: fzf-lua
     -- normalizes `actions` by indexing it, so passing a function leaves the
     -- picker with no `enter` binding at all and <CR> silently does nothing.
     actions = { ["enter"] = fzf.actions.file_edit_or_qf },
-    winopts = { title = " " .. title .. " ", title_pos = "center" },
     fzf_opts = fzf_opts,
-  })
+  }))
 end
 
 --- True when `ft` is one of the Fortran filetypes this config uses.
@@ -643,7 +648,6 @@ function M.references(name)
       "Fortran References: " .. name,
       root,
       {
-        prompt = "Fortran References> ",
         whole_row = true,
         empty = "No references to " .. name,
       }

@@ -56,10 +56,9 @@ return {
         return
       end
 
-      fzf.live_grep({
+      fzf.live_grep(require("andrew.utils.fzf_look").titled("Yazi Grep", {
         cwd = dir,
-        prompt = "Yazi Grep> ",
-      })
+      }))
     end
 
     -- Grep in selected files using fzf-lua
@@ -70,10 +69,9 @@ return {
         return
       end
 
-      fzf.live_grep({
+      fzf.live_grep(require("andrew.utils.fzf_look").titled("Yazi Grep (selected)", {
         search_paths = files,
-        prompt = "Yazi Grep (selected)> ",
-      })
+      }))
     end
 
     -- =============================================================================

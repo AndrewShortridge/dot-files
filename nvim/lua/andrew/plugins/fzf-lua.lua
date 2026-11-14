@@ -26,13 +26,13 @@ return {
 
   keys = {
     -- File operations
-    {
-      "<leader>ff",
-      function()
-        require("fzf-lua").files(require("andrew.utils.obsidian").picker_opts())
-      end,
-      desc = "Fuzzy find files in current directory",
-    },
+    --
+    -- <leader>ff is NOT declared here any more: it moved to core/keymaps.lua,
+    -- beside <leader><space>, and both go through andrew.utils.file_picker,
+    -- which chooses between this plugin's `files()` and the snacks picker. A
+    -- lazy.nvim key on this spec would load fzf-lua on every first press, even
+    -- when the snacks picker is the one opening. The `files = { ... }` setup
+    -- below is unchanged and drives the fzf backend.
     {
       "<leader>fr",
       function()
@@ -105,11 +105,10 @@ return {
         local fzf = require("fzf-lua")
         local doc_paths = vim.api.nvim_get_runtime_file("doc", true)
 
-        fzf.live_grep({
+        fzf.live_grep(require("andrew.utils.fzf_look").titled("Help Grep", {
           search_paths = doc_paths,
-          prompt = "Help Grep> ",
           rg_glob = "--glob='*.txt'",
-        })
+        }))
       end,
       desc = "Grep Neovim :help documentation",
     },
@@ -224,7 +223,30 @@ return {
     -- =============================================================================
     -- Setup fzf-lua
     -- =============================================================================
-    fzf.setup({
+    -- Two layers. The table written out below is this config's own fzf-lua
+    -- configuration: what to list, how to grep, which keys do what. Over it
+    -- goes the LOOK shared by every picker (andrew.utils.fzf_look: the snacks
+    -- picker's layout, the `telescope` profile's colours and preview paging),
+    -- deep-merged with "force" so that where both set a key the look wins.
+    -- The one value that changes is `winopts.height`; the rest of the look
+    -- either repeats what is written here or adds keys that are not.
+    fzf.setup(vim.tbl_deep_extend("force", {
+      -- =============================================================================
+      -- Git Hunks: row parser
+      -- =============================================================================
+      -- fzf-lua's own parser raises on a hunk header without a line count
+      -- (`@@ -1 +1,2 @@`), which empties the whole `git_hunks` picker
+      -- (<leader>gd) as soon as one short file is among the changes. See
+      -- andrew/utils/fzf_git_hunks.lua. `multiprocess = false` because the
+      -- replacement lives in this config, which fzf-lua's headless helper
+      -- process does not load.
+      git = {
+        hunks = {
+          fn_transform = [[return require("andrew.utils.fzf_git_hunks").to_entry]],
+          multiprocess = false,
+        },
+      },
+
       -- =============================================================================
       -- File Finder Configuration
       -- =============================================================================
@@ -247,7 +269,22 @@ return {
       -- Grep Configuration
       -- =============================================================================
       grep = {
-        -- Ripgrep options for consistent output
+        -- Ripgrep options for consistent output.
+        --
+        -- --hidden plus the two globs give grep the same file set as the file
+        -- finder above (`fd --hidden --exclude .git --exclude .obsidian`), so a
+        -- dotfile that can be opened by name can also be searched. The globs
+        -- matter only because of --hidden: without them rg would walk .git/
+        -- (objects, packed refs) and Obsidian's config folder. .gitignore is
+        -- still respected.
+        --
+        -- The flag is spelled out here rather than set as `grep.hidden = true`
+        -- on purpose. That option applies to EVERY grep, including the vault
+        -- pickers that pass their own rg_opts (vault/engine.lua rg_base_opts),
+        -- which would start returning notes from `.trash/`. Kept in rg_opts,
+        -- it reaches only the callers that use these defaults -- and the one
+        -- vault grep that does, vault/search.lua's M.search(), opts back out
+        -- with `hidden = false`.
         rg_opts = table.concat({
           "--color=never",      -- No ANSI colors in output
           "--no-heading",       -- Don't group by file
@@ -255,6 +292,9 @@ return {
           "--line-number",      -- Show line numbers
           "--column",           -- Show column numbers
           "--smart-case",       -- Case-insensitive unless uppercase in query
+          "--hidden",           -- Search dotfiles and dot-directories
+          '--glob "!.git"',     -- ...but never the git directory
+          '--glob "!.obsidian"', -- ...nor Obsidian's config folder
           "-e",                 -- Next arg is the pattern (prevents -pattern misparse)
         }, " "),
       },
@@ -264,7 +304,7 @@ return {
       -- =============================================================================
       winopts = {
         -- Window dimensions (fraction of editor)
-        height = 0.85,  -- 85% of editor height
+        height = 0.85,  -- 85% of editor height; the look lowers this to 80%
         width = 0.80,   -- 80% of editor width
 
         -- Preview window configuration
@@ -276,6 +316,7 @@ return {
       -- =============================================================================
       -- Keybindings Inside fzf Window
       -- =============================================================================
+      -- The look adds <C-d> / <C-u> (page the preview) to both tables.
       keymap = {
         builtin = {
           ["<C-n>"] = "down",
@@ -313,6 +354,6 @@ return {
           ["ctrl-t"] = actions.buf_tabedit,  -- Show buffer in new tab
         },
       },
-    })
+    }, require("andrew.utils.fzf_look").setup_opts()))
   end,
 }

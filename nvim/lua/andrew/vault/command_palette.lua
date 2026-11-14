@@ -330,8 +330,7 @@ function M.open()
     return
   end
 
-  fzf.fzf_exec(lines, {
-    prompt = "Vault Command> ",
+  fzf.fzf_exec(lines, require("andrew.utils.fzf_look").titled("Vault Command", {
     winopts = {
       height = config.command_palette.height,
       width = config.command_palette.width,
@@ -358,7 +357,7 @@ function M.open()
         end
       end,
     },
-  })
+  }))
 end
 
 --- Register the palette's own keymap and command.

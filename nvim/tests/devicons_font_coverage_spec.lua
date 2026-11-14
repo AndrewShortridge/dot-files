@@ -138,7 +138,7 @@ test("the filetypes this config actually opens are mapped", function()
     "snacks_dashboard", "snacks_picker_list", "snacks_picker_input",
     "snacks_terminal", "snacks_notif",
     "fzf", "trouble", "lazy", "mason", "wk", "noice", "yazi",
-    "dap-repl", "dapui_scopes", "gitsigns-blame", "opencode_ask",
+    "dap-repl", "dapui_scopes", "gitsigns-blame",
     "qf", "man", "lspinfo",
     "vault_sidebar", "vault_fm_editor", "vault-collisions", "vault-profiler",
   }
