@@ -1,0 +1,26 @@
+{
+  "name": "W1_minimal",
+  "created_at": "2026-05-25T00:00:00Z",
+  "schema": 1,
+  "kitty_version": "0.36.4",
+  "os_windows": [
+    {
+      "tabs": [
+        {
+          "title": "main",
+          "layout": "splits",
+          "active_window_idx": 0,
+          "windows": [
+            {
+              "kitty_id": 1,
+              "ksession_id": "uid-001",
+              "cwd": "/home/user",
+              "program": { "kind": "bare_shell" },
+              "scrollback": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

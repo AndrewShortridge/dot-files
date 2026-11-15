@@ -1,0 +1,31 @@
+{
+  "name": "W3_heavy_nvim",
+  "created_at": "2026-05-25T00:00:00Z",
+  "schema": 1,
+  "kitty_version": "0.36.4",
+  "os_windows": [
+    {
+      "tabs": [
+        {
+          "title": "editor",
+          "layout": "splits",
+          "active_window_idx": 0,
+          "windows": [
+            {
+              "kitty_id": 1,
+              "ksession_id": "uid-001",
+              "cwd": "/home/user/project",
+              "program": {
+                "kind": "nvim",
+                "session_vim": "W3_heavy_nvim.state/session.vim",
+                "manifest": "W3_heavy_nvim.state/win-1.json",
+                "truncated_buffers": 0
+              },
+              "scrollback": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

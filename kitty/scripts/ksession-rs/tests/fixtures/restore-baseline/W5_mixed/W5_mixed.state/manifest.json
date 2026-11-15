@@ -1,0 +1,95 @@
+{
+  "name": "W5_mixed",
+  "created_at": "2026-05-25T00:00:00Z",
+  "schema": 1,
+  "kitty_version": "0.36.4",
+  "os_windows": [
+    {
+      "tabs": [
+        {
+          "title": "editor",
+          "layout": "splits",
+          "active_window_idx": 0,
+          "windows": [
+            {
+              "kitty_id": 1,
+              "ksession_id": "uid-001",
+              "cwd": "/home/user/project",
+              "program": {
+                "kind": "nvim",
+                "session_vim": "W5_mixed.state/session.vim",
+                "manifest": "W5_mixed.state/win-1.json",
+                "truncated_buffers": 0
+              },
+              "scrollback": null
+            }
+          ]
+        },
+        {
+          "title": "tmux",
+          "layout": "splits",
+          "active_window_idx": 0,
+          "windows": [
+            {
+              "kitty_id": 2,
+              "ksession_id": "uid-002",
+              "cwd": "/home/user",
+              "program": {
+                "kind": "tmux",
+                "session_name": "dev",
+                "restore_sh": "W5_mixed.state/restore.sh",
+                "windows": [
+                  {
+                    "idx": 0,
+                    "name": "code",
+                    "layout": "abcd,80x24,0,0,0",
+                    "active": true,
+                    "panes": [
+                      { "index": 0, "pane_pid": 2000, "pane_id_digits": 0, "cwd": "/home/user/project", "current_command": "bash", "program": { "kind": "bare_shell" } },
+                      { "index": 1, "pane_pid": 2001, "pane_id_digits": 1, "cwd": "/home/user/project/src", "current_command": "bash", "program": { "kind": "bare_shell" } }
+                    ],
+                    "active_pane_idx": 0,
+                    "layout_leaf_count": 2
+                  },
+                  {
+                    "idx": 1,
+                    "name": "test",
+                    "layout": "efgh,80x24,0,0,2",
+                    "active": false,
+                    "panes": [
+                      { "index": 0, "pane_pid": 2002, "pane_id_digits": 2, "cwd": "/home/user/project/tests", "current_command": "bash", "program": { "kind": "bare_shell" } },
+                      { "index": 1, "pane_pid": 2003, "pane_id_digits": 3, "cwd": "/tmp", "current_command": "bash", "program": { "kind": "bare_shell" } }
+                    ],
+                    "active_pane_idx": 0,
+                    "layout_leaf_count": 2
+                  }
+                ],
+                "session_id": 0,
+                "active_window_idx": 0
+              },
+              "scrollback": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "tabs": [
+        {
+          "title": "shell",
+          "layout": "splits",
+          "active_window_idx": 0,
+          "windows": [
+            {
+              "kitty_id": 3,
+              "ksession_id": "uid-003",
+              "cwd": "/home/user",
+              "program": { "kind": "bare_shell" },
+              "scrollback": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
