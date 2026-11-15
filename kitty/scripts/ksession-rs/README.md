@@ -86,10 +86,18 @@ but keeps its own storage root and its own bindings in
 
 ### Requirements
 
-- tmux >= 3.3: the binary only needs `display-popup` (3.2), but the shipped
-  tmux.conf passes `-T` to it and sets `popup-style`, `popup-border-style`
-  and `popup-border-lines rounded` (global options, no `-b` on the binds),
-  all of which arrived in 3.3
+- tmux >= 3.3 for the binary and the scripts: the binary only needs
+  `display-popup` (3.2), but the binds pass `-T` to it and rely on
+  `popup-style`, `popup-border-style` and `popup-border-lines rounded`
+  (global options, no `-b` on the binds), all of which arrived in 3.3. The
+  shipped tmux.conf as a whole is written for tmux 3.8 (its copy-mode
+  options do not exist before 3.6 / 3.7)
+- Pane layouts are saved as tmux prints `#{window_layout}`: the classic
+  string up to tmux 3.7, a JSON tree from 3.8. tmux 3.8 replays both. An
+  older tmux rejects the JSON form (`invalid layout`) and `restore.sh`
+  stops there, leaving the session half built — so restore a save made on
+  tmux >= 3.8 with tmux >= 3.8. `tmux_version` in the head file records
+  which tmux made a save
 - fzf >= 0.43: the pickers gate cursor restore (`load:pos(N)`) on that
   version; older fzf still works with the cursor reset to the top row
 - `~/.local/bin/ksession` must be a build that has the `tmux` subcommand
