@@ -98,6 +98,12 @@ async fn unnamed_buffer_round_trip() {
     let mut child1 = tokio::process::Command::new("nvim")
         .args(["--headless", "--clean", "-u", "NORC", "--listen"])
         .arg(&sock1)
+        // No swap files: every [No Name] buffer started in this directory
+        // shares one swap file name, nvim only has a few hundred suffixes
+        // for it, and stale files left by killed nvims use them up
+        // (`E326: Too many swap files found`). Swap recovery is not under
+        // test.
+        .args(["-c", "set noswapfile"])
         .kill_on_drop(true)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -209,6 +215,7 @@ async fn unnamed_buffer_round_trip() {
     let sock2 = tmp.path().join("nv2.sock");
     let mut child2 = tokio::process::Command::new("nvim")
         .args(["--headless", "--clean", "-u", "NORC"])
+        .args(["-c", "set noswapfile"])
         .args(["-c", &rtp_cmd])
         .args(["-S"])
         .arg(&session_vim_path)

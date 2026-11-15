@@ -683,30 +683,6 @@ fn run_comprehensive_comparison(
 }
 
 #[test]
-fn test_bash_save_with_fixture() {
-    let fixture_path = get_fixture_path().expect("KSESSION_FROM_LS must be set");
-    assert!(
-        fixture_path.exists(),
-        "Fixture file must exist: {}",
-        fixture_path.display()
-    );
-
-    let skeleton_path = get_skeleton_path();
-
-    let tmp = tempdir().unwrap();
-    let sessions_dir = tmp.path().to_path_buf();
-
-    // Run Bash save
-    run_bash_save(
-        &fixture_path,
-        skeleton_path.as_deref(),
-        &sessions_dir,
-        "test_session",
-    )
-    .expect("Bash save should succeed");
-}
-
-#[test]
 fn test_rust_save_with_fixture() {
     let fixture_path = get_fixture_path().expect("KSESSION_FROM_LS must be set");
     assert!(

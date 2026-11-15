@@ -1001,7 +1001,9 @@ fn display_width(s: &str) -> usize {
 
 /// Render the tree to a string. Each line has the form:
 ///
-///     <prefix><connector> <label>  <right-aligned duration>
+/// ```text
+/// <prefix><connector> <label>  <right-aligned duration>
+/// ```
 ///
 /// The total width adapts to the widest label+duration.
 pub fn render_tree(roots: &[TreeNode]) -> String {
