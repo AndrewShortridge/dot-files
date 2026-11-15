@@ -814,7 +814,13 @@ pub fn assert_no_nul(field: &str, value: &str) -> Result<(), String> {
 
 /// Bug 10: count pane leaves in a tmux layout string.
 ///
-/// Layout strings look like:
+/// tmux >= 3.8 reports `#{window_layout}` as a JSON tree, except to
+/// control-mode clients without the `new-layouts` flag, which still get
+/// the older string. Its leaves are the cells with `"t":"p"`; a floating
+/// pane is such a cell too, and `list-panes` counts it:
+/// - `{"V":2,"L":{"t":"p","w":160,"h":45,"x":0,"y":0,"a":true,"i":1,"I":"%0"}}` → 1 leaf
+///
+/// Older layout strings look like:
 /// - `c5a5,200x60,0,0,1`                                            → 1 leaf
 /// - `c5a5,200x60,0,0[200x29,0,0,1,200x30,0,30,2]`                  → 2 leaves
 /// - `5b40,200x60,0,0{100x60,0,0,1,99x60,101,0[99x30,101,0,2,99x29,101,31,3]}` → 3 leaves
@@ -834,6 +840,10 @@ pub fn assert_no_nul(field: &str, value: &str) -> Result<(), String> {
 /// quintuple when followed immediately by `[` or `{`.
 #[must_use]
 fn count_panes_in_layout(layout: &str) -> usize {
+    if layout.starts_with('{') {
+        return serde_json::from_str::<serde_json::Value>(layout)
+            .map_or(0, |tree| count_json_pane_cells(&tree));
+    }
     let bytes = layout.as_bytes();
     // Strip the leading "<chksum>," prefix if present (4 hex digits + ',').
     // tmux's checksum is exactly 4 lowercase hex chars.
@@ -939,6 +949,18 @@ fn count_panes_in_layout(layout: &str) -> usize {
     count
 }
 
+/// Pane cells (`"t":"p"`) in a tmux >= 3.8 JSON layout, at any depth.
+fn count_json_pane_cells(cell: &serde_json::Value) -> usize {
+    match cell {
+        serde_json::Value::Object(fields) => {
+            let is_pane = fields.get("t").and_then(serde_json::Value::as_str) == Some("p");
+            usize::from(is_pane) + fields.values().map(count_json_pane_cells).sum::<usize>()
+        }
+        serde_json::Value::Array(cells) => cells.iter().map(count_json_pane_cells).sum(),
+        _ => 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1028,6 +1050,56 @@ mod tests {
     #[test]
     fn count_panes_empty_string() {
         assert_eq!(count_panes_in_layout(""), 0);
+    }
+
+    // tmux >= 3.8 JSON layouts, as `#{window_layout}` printed them.
+
+    #[test]
+    fn count_panes_json_single_pane() {
+        assert_eq!(
+            count_panes_in_layout(
+                r#"{"V":2,"L":{"t":"p","w":160,"h":45,"x":0,"y":0,"a":true,"i":1,"I":"%0"}}"#
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn count_panes_json_three_pane_nested() {
+        assert_eq!(
+            count_panes_in_layout(concat!(
+                r#"{"V":2,"L":{"t":"h","w":160,"h":45,"x":0,"y":0,"c":["#,
+                r#"{"t":"p","w":50,"h":45,"x":0,"y":0,"a":true,"i":1,"I":"%1"},"#,
+                r#"{"t":"v","w":109,"h":45,"x":51,"y":0,"c":["#,
+                r#"{"t":"p","w":109,"h":35,"x":51,"y":0,"i":2,"I":"%2"},"#,
+                r#"{"t":"p","w":109,"h":9,"x":51,"y":36,"i":3,"I":"%3"}]}]}}"#,
+            )),
+            3
+        );
+    }
+
+    #[test]
+    fn count_panes_json_counts_floating_pane() {
+        // The middle cell (`"z":0`) floats above the two tiled panes.
+        assert_eq!(
+            count_panes_in_layout(concat!(
+                r#"{"V":2,"L":{"t":"h","w":160,"h":45,"x":0,"y":0,"c":["#,
+                r#"{"t":"p","w":80,"h":45,"x":0,"y":0,"a":true,"i":1,"I":"%9"},"#,
+                r#"{"t":"p","w":80,"h":11,"x":4,"y":2,"i":3,"z":0,"I":"%11"},"#,
+                r#"{"t":"p","w":79,"h":45,"x":81,"y":0,"i":2,"I":"%10"}]}}"#,
+            )),
+            3
+        );
+    }
+
+    #[test]
+    fn count_panes_json_truncated_is_zero() {
+        // Unparseable → 0 leaves → never equals a live pane count, so
+        // `effective_layout` drops it instead of replaying garbage.
+        assert_eq!(
+            count_panes_in_layout(r#"{"V":2,"L":{"t":"h","w":160,"c":[{"t":"p","w":50"#),
+            0
+        );
     }
 
     // ---------- is_valid_session_name (Bug 13) ----------
