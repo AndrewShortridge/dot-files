@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "buffers": [
+    { "buf_id": 1, "name": "src/main.rs", "modified": true, "filetype": "rust", "dump_path": "buf-1.txt", "truncated": false, "byte_count": 1024 },
+    { "buf_id": 2, "name": "src/lib.rs", "modified": false, "filetype": "rust", "dump_path": "buf-2.txt", "truncated": false, "byte_count": 2048 },
+    { "buf_id": 3, "name": "src/model/session.rs", "modified": true, "filetype": "rust", "dump_path": "buf-3.txt", "truncated": false, "byte_count": 512 },
+    { "buf_id": 4, "name": "src/model/program.rs", "modified": false, "filetype": "rust", "dump_path": "buf-4.txt", "truncated": false, "byte_count": 768 },
+    { "buf_id": 5, "name": "src/model/tab.rs", "modified": false, "filetype": "rust", "dump_path": "buf-5.txt", "truncated": false, "byte_count": 256 },
+    { "buf_id": 6, "name": "Cargo.toml", "modified": false, "filetype": "toml", "dump_path": "buf-6.txt", "truncated": false, "byte_count": 384 },
+    { "buf_id": 7, "name": "README.md", "modified": true, "filetype": "markdown", "dump_path": "buf-7.txt", "truncated": false, "byte_count": 4096 },
+    { "buf_id": 8, "name": "tests/integration.rs", "modified": false, "filetype": "rust", "dump_path": "buf-8.txt", "truncated": false, "byte_count": 1536 }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "name": "W4_heavy_tmux",
+  "created_at": "2026-05-25T00:00:00Z",
+  "schema": 1,
+  "kitty_version": "0.36.4",
+  "os_windows": [
+    {
+      "tabs": [
+        {
+          "title": "tmux",
+          "layout": "splits",
+          "active_window_idx": 0,
+          "windows": [
+            {
+              "kitty_id": 1,
+              "ksession_id": "uid-001",
+              "cwd": "/home/user",
+              "program": {
+                "kind": "tmux",
+                "session_name": "work",
+                "restore_sh": "W4_heavy_tmux.state/restore.sh",
+                "windows": [
+                  {
+                    "idx": 0,
+                    "name": "main",
+                    "layout": "abcd,80x24,0,0,0",
+                    "active": true,
+                    "panes": [
+                      { "index": 0, "pane_pid": 1000, "pane_id_digits": 0, "cwd": "/home/user", "current_command": "bash", "program": { "kind": "bare_shell" } },
+                      { "index": 1, "pane_pid": 1001, "pane_id_digits": 1, "cwd": "/home/user/src", "current_command": "bash", "program": { "kind": "bare_shell" } },
+                      { "index": 2, "pane_pid": 1002, "pane_id_digits": 2, "cwd": "/home/user/docs", "current_command": "bash", "program": { "kind": "bare_shell" } }
+                    ],
+                    "active_pane_idx": 0,
+                    "layout_leaf_count": 3
+                  },
+                  {
+                    "idx": 1,
+                    "name": "build",
+                    "layout": "efgh,80x24,0,0,3",
+                    "active": false,
+                    "panes": [
+                      { "index": 0, "pane_pid": 1003, "pane_id_digits": 3, "cwd": "/home/user/project", "current_command": "bash", "program": { "kind": "bare_shell" } },
+                      { "index": 1, "pane_pid": 1004, "pane_id_digits": 4, "cwd": "/home/user/project/src", "current_command": "bash", "program": { "kind": "bare_shell" } },
+                      { "index": 2, "pane_pid": 1005, "pane_id_digits": 5, "cwd": "/home/user/project/tests", "current_command": "bash", "program": { "kind": "bare_shell" } }
+                    ],
+                    "active_pane_idx": 0,
+                    "layout_leaf_count": 3
+                  },
+                  {
+                    "idx": 2,
+                    "name": "logs",
+                    "layout": "ijkl,80x24,0,0,6",
+                    "active": false,
+                    "panes": [
+                      { "index": 0, "pane_pid": 1006, "pane_id_digits": 6, "cwd": "/var/log", "current_command": "bash", "program": { "kind": "bare_shell" } },
+                      { "index": 1, "pane_pid": 1007, "pane_id_digits": 7, "cwd": "/var/log/nginx", "current_command": "bash", "program": { "kind": "bare_shell" } },
+                      { "index": 2, "pane_pid": 1008, "pane_id_digits": 8, "cwd": "/tmp", "current_command": "bash", "program": { "kind": "bare_shell" } }
+                    ],
+                    "active_pane_idx": 0,
+                    "layout_leaf_count": 3
+                  }
+                ],
+                "session_id": 0,
+                "active_window_idx": 0
+              },
+              "scrollback": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
