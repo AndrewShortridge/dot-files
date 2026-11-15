@@ -860,9 +860,10 @@ pub fn resolve_target_program(
         }
     }
 
-    // Detailed logging for program detection
+    // Detailed logging for program detection. Not `ksession: window <id>:`,
+    // which is the per-window degrade line (one per AdapterError).
     eprintln!(
-        "ksession: window {}: fg_pid={}, fg_exe={:?}",
+        "ksession:   window id={}: fg_pid={}, fg_exe={:?}",
         window.id, fg_pid, fg_exe
     );
 
