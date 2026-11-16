@@ -35,10 +35,11 @@ This is a Neovim configuration repository targeting **Neovim 0.11+**. Agents sho
     │   ├── linting.lua              # Multi-language linting (nvim-lint)
     │   ├── lualine.lua              # Status line (lualine.nvim); also shows 'showcmd' keys and "recording @q"
     │   ├── luasnip.lua              # Snippet engine (LuaSnip + friendly-snippets)
+    │   ├── md-render.lua            # Second markdown renderer, on trial (md-render.nvim) + its auto-mode adapter
     │   ├── noice.lua                # Floating `:` cmdline + message box at the bottom-right (noice.nvim)
     │   ├── render-markdown.lua      # In-buffer markdown rendering
     │   ├── rustaceanvim.lua         # Enhanced Rust development
-    │   ├── snacks.lua              # snacks.nvim: vim.ui.input/select, image, toggles, scroll; picker colours via utils/snacks_look.lua
+    │   ├── snacks.lua              # snacks.nvim: start screen (dashboard), vim.ui.input/select, image, toggles, scroll; picker colours via utils/snacks_look.lua
     │   ├── substitute.lua           # Motion-based replace
     │   ├── surround.lua             # Manage surrounding pairs
     │   ├── todo-comments.lua        # TODO/FIXME highlights
@@ -400,14 +401,14 @@ Per-language type checking via terminal split (30% height):
 | lualine.nvim | lualine.lua | Status line: project name (when the root is not the cwd), filetype icon, pretty path; also carries the `'showcmd'` keys and "recording @q" now that noice owns the message row | Config |
 | noice.nvim | noice.lua | Floating `:` cmdline; messages in a box at the bottom-right | `VeryLazy` |
 | incline.nvim | incline.lua | Window labels (icon, file name, `[+]`) at the top-right of every split | `VeryLazy` |
-| snacks.nvim | snacks.lua | `vim.ui.input` + `vim.ui.select` (picker.ui_select), the `snacks` backend of the file finder (`<leader>ff` / `<leader><space>`; `utils/file_picker.lua` picks between `fzf` and `snacks` via `vim.g.file_picker_backend`), inline images, `<leader>u` toggles | `lazy = false`, `priority = 1000` |
+| snacks.nvim | snacks.lua | The start screen a bare `nvim` opens on (`dashboard`), `vim.ui.input` + `vim.ui.select` (picker.ui_select), the `snacks` backend of the file finder (`<leader>ff` / `<leader><space>`; `utils/file_picker.lua` picks between `fzf` and `snacks` via `vim.g.file_picker_backend`), inline images, `<leader>u` toggles | `lazy = false`, `priority = 1000` |
 | which-key.nvim | which-key.lua | Keybinding hints | `VeryLazy` |
 | nvim-web-devicons | ui/devicons.lua | File icons | `lazy = true` |
 | blink.cmp | blink-cmp.lua | Completion | `InsertEnter, CmdlineEnter` |
 | LuaSnip | luasnip.lua | Snippet engine (+ friendly-snippets) | `InsertEnter` |
 | nvim-ts-autotag | ts-autotag.lua | Auto-close markup tags (dormant: `setup()` is never called) | `ft` (html, vue, jsx, tsx) |
 | fzf-lua | fzf-lua.lua | Fuzzy finder | `cmd = "FzfLua"` |
-| nvim-treesitter | treesitter.lua | Syntax highlighting | `BufReadPre, BufNewFile` |
+| nvim-treesitter | treesitter.lua | Syntax highlighting | `BufReadPre, BufNewFile, VeryLazy` |
 | nvim-autopairs | autopairs.lua | Auto-close brackets | `InsertEnter` |
 | Comment.nvim | comment.lua | Commenting | `BufReadPre, BufNewFile` |
 | indent-blankline.nvim | indent-blankline.lua | Indentation guides | `BufReadPre, BufNewFile` |
@@ -421,7 +422,8 @@ Per-language type checking via terminal split (30% height):
 | substitute.nvim | substitute.lua | Motion-based replace | `BufReadPre, BufNewFile` |
 | nvim-surround | surround.lua | Surrounding pairs | `BufReadPre, BufNewFile` |
 | vim-table-mode | vim-table-mode.lua | Markdown tables | `ft = "markdown"` |
-| render-markdown.nvim | render-markdown.lua | Styled markdown | `ft = "markdown"` |
+| render-markdown.nvim | render-markdown.lua | Styled markdown; the default backend of `:MarkdownRenderer` | `ft = "markdown"` |
+| md-render.nvim | md-render.lua | Second markdown renderer, on trial: renders into a separate buffer (`:MdRender float\|tab\|split\|toggle`); the `md-render` backend of `:MarkdownRenderer` | `cmd` (`MdRender`, `MdRenderHeadingColors`, `MdRenderMath`) |
 | nvim-colorizer | colorizer.lua | Color code preview | Config |
 | yazi.nvim | yazi.lua | File explorer | `VeryLazy` |
 | rustaceanvim | rustaceanvim.lua | Rust IDE features | `lazy = false` |
@@ -1006,6 +1008,42 @@ recoloured in `picker.on_show` (snacks' `SnacksPickerBoxTitle` group never
 reaches the window), and the match counter is `nocombine` so the bold of the
 typed query does not spread to it.
 
+**A bare `nvim` opens on a start screen** (the `dashboard` block of
+`lua/andrew/plugins/snacks.lua`): LazyVim's dashboard -- header, a column of
+single-key actions, the plugin load time -- with snacks' "NEOVIM" header.
+Snacks shows it only when Neovim starts with nothing to show: any file or
+directory argument, piped stdin or a non-empty first buffer skips it.
+`:lua Snacks.dashboard()` reopens it.
+
+| Key | Action | Same as |
+| --- | --- | --- |
+| `f` | Find File | `<leader>ff` |
+| `n` | New File | `:ene` + insert mode |
+| `g` | Find Text | `<leader>fs` |
+| `r` | Recent Files | `<leader>fr` |
+| `c` | Config | the file finder in `stdpath("config")` |
+| `s` | Restore Session | `<leader>qs` |
+| `l` | Lazy | `:Lazy` |
+| `q` | Quit | `:qa` |
+
+- `f` / `g` / `r` FEED the `<leader>` key rather than call a picker, so a row
+  cannot drift from its key. `tests/dashboard_keys_spec.lua` fails if such a
+  row names a key nothing maps -- which would otherwise be a row that silently
+  does nothing. Do not switch them to `Snacks.dashboard.pick()`: it prefers
+  the snacks picker whenever that is enabled, and it is, for `vim.ui.select`.
+- No tabline and an empty statusline while it is up. Snacks zeroes
+  `'showtabline'` and `'laststatus'` and restores them on close; lualine has
+  `snacks_dashboard` in its `disabled_filetypes`, because it loads afterwards
+  and sets `'laststatus'` back to 3.
+- nvim-treesitter loads on `VeryLazy` as well as on the first file BECAUSE of
+  this screen. Pickers preview files in scratch buffers, which fire neither
+  `BufReadPre` nor `BufNewFile`, and `queries/markdown/injections.scm` needs
+  the plugin's `set-lang-from-info-string!` directive: previewing a markdown
+  file before any file had been opened raised "No handler for
+  set-lang-from-info-string!".
+- The `~` end-of-buffer markers are hidden in the dashboard's window only
+  (`styles.dashboard.wo.fillchars`).
+
 **Messages appear in a box, not on the message row** (`lua/andrew/plugins/noice.lua`).
 noice's `messages` module is on, and routes of ours run before its built-in
 ones: skip the kinds that only made sense on the row; send `:!command`
@@ -1088,6 +1126,281 @@ onedark's colours instead of his solarized-osaka ones. bufferline.nvim is gone.
   `<leader>/` and grep pickers use; the two can differ.
 - The file name's highlights are built with lualine's `create_hl`, which fills
   in the section's own colours; keep it that way rather than a bare `%#Group#`.
+
+**The markdown renderer is switchable** (`lua/andrew/utils/markdown_renderer.lua`,
+set up from `init.lua`, pinned by `tests/markdown_renderer_switch_spec.lua`), the
+same way the file finder is. `:MarkdownRenderer md-render` /
+`:MarkdownRenderer render-markdown` switches the running session;
+`vim.g.markdown_renderer` holds the choice and `DEFAULT_BACKEND` in that file is
+what a session starts with. md-render.nvim is installed for a trial, not as a
+replacement; to end the trial delete `plugins/md-render.lua`, the `md-render`
+entry in the switch, and `"md-render"` from ibl's excludes.
+
+- `render-markdown` decorates the buffer being edited. `md-render` uses that
+  plugin's auto mode (experimental upstream): outside Insert mode the window
+  shows a separate read-only buffer named `<file> [render]`, and `i`/`a`/`o`
+  swap the source back in. None of the buffer-local markdown keymaps exist in
+  that view.
+- Exactly one is on per buffer, and a buffer is switched when it is current.
+  The vault's preview floats and blink's documentation window call
+  render-markdown directly and stay on it under either choice.
+- The old backend comes off one tick BEFORE the new one goes on.
+  render-markdown clears its decorations in a scheduled callback that gives up
+  once the buffer is off screen, which is where md-render puts it.
+- `plugins/md-render.lua` carries an adapter for three gaps in auto mode, all
+  read from the undocumented `w:md_render_state`: a window that moved on to
+  another file is released (otherwise the next file is never rendered and keeps
+  the rendered view's `nonumber` etc.), a window split off a rendered view
+  inherits the state so the same release works there, and a buffer already in
+  auto mode is rendered again when it is shown again. Drop each when upstream
+  covers it.
+- Rendered views in a normal window (in place, `split`, `tab`; not the float)
+  are centred by the same file with a `'statuscolumn'` of spaces. Gutter, not
+  text, because md-render subtracts the gutter wherever it measures the window
+  (wrapping, images, scaled headings), while its frontmatter block ignores the
+  content indent and its image placement ignores virtual text. Neovim caps a
+  gutter at 47 columns, so with the default 80-column render a window wider
+  than 174 sits left of centre; `vim.g.md_render_max_width` is the knob.
+  md-render empties `'statuscolumn'` in its own BufEnter, hence the
+  `vim.schedule` there, and re-wraps on WinResized, hence none there.
+- Every swap between a rendered view and its source keeps the cursor on the
+  same text, both ways: `i`, `a` and the other Insert keys in auto mode,
+  leaving Insert mode again, `:MdRender toggle`. md-render itself leaves it in
+  the first column, and for a wrapped paragraph often a line off.
+  `lua/andrew/utils/md_render_cursor.lua` finds the place by diffing the words
+  of both buffers around the cursor, with no notion of which side is which
+  (pinned by `tests/md_render_cursor_spec.lua`); `plugins/md-render.lua`
+  applies it one tick after the swapped-out buffer is left, which is after
+  md-render's own cursor placement and before the `i` it feeds.
+- The callout-fold pass in `plugins/render-markdown.lua` skips Insert mode.
+  Under auto mode the source enters the window as Insert begins, and that
+  pass's `normal! zE` moved an end-of-line cursor one character left, so `A`
+  typed before the last character.
+- `:MdRender split` is VERTICAL here. Upstream runs a plain `:split` and has no
+  option for it, so `plugins/md-render.lua` wraps `preview.split` in the
+  spec's `config` to add `vertical` when the command gave no placement.
+  `:horizontal MdRender split` is the stacked one; `:tab`, `:topleft` and
+  `:botright` still work. The same wrapper puts the SOURCE on the left (on top
+  when stacked) and the view on the right, from either: upstream opens the new
+  window where `'splitright'` says, so from a rendered view the source landed
+  on the right. It passes `aboveleft` / `belowright` itself and does not read
+  those options; an explicit `:topleft` / `:botright` wins.
+- The source beside a `:MdRender split` view is the markdown AS WRITTEN:
+  render-markdown is switched off in that buffer and `'conceallevel'` is 0 in
+  its windows (`ftplugin/markdown.lua` sets 2, which alone hides `**`,
+  backticks and link URLs). Both come back when the view has left its last
+  window -- the split closed, or toggled to the source. On the md-render
+  backend the view leaves for every Insert, so there the source stays as
+  written until `:MarkdownRenderer` switches away. The `'conceallevel'` write
+  is scheduled on purpose: render-markdown comes off in a scheduled callback
+  that ends by writing its own not-rendering value to every window.
+- `preview.auto_off` is wrapped as well. A source window that `split` opened
+  from a rendered view keeps that view's `w:md_render_state` (which is what
+  stops auto mode turning it into a second view on InsertLeave); upstream's
+  `auto_off` took that to mean the window showed the view and toggled it,
+  leaving the source in a window with the view's `nonumber` and winbar.
+- A rendered view draws to the terminal only while its window is on the
+  current tab page (`lua/andrew/utils/md_render_tab_visibility.lua`, set up
+  from the spec's `config`, pinned by `tests/md_render_tab_visibility_spec.lua`).
+  md-render's images and scaled headings bypass Neovim's grid and are
+  re-written by timers that only ask whether the window exists, so after
+  `:tabnew` they were painted over the new tab. Images are gated by wrapping
+  `put_image` / `clear_placements`; headings by swapping `state.win` of
+  md-render.text_size for an invalid window while off screen, which is the
+  fragile part. TabLeave clears the placements, TabEnter runs `:mode` (when
+  headings were on screen) and fires md-render's `MdRenderRepaint`. Drop the
+  file when upstream checks the tab page itself.
+- A heading md-render draws LARGER has no level icon
+  (`lua/andrew/utils/md_render_headings.lua`, set up from the spec's `config`,
+  pinned by `tests/md_render_headings_spec.lua`). md-render prefixes every
+  heading with an nf-md-format_header glyph -- the same ones render-markdown
+  uses -- and has no option for it; in Kitty >= 0.40 it also scales the text
+  (2x for `#` down to 1.17x for `######`, `:help md-render-text-size`), so the
+  level was shown twice. `markdown.render` is wrapped and the icon taken off
+  the line it returns, highlight and link ranges moved back with it. The icon
+  STAYS where md-render will not scale (`text_size.spec_for(level)` is nil:
+  inside tmux, another terminal, `:MdRender textsize off`), because there it
+  is the only level marker. Scaling cannot work inside tmux: md-render refuses
+  `TERM_PROGRAM=tmux`, which does not forward OSC 66.
+- A scaled heading is drawn on the background of the WINDOW it is in
+  (`lua/andrew/utils/md_render_heading_background.lua`, set up from the spec's
+  `config`, pinned by `tests/md_render_heading_background_spec.lua`). md-render
+  has to state a background for a scaled run and, for a heading group without
+  one, states `NormalFloat`'s in every window; onedark's `NormalFloat`,
+  `Normal` and `NormalNC` are three colours, so each heading sat in a darker
+  box. The placements of a view are pointed at copies of their heading group
+  (`MdRenderH1OnNormal`, `...OnNormalNC`) that carry the window's background,
+  re-pointed on WinEnter and ColorScheme. Floats are left alone, and so is a
+  heading group with a background of its own. Known remainder: a scaled block
+  is one colour over two rows, so the heading under the cursor shows the page
+  colour inside the `'cursorline'` band on its first row.
+- Heading colours in a rendered view: levels 1-3 a colour each, levels 4-6
+  level 4's (`lua/andrew/utils/md_render_heading_colors.lua`, set up from the
+  spec's `config`, pinned by `tests/md_render_heading_colors_spec.lua`). It
+  defines `MdRenderH1..6` itself, copied from the colourscheme's
+  `@markup.heading.<level>.markdown` with 5 and 6 reading 4's, so nothing is
+  hardcoded and both schemes of the `<leader>ub` toggle work. Set without
+  `default`, so md-render's own (`default = true`, before every render) never
+  replace them, and set again on ColorScheme, which md-render does not do --
+  headings used to lose their colour on a theme toggle until the next render.
+  ONLY md-render's views: the markdown source and render-markdown still show
+  six colours. To change those too, move the rule into the colourschemes
+  (`plugins/colorscheme.lua`, `themes/soft-paper.lua`).
+- Under onedark (the dark scheme) levels 2 and 3 take another colour of
+  onedarkpro's palette instead of its orange and yellow: blue and purple,
+  `DEFAULT_ONEDARK_COLOR_OF_LEVEL` in the same file. `:MdRenderHeadingColors
+  <level 2> <level 3>` (red, orange, yellow, green, cyan, blue, purple, white;
+  tab-completes) changes them for the running session with a preview open, and
+  without arguments says which are in use. The colours are read by name from
+  `onedarkpro.helpers.get_colors()`, and only while `g:colors_name` is
+  `onedark`, so the light scheme keeps its own. The command is in the spec's
+  `cmd`, so it loads md-render when used first.
+- A split's view does not flicker while its source is typed into
+  (`lua/andrew/utils/md_render_repaint.lua`, set up LAST from the spec's
+  `config`, pinned by `tests/md_render_repaint_spec.lua`). md-render erases
+  every scaled heading before each redraw and writes it back after, and the
+  gap showed: replaying the bytes Neovim sent while five words were typed, the
+  headings were off screen 1.1 s out of 5, up to 110 ms at a time; now never
+  while text is typed. Five parts, each explained at the code:
+  - a redraw with headings on screen is held in ONE terminal frame with the
+    headings written back after it: synchronized output (`CSI ? 2026 h`) goes
+    out at the start of the redraw and its end after the write-back. A held
+    frame is late by as long as that takes (0.5 ms as a rule, 9 ms at worst);
+  - headings a redraw erased are written back in the next event-loop turn
+    wherever they belong now (md-render waited for a debounced repaint when
+    the set on screen changed, e.g. the completion menu over one), queued
+    from `vim.on_key` so it runs ahead of what the key sets off, and flushed
+    with `nvim__redraw({ cursor = true })`;
+  - a rebuild that moved no heading keeps md-render's `last_layout`, so no
+    full repaint follows it;
+  - a rebuild that moved no image skips the image module's `redraw!`;
+  - the `:mode` md-render owes itself after any window opens or closes is
+    dropped unless a heading moved on screen, or the view jumped to a part of
+    the note with other headings (`G`). The second matters because md-render
+    erases a heading's cells in whatever colours the terminal was last told
+    to use, and Neovim re-sends only cells that differ in its own grid: a
+    heading that left by a jump used to leave a block of statusline colour
+    behind. "Clean" is recorded after a FULL repaint only, not after every
+    paint.
+
+  `'termsync'` is turned OFF while frames are held and put back afterwards
+  (no heading on this tab page, or a command being typed): Neovim's own
+  synchronized output ends at the end of its flush, which would end the hold
+  with the headings still erased. Redraws while a command or prompt is typed
+  are NOT held -- the only flush that causes no redraw places the cursor in a
+  window -- so there the headings still blink for 10 to 40 ms per redraw.
+
+  NEVER flush there with anything that can cause a redraw. A redraw erases
+  the headings, they are written back and flushed, and it loops at full
+  speed: `:redrawtabline` did exactly that once a second tab page was open
+  (cause not established). The module tracks md-render's heading states by
+  wrapping `text_size.attach` / `refresh` / `detach` and uses their `drawn` /
+  `last_layout` / `last_drawn` / `owes_invalidate` / `augroup` fields. Not
+  fixed, and md-render's by design: a heading under a float (the completion
+  menu) is shown at plain size until the float goes, because scaled text
+  cannot be clipped.
+- LaTeX math is typeset in the view (`lua/andrew/utils/md_render_math.lua`,
+  set up from the spec's `config` before `md_render_repaint`; pinned by
+  `tests/md_render_math_spec.lua`). md-render itself only colours the raw TeX,
+  and mangles it on the way (`\mathbf{v}_i` comes out as `\mathbf{v}i`).
+  Inline `$..$`, `$$..$$` on one line, `$$` blocks (also in list items and
+  callouts) and ```` ```math ```` fences become pictures. Four modules, each
+  with its own spec and a header that is its design document:
+  - `md_render_math.lua` -- the only one that touches md-render. It takes the
+    TeX from the SOURCE line before md-render parses it and splices the
+    result into what `markdown.render` returns, so md-render wraps, sizes
+    table columns and prefixes callouts with the true width. Every upstream
+    function it wraps and every private field it reads is cited at the top
+    of the file.
+  - `md_render_math_tex.lua` -- TeX to a colour-free MASK (8-bit grey PNG,
+    the cell box exactly): `pdftex` on a format precompiled from a template
+    inside the module, then `mutool draw` in parallel. An inline picture is
+    one text row high with its baseline on the terminal font's
+    (JetBrainsMono's metrics are constants there). TeX runs note content, so
+    it is sandboxed: `-no-shell-escape`, `openin_any=p`, `openout_any=p`,
+    every `MKTEX*=0`, a 2 s limit per run, a cap on what it may print.
+    Definitions never carry from one equation to another; the user's own go
+    in the file `vim.g.md_render_math_preamble` names (part of the format).
+  - `md_render_math_kitty.lua` -- a picture is TEXT: Kitty Unicode-placeholder
+    cells (`U+10EEEE` + row, column and id diacritics) in a highlight whose
+    foreground names the image, the mechanism snacks uses for math in the
+    source buffer. It is part of Neovim's grid, so nothing is placed again on
+    scroll, in floats or on other tab pages. The mask is tinted with the
+    colour of `MdRenderMath` in memory and sent as bytes (`t=d`), so ssh
+    works and a colour scheme change needs no TeX.
+  - `md_render_math_text.lua` -- pure-Lua TeX to Unicode text, the fallback.
+
+  Things to know before touching it:
+  - `vim.g.md_render_math`: `"picture"` (default), `"text"`, `"off"` (exactly
+    md-render alone); read at every build. `:MdRenderMath status` says which
+    mode is in effect and why, `errors` lists the equations that failed with
+    TeX's message (quickfix), `retry` forgets failures and re-reads the
+    preamble, `yank` copies the TeX under the cursor in a view.
+  - Text instead of a picture: while the picture is being made, in a heading
+    md-render scales, outside Kitty, inside tmux unless `allow-passthrough`
+    is on (it is not set in `~/.config/tmux`; nothing here changes it),
+    without `pdftex` / `mutool` (Ubuntu: `texlive-binaries` with `amsmath` /
+    `mathtools`, `mupdf-tools`), for an inline equation shrunk below 0.6 or
+    wider than its line, a block below 0.5, a box beyond 297 cells, and a
+    mask file that is missing twice in a row. TeX that fails to compile is
+    left as md-render shows it.
+  - Speed is the point of most of what looks odd in those files; measure
+    before simplifying. A pdftex with its format loaded WAITS on a FIFO
+    between batches (one new equation: ~18 ms instead of ~55; 38 MB while it
+    waits, stopped after 2 minutes without use). Equations near the window
+    are requested first when more than 40 are missing. Nothing is requested
+    in Insert mode, and leaving it requests without a rebuild. A settle
+    rebuilds only the views that asked. The text fallback is memoised.
+  - Everything is bounded and released: pictures no view shows are deleted
+    from the terminal 300 ms after the redraw that dropped them (256 kept
+    for going back; one never seen shown is kept 30 s), all of them on exit;
+    image ids and their highlight groups are REUSED -- Neovim has 19,999
+    highlight groups and never frees one, and at the limit every plugin's
+    `nvim_set_hl` fails. Closing a split's window releases nothing: md-render
+    keeps the view's buffer. The cache (`stdpath("cache")/md-render-math`:
+    `masks/`, `run/`, a 19 MB format) is pruned to 32 MB once a session, off
+    the main thread. Without `setpriv` (util-linux) there is no waiting
+    pdftex: a `kill -9` of Neovim could not end it.
+  - Quitting must never wait on TeX: nothing in the tex module may block in
+    `open()` on the FIFO (that hung `:qa` once), and nothing is spawned once
+    `VimLeavePre` has run. `tests/md_render_math_tex_spec.lua` quits child
+    Neovims mid-batch to pin it.
+  - The picture highlight must be the top one on its cells and have
+    `spell = false`: any other foreground is another image id, and an
+    underline colour is another placement id, so Kitty draws nothing. The
+    adapter re-applies them itself at priority 10000 after md-render's
+    `apply_content_to_buffer`; do not route them through
+    `content.highlights`.
+  - When in doubt the adapter ABSTAINS: the line or block is shown exactly as
+    md-render alone shows it. Prose typeset as an equation is the one
+    outcome that is never acceptable; a missing picture is. Two rules:
+    - TeX on a `$$` delimiter line (`$$ a = b`, `c $$`, `$$ (1)`) is not a
+      block (md-render's rule; where it joins such lines into one paragraph
+      they are typeset as a one-line `$$tex$$`), and below such a line no
+      more plain blocks are drawn in that note rather than guess which `$$`
+      opens. `:MdRenderMath errors` and `status` name the line. Rewriting
+      those lines was built and taken out again: to never lose content it
+      needed a second model of md-render's lists, quotes and fences. Use
+      `\tag{1}` in a block.
+    - Which `$` pair is md-render's decision, made AFTER its link and
+      emphasis passes. On a line those passes can change (a link, a
+      wikilink, a `%%` comment, an HTML tag, emphasis right next to a `$`)
+      the adapter asks md-render itself, by watching its
+      `process_inline_math` (an upvalue of `markdown.render`); if that
+      cannot be installed such lines are left to md-render.
+  - Limits: a table wider than the view cuts a picture mid-cell
+    (`markdown_table.lua:186`); math in a scaled heading is text; `\(..\)`,
+    `\[..\]` and a bare `\begin{align}` are not math (Obsidian's rule);
+    Kitty evicting images past its 320 MB quota is not noticed; `winblend`
+    on a view blanks its pictures; the placeholder cells, not the TeX, are
+    what a yank from the view gets (`:MdRenderMath yank`).
+  - Seen only in a headless Kitty: the screenshots that checked this came
+    from Kitty 0.49.2's own terminal core and font renderer driven without a
+    window, not from the real screen.
+- `:MdRender` (float, `tab`, `split`, `toggle`, `demo`) does not depend on the
+  backend, but float and `tab` must be run from the source buffer. Its images
+  and diagrams need the Kitty graphics protocol, and inside tmux
+  `set -g allow-passthrough all`, which is currently `off`.
 
 **fzf-lua's git pickers are adapted in three places**, all under `lua/andrew/utils/`:
 

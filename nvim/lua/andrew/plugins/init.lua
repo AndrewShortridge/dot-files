@@ -143,6 +143,11 @@ return {
   -- checkboxes, code blocks, callouts, and wiki-link icons
   require("andrew.plugins.render-markdown"),
 
+  -- md-render.nvim, on trial as a second markdown renderer: renders into a
+  -- separate buffer (float, tab, split, or in place). Which of the two renders
+  -- a markdown file is chosen with :MarkdownRenderer (utils/markdown_renderer.lua)
+  require("andrew.plugins.md-render"),
+
   -- Auto-format markdown tables as you type with column alignment
   -- Toggle: <leader>Tm, Tab to move between cells
   require("andrew.plugins.vim-table-mode"),

@@ -1,7 +1,9 @@
 -- =============================================================================
 -- File Finder Backend Switch
 -- =============================================================================
--- <leader>ff and <leader><space> (core/keymaps.lua) both call find_files().
+-- <leader>ff and <leader><space> (core/keymaps.lua) both call find_files();
+-- the start screen's Config row (plugins/snacks.lua) calls it on the config
+-- directory.
 --
 -- Two backends, both fully configured. DEFAULT_BACKEND below names the one
 -- those keys open; the other stays one command away.
@@ -32,18 +34,22 @@ local M = {}
 
 local DEFAULT_BACKEND = "fzf"
 
+---@type table<string, fun(directory?: string)>
 local open_file_finder = {
-  fzf = function()
-    require("fzf-lua").files(require("andrew.utils.obsidian").picker_opts())
+  fzf = function(directory)
+    local obsidian = require("andrew.utils.obsidian")
+    require("fzf-lua").files(obsidian.with_picker_opts(directory and { cwd = directory } or nil))
   end,
-  snacks = function()
-    Snacks.picker.files(require("andrew.utils.obsidian").snacks_picker_opts())
+  snacks = function(directory)
+    local vault_exclusions = require("andrew.utils.obsidian").snacks_picker_opts(directory)
+    Snacks.picker.files(vim.tbl_extend("force", vault_exclusions, { cwd = directory }))
   end,
 }
 
---- Open the file finder in the current working directory, using the backend
---- named by `vim.g.file_picker_backend` (default: DEFAULT_BACKEND).
-function M.find_files()
+--- Open the file finder, using the backend named by
+--- `vim.g.file_picker_backend` (default: DEFAULT_BACKEND).
+---@param directory? string where to list files (default: current working directory)
+function M.find_files(directory)
   local backend = vim.g.file_picker_backend or DEFAULT_BACKEND
   local open = open_file_finder[backend]
   if not open then
@@ -58,7 +64,7 @@ function M.find_files()
     )
     return
   end
-  open()
+  open(directory)
 end
 
 return M

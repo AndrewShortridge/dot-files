@@ -16,6 +16,7 @@ require("andrew.custom.plugins.terminal")
 require("andrew.vault")
 require("andrew.themes.toggle").setup()
 require("andrew.utils.tabline").setup()
+require("andrew.utils.markdown_renderer").setup()
 
 vim.opt.termguicolors = true
 

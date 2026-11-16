@@ -30,8 +30,11 @@ return {
     -- ibl is redundant there. Excluding it stops ibl's per-keystroke/scroll
     -- refresh (CursorMoved/TextChanged/WinScrolled) from running on .md
     -- buffers. ibl APPENDS these to its default excludes (utils.tbl_join).
+    --
+    -- "md-render" is the filetype of md-render.nvim's rendered views. Their
+    -- content is indented two columns, so ibl drew a guide down every line.
     exclude = {
-      filetypes = { "markdown" },
+      filetypes = { "markdown", "md-render" },
     },
   },
 }
