@@ -193,6 +193,14 @@ return {
             vim.defer_fn(function()
               if not vim.api.nvim_buf_is_valid(bufnr) then return end
               if vim.api.nvim_get_current_buf() ~= bufnr then return end
+              -- Not mid-Insert. The `normal! zE` below drops to Normal mode and
+              -- back, which moves a cursor sitting at the end of the line one
+              -- character left: `A` then typed before the last character. Insert
+              -- mode and BufWinEnter only coincide under md-render's auto mode,
+              -- which swaps the source into the window as Insert begins. The tick
+              -- is left unmarked, so the next BufWinEnter / BufRead outside Insert
+              -- applies the folds.
+              if vim.api.nvim_get_mode().mode:find("^[iR]") then return end
               -- Re-entry guard: manual folds are WINDOW-local, so key the "already
               -- applied" marker on the window (vim.w) + buffer changedtick. Re-entering
               -- an unchanged buffer in the same window is then a no-op; a new split or an

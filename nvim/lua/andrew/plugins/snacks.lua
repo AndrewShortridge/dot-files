@@ -2,8 +2,9 @@
 -- Snacks.nvim Configuration
 -- =============================================================================
 -- Utility collection by folke. Modules are opt-in.
--- Currently enabled: input + picker.ui_select (the vim.ui.input / vim.ui.select
--- backends, replacing the archived dressing.nvim), image (inline rendering).
+-- Currently enabled: dashboard (the start screen of a bare `nvim`), input +
+-- picker.ui_select (the vim.ui.input / vim.ui.select backends, replacing the
+-- archived dressing.nvim), image (inline rendering).
 
 -- Set SNACKS_KITTY before ANY Snacks code loads.
 -- This must happen at parse time (not in init/config) because Snacks modules
@@ -37,6 +38,63 @@ return {
 
   ---@type snacks.Config
   opts = {
+    -- =======================================================================
+    -- Start screen: what a bare `nvim` opens on
+    -- =======================================================================
+    -- The dashboard LazyVim ships (and Omarchy's Neovim, which is LazyVim):
+    -- header, a column of single-key actions, the plugin load time. Snacks
+    -- opens it on UIEnter and only when Neovim started with nothing to show --
+    -- no file or directory argument, no piped stdin, an empty first buffer
+    -- (snacks/dashboard.lua, M.setup). `nvim file`, `nvim .` and
+    -- `git commit` never see it. `:lua Snacks.dashboard()` reopens it.
+    --
+    -- The header is snacks' own "NEOVIM"; LazyVim's spells "LAZYVIM", which
+    -- this config is not.
+    --
+    -- Only `keys` is set: every action is the one this config already has on
+    -- a <leader> key, so the two cannot drift. Snacks' stock actions would
+    -- not be: `Snacks.dashboard.pick()` prefers the snacks picker whenever it
+    -- is enabled, and it is (for vim.ui.select), while the pickers here are
+    -- fzf-lua's. A string that does not start with `:` is fed as keys.
+    --
+    -- While it is up snacks sets 'showtabline' and 'laststatus' to 0 and puts
+    -- them back when it closes. lualine loads later (VeryLazy) and would set
+    -- 'laststatus' again, so the dashboard filetype is in its
+    -- `disabled_filetypes` (plugins/lualine.lua).
+    dashboard = {
+      enabled = true,
+      preset = {
+        -- stylua: ignore
+        keys = {
+          { icon = " ", key = "f", desc = "Find File", action = "<leader>ff" },
+          { icon = " ", key = "n", desc = "New File", action = ":ene | startinsert" },
+          { icon = " ", key = "g", desc = "Find Text", action = "<leader>fs" },
+          { icon = " ", key = "r", desc = "Recent Files", action = "<leader>fr" },
+          {
+            icon = " ",
+            key = "c",
+            desc = "Config",
+            action = function()
+              require("andrew.utils.file_picker").find_files(vim.fn.stdpath("config"))
+            end,
+          },
+          -- Resolves to persistence.nvim's load(), i.e. <leader>qs.
+          { icon = " ", key = "s", desc = "Restore Session", section = "session" },
+          { icon = "󰒲 ", key = "l", desc = "Lazy", action = ":Lazy" },
+          { icon = " ", key = "q", desc = "Quit", action = ":qa" },
+        },
+      },
+    },
+
+    -- The dashboard does not fill its window, and the rows below it would
+    -- show the `~` end-of-buffer markers. Local to the dashboard's window;
+    -- the file that replaces it gets the global 'fillchars' back.
+    styles = {
+      dashboard = {
+        wo = { fillchars = "eob: " },
+      },
+    },
+
     -- =======================================================================
     -- vim.ui.input  (was dressing.nvim)
     -- =======================================================================

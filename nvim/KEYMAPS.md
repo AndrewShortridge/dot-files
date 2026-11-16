@@ -10,6 +10,7 @@
 ## Table of Contents
 
 - [Which-Key Groups Overview](#which-key-groups-overview)
+- [Start Screen](#start-screen)
 - [Core Keymaps](#core-keymaps)
 - [Navigation & Window Management](#navigation--window-management)
 - [Find / Files (`<leader>f`)](#find--files-leaderf)
@@ -95,6 +96,26 @@ listed before generic ones. Covered by `tests/which_key_icons_spec.lua`.
 | `<leader>vg` | Tags |
 | `<leader>vb` | Bookmarks/Pins |
 | `<leader>vk` | Block IDs |
+
+---
+
+## Start Screen
+
+**Source:** `lua/andrew/plugins/snacks.lua` (`dashboard`)
+
+What `nvim` opens on when started without a file or directory. The keys work
+in that buffer only. `:lua Snacks.dashboard()` reopens it.
+
+| Mode | Key | Action | Notes |
+| ---- | --- | ------ | ----- |
+| n | `f` | Find File | Same as `<leader>ff` |
+| n | `n` | New File | Empty buffer, in insert mode |
+| n | `g` | Find Text | Same as `<leader>fs` |
+| n | `r` | Recent Files | Same as `<leader>fr` |
+| n | `c` | Config | File finder in `~/.config/nvim` |
+| n | `s` | Restore Session | Same as `<leader>qs` |
+| n | `l` | Lazy | `:Lazy` |
+| n | `q` | Quit | `:qa` |
 
 ---
 

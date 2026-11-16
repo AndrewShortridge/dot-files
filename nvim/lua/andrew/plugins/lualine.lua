@@ -48,9 +48,11 @@ return {
         component_separators = { left = "", right = "" },
         section_separators = { left = "", right = "" },
 
-        -- Never disable status line (always show)
+        -- Shown everywhere except the start screen (plugins/snacks.lua,
+        -- `dashboard`), as in LazyVim. With `globalstatus` the row itself
+        -- stays: lualine leaves it blank rather than removing it.
         disabled_filetypes = {
-          statusline = {},
+          statusline = { "snacks_dashboard" },
           winbar = {},
         },
 

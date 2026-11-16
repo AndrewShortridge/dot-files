@@ -15,8 +15,15 @@ return {
   -- config uses the classic API, so we must stay on `master`.
   branch = "master",
 
-  -- Events: Load when opening files for syntax highlighting
-  event = { "BufReadPre", "BufNewFile" },
+  -- Events: load when a file opens, for its highlighting -- and on VeryLazy
+  -- for the session that opens none: a bare `nvim` sits on the start screen
+  -- (plugins/snacks.lua, `dashboard`), and the pickers reached from it preview
+  -- files in scratch buffers, which fire neither BufReadPre nor BufNewFile.
+  -- Previewing a markdown file runs queries/markdown/injections.scm, whose
+  -- `set-lang-from-info-string!` directive only exists once this plugin has
+  -- loaded; without it the parse raised "No handler for
+  -- set-lang-from-info-string!" on the first preview.
+  event = { "BufReadPre", "BufNewFile", "VeryLazy" },
 
   -- Build command: Run after installation to parse and generate syntax files
   build = ":TSUpdate",
