@@ -43,7 +43,7 @@
 
 local M = {}
 
-local DEFAULT_BACKEND = "render-markdown"
+local DEFAULT_BACKEND = "md-render"
 
 --- The backend currently on in a buffer is recorded in this buffer variable, so
 --- a buffer is switched once per choice and anything done by hand afterwards

@@ -51,6 +51,9 @@ end
 vim.cmd("runtime! plugin/render-markdown.lua")
 vim.cmd("filetype on")
 
+-- Start on render-markdown, the way init.lua would choose it: the cases below
+-- are about switching between the two, whichever DEFAULT_BACKEND names.
+vim.g.markdown_renderer = "render-markdown"
 local markdown_renderer = require("andrew.utils.markdown_renderer")
 markdown_renderer.setup()
 local md_render_spec = require("andrew.plugins.md-render")
@@ -118,7 +121,7 @@ local function settles_on_gutter_width(expected_width)
   end)
 end
 
-test("a markdown buffer opens on render-markdown, with md-render not loaded", function()
+test("a buffer on render-markdown is decorated by it, with md-render not loaded", function()
   assert_true(
     settle(function()
       return vim.b[first_bufnr].markdown_renderer == "render-markdown"

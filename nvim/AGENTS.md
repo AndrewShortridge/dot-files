@@ -422,8 +422,8 @@ Per-language type checking via terminal split (30% height):
 | substitute.nvim | substitute.lua | Motion-based replace | `BufReadPre, BufNewFile` |
 | nvim-surround | surround.lua | Surrounding pairs | `BufReadPre, BufNewFile` |
 | vim-table-mode | vim-table-mode.lua | Markdown tables | `ft = "markdown"` |
-| render-markdown.nvim | render-markdown.lua | Styled markdown; the default backend of `:MarkdownRenderer` | `ft = "markdown"` |
-| md-render.nvim | md-render.lua | Second markdown renderer, on trial: renders into a separate buffer (`:MdRender float\|tab\|split\|toggle`); the `md-render` backend of `:MarkdownRenderer` | `cmd` (`MdRender`, `MdRenderHeadingColors`, `MdRenderMath`) |
+| render-markdown.nvim | render-markdown.lua | Styled markdown in the buffer being edited; the other backend of `:MarkdownRenderer`, and what the vault's preview floats and blink's documentation window use | `ft = "markdown"` |
+| md-render.nvim | md-render.lua | Second markdown renderer, on trial: renders into a separate buffer (`:MdRender float\|tab\|split\|toggle`); the default backend of `:MarkdownRenderer` | `cmd` (`MdRender`, `MdRenderHeadingColors`, `MdRenderMath`) |
 | nvim-colorizer | colorizer.lua | Color code preview | Config |
 | yazi.nvim | yazi.lua | File explorer | `VeryLazy` |
 | rustaceanvim | rustaceanvim.lua | Rust IDE features | `lazy = false` |
@@ -1152,9 +1152,11 @@ set up from `init.lua`, pinned by `tests/markdown_renderer_switch_spec.lua`), th
 same way the file finder is. `:MarkdownRenderer md-render` /
 `:MarkdownRenderer render-markdown` switches the running session;
 `vim.g.markdown_renderer` holds the choice and `DEFAULT_BACKEND` in that file is
-what a session starts with. md-render.nvim is installed for a trial, not as a
-replacement; to end the trial delete `plugins/md-render.lua`, the `md-render`
-entry in the switch, and `"md-render"` from ibl's excludes.
+what a session starts with: `md-render` since 2026-11-16, `render-markdown`
+before. md-render.nvim is still on trial, not a replacement -- render-markdown
+stays installed either way (see below); to end the trial set `DEFAULT_BACKEND`
+back, delete `plugins/md-render.lua`, the `md-render` entry in the switch, and
+`"md-render"` from ibl's excludes.
 
 - `render-markdown` decorates the buffer being edited. `md-render` uses that
   plugin's auto mode (experimental upstream): outside Insert mode the window
