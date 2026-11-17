@@ -412,6 +412,11 @@ return {
   },
 
   config = function(_, opts)
+    -- Inside tmux, snacks.image's terminal query came back as key input: a
+    -- split tmux pane and `>|kitty(...)` typed into Neovim. Before setup(),
+    -- so it is in place ahead of anything that asks.
+    require("andrew.utils.snacks_tmux_terminal").setup()
+
     require("snacks").setup(opts)
 
     -- Colour snacks' pickers like the fzf-lua ones (andrew/utils/fzf_look.lua).

@@ -1008,6 +1008,26 @@ recoloured in `picker.on_show` (snacks' `SnacksPickerBoxTitle` group never
 reaches the window), and the match counter is `nocombine` so the bold of the
 typed query does not spread to it.
 
+**Inside tmux, snacks.image learns the terminal's name from tmux**
+(`lua/andrew/utils/snacks_tmux_terminal.lua`, set up from the snacks spec's
+`config` before `setup()`, pinned by `tests/snacks_tmux_terminal_spec.lua`).
+Upstream sends XTVERSION to the outer terminal through tmux passthrough, and
+tmux reads Kitty's answer (`ESC P > | kitty(0.49.2) ESC \`) as key input: the
+closing `ESC \` is `M-\`, which `~/.config/tmux/tmux.conf` binds to
+`split-window -h`, and `>|kitty(0.49.2)` is typed into Neovim. The first
+markdown buffer of a session split the pane and put that text in whatever had
+focus. The name now comes from `tmux display-message -p '#{client_termtype}'`
+and nothing is asked.
+
+- NEVER send the outer terminal anything it answers from inside tmux (a query
+  through passthrough, a graphics command without `q=2`): every answer ends in
+  `ESC \`, so every one is that split.
+- snacks still switches `allow-passthrough` to `all` on the PANE Neovim runs in
+  (`tmux set -p`), the first time an image or equation is wanted. The global
+  option stays `off`.
+- The spec's first test fails once upstream stops sending the query; delete
+  the module then.
+
 **A bare `nvim` opens on a start screen** (the `dashboard` block of
 `lua/andrew/plugins/snacks.lua`): LazyVim's dashboard -- header, a column of
 single-key actions, the plugin load time -- with snacks' "NEOVIM" header.
