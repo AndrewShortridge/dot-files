@@ -244,6 +244,11 @@ each. Nothing is sent back to the window.
 The gutter takes columns the window used for text: rows wider than that
 scroll sideways.
 
+Images the window showed (kitty graphics protocol, e.g. `kitten icat`) are
+shown too, each loaded when its rows are first drawn. This part relies on
+kitty internals (`kittens/copy_mode_images.py`); if a kitty update breaks it,
+the images are missing and the rest of copy mode is unaffected.
+
 ---
 
 ## Helper scripts (invoked by leader bindings)
@@ -272,7 +277,10 @@ and use kitty's remote control socket.
   --stdin-add-formatting --stdin-add-line-wrap-markers` pipes the window's
   rows to the script; it moves them to fd 3 and starts nvim, which sources
   `copy-mode.lua` to put them in a read-only buffer, colouring each row
-  when it is first drawn. Needs neither `jq`, `fzf` nor remote control.
+  when it is first drawn. The text needs neither `jq`, `fzf` nor remote
+  control. Images are not in what kitty pipes: nvim asks kitty for them with
+  `kitten @ kitten kittens/copy_mode_images.py` (remote control), which
+  writes their pixels to `/dev/shm` for nvim to hand to the overlay window.
 
 ---
 
