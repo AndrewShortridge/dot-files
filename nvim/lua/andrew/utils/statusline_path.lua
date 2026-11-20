@@ -50,7 +50,7 @@ end
 ---@return string?
 function M.root_name_unless_cwd(buffer)
   local project_root = root.project(buffer)
-  if project_root == resolved(vim.uv.cwd()) then
+  if project_root == resolved(assert(vim.uv.cwd())) then
     return nil
   end
   return vim.fs.basename(project_root)
@@ -75,7 +75,7 @@ function M.display_parts(buffer)
 
   local path = resolved(name)
   local shown = vim.fn.fnamemodify(path, ":~")
-  for _, base in ipairs({ resolved(vim.uv.cwd()), root.project(buffer) }) do
+  for _, base in ipairs({ resolved(assert(vim.uv.cwd())), root.project(buffer) }) do
     if vim.startswith(path, base .. "/") then
       shown = path:sub(#base + 2)
       break

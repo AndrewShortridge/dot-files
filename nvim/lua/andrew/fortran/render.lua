@@ -824,6 +824,7 @@ local function begin_field_list(c)
   if not name then
     return false
   end
+  ---@cast text string
   local marker_indent = c:indent()
   local was_field = c.in_fields
   c:eat()

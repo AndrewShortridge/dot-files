@@ -113,6 +113,8 @@ function M.search_advanced_live()
     local result, effective_group_mode, metadata_matches
     result, effective_group_mode, metadata_matches = advanced.evaluate_advanced_ast(
       ast, group_mode, idx, source_path, restrict_to)
+    -- Without on_done, evaluate_advanced_ast runs synchronously and always returns a result.
+    ---@cast result -nil
 
     -- Update incremental cache
     _prev_cache.query = query_string

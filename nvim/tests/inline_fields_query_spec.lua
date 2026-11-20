@@ -8,6 +8,7 @@
 --   * query.index:_parse_scalar_from_vi         -> per-element typing of lists
 -- Assertions are behavioral (exercise real module output), not source-introspection.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -16,8 +17,13 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 -- Stub the logger so requiring real modules doesn't pull full vault infra.
 package.loaded["andrew.vault.vault_log"] = {
+  ---@return table
   scope = function()
-    return setmetatable({}, { __index = function() return function() end end })
+    return setmetatable({}, {
+      -- every logger method is a no-op
+      ---@return fun()
+      __index = function() return function() end end,
+    })
   end,
 }
 
@@ -27,6 +33,8 @@ local match_helpers = require("andrew.vault.search_filter.match_helpers")
 local QI = require("andrew.vault.query.index")
 
 -- Parse a markdown body into a vault-index entry.
+---@param body string
+---@return VaultIndexEntry
 local function parse(body)
   return P.parse_content(body, "Note.md", {
     mtime = { sec = 1 },
@@ -68,7 +76,8 @@ test("standalone field is anchored — prose with brackets is not swallowed", fu
   local e = parse(SAMPLE)
   -- The genre list must contain ONLY the two bracket values, not a polluted
   -- whole-line capture from the unanchored standalone pattern.
-  for _, v in ipairs(e.inline_fields.genre) do
+  -- genre is a list here (the first test asserts its shape); its values are what is checked
+  for _, v in ipairs(e.inline_fields.genre --[[@as any[] ]]) do
     assert_true(v == "rock" or v == "jazz", "unexpected genre value: " .. tostring(v))
   end
 end)
@@ -80,6 +89,15 @@ end)
 
 -- ── Search matching: list any-element + scalar coercion ────────────────────
 
+---@class InlineFieldsQueryFieldNode
+---@field name string
+---@field op string
+---@field value string
+
+---@param name string
+---@param op string
+---@param value string
+---@return InlineFieldsQueryFieldNode
 local function field_node(name, op, value)
   return { name = name, op = op, value = value }
 end
@@ -115,9 +133,10 @@ end)
 
 test("_parse_scalar_from_vi types scalar and list values consistently", function()
   local Index = QI.Index or (QI.new and getmetatable(QI.new()).__index)
-  local inst = setmetatable({}, { __index = Index })
+  -- A bare instance (no fields): _parse_scalar_from_vi reads none of them.
+  local inst = setmetatable({}, { __index = Index }) --[[@as QueryIndex]]
   assert_eq(inst:_parse_scalar_from_vi("5"), 5)
-  local list = inst:_parse_scalar_from_vi({ "3", "7" })
+  local list = inst:_parse_scalar_from_vi({ "3", "7" }) ---@type any
   assert_eq(type(list), "table")
   assert_eq(list[1], 3)
   assert_eq(list[2], 7)

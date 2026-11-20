@@ -17,11 +17,26 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_fortran_snippets_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 local SNIPPET_DIR = vim.fn.stdpath("config") .. "/snippets"
 
+---@class AuditFortranSnippetsManifest  snippets/package.json
+---@field contributes { snippets: { language: string, path: string }[] }
+
+---@class AuditFortranSnippetsDef  one VS Code-style snippet definition
+---@field prefix string|string[]
+---@field body string|string[]
+---@field description? string
+
+---@class AuditFortranSnippetsFile  a snippet file package.json contributes
+---@field language string
+---@field path string  absolute path
+
+---@param path string
+---@return any  the decoded JSON document; callers state its shape
 local function read_json(path)
   local f = assert(io.open(path, "r"), "cannot open " .. path)
   local content = f:read("*a")
@@ -32,15 +47,18 @@ local function read_json(path)
 end
 
 --- The files package.json contributes, in order.
+---@return AuditFortranSnippetsFile[]
 local function contributed_files()
-  local manifest = read_json(SNIPPET_DIR .. "/package.json")
-  local out = {}
+  local manifest = read_json(SNIPPET_DIR .. "/package.json") ---@type AuditFortranSnippetsManifest
+  local out = {} ---@type AuditFortranSnippetsFile[]
   for _, entry in ipairs(manifest.contributes.snippets) do
     out[#out + 1] = { language = entry.language, path = SNIPPET_DIR .. "/" .. entry.path:gsub("^%./", "") }
   end
   return out
 end
 
+---@param body string|string[]
+---@return string
 local function body_text(body)
   if type(body) == "table" then
     return table.concat(body, "\n")
@@ -59,7 +77,7 @@ end)
 
 test("every snippet has a prefix and a body", function()
   for _, f in ipairs(contributed_files()) do
-    for name, snip in pairs(read_json(f.path)) do
+    for name, snip in pairs(read_json(f.path) --[[@as table<string, AuditFortranSnippetsDef>]]) do
       assert_true(type(snip) == "table", name .. " is not an object:")
       assert_true(type(snip.prefix) == "string" or type(snip.prefix) == "table",
         name .. " has no usable prefix:")
@@ -70,11 +88,12 @@ test("every snippet has a prefix and a body", function()
 end)
 
 test("no prefix is defined twice", function()
-  local seen = {}
+  local seen = {} ---@type table<string, string>  prefix -> "file/name" that defined it
   for _, f in ipairs(contributed_files()) do
     local base = vim.fn.fnamemodify(f.path, ":t")
-    for name, snip in pairs(read_json(f.path)) do
-      local prefixes = type(snip.prefix) == "string" and { snip.prefix } or snip.prefix
+    for name, snip in pairs(read_json(f.path) --[[@as table<string, AuditFortranSnippetsDef>]]) do
+      -- A string prefix is wrapped into a one-element list; a list is used as is.
+      local prefixes = (type(snip.prefix) == "string" and { snip.prefix } or snip.prefix) --[[@as string[] ]]
       for _, p in ipairs(prefixes) do
         assert_true(seen[p] == nil,
           ("prefix %q is defined by both %s and %s/%s:"):format(p, tostring(seen[p]), base, name))
@@ -87,16 +106,18 @@ end)
 test("no body contains a bare $name variable reference", function()
   for _, f in ipairs(contributed_files()) do
     local base = vim.fn.fnamemodify(f.path, ":t")
-    for name, snip in pairs(read_json(f.path)) do
+    for name, snip in pairs(read_json(f.path) --[[@as table<string, AuditFortranSnippetsDef>]]) do
       local text = body_text(snip.body)
       -- A `$` that is neither escaped (`\$`) nor a tabstop (`$1`, `${1:x}`) is
       -- read by LuaSnip as a variable and expands to something else entirely.
       local prev_end = 0
       while true do
+        ---@type integer?, integer?, string?
         local s, e, word = text:find("%$([A-Za-z_][%w_]*)", prev_end + 1)
         if not s then
           break
         end
+        ---@cast e -nil
         prev_end = e
         assert_true(text:sub(s - 1, s - 1) == "\\",
           ("%s/%s body has an unescaped $%s -- write \\$%s:"):format(base, name, word, word))
@@ -106,7 +127,7 @@ test("no body contains a bare $name variable reference", function()
 end)
 
 test("every OpenMP body writes an escaped sentinel", function()
-  local snips = read_json(SNIPPET_DIR .. "/new-snippets.json")
+  local snips = read_json(SNIPPET_DIR .. "/new-snippets.json") ---@type table<string, AuditFortranSnippetsDef>
   local names = {
     "OpenMP Atomic", "OpenMP Barrier", "OpenMP Critical Section",
     "OpenMP Parallel Do", "OpenMP Parallel Do Simd",
@@ -124,9 +145,9 @@ test("every OpenMP body writes an escaped sentinel", function()
 end)
 
 test("end critical does not mirror the hint tabstop", function()
-  local snips = read_json(SNIPPET_DIR .. "/new-snippets.json")
+  local snips = read_json(SNIPPET_DIR .. "/new-snippets.json") ---@type table<string, AuditFortranSnippetsDef>
   local text = body_text(snips["OpenMP Critical Section"].body)
-  local open_line, end_line
+  local open_line, end_line ---@type string?, string?
   for line in text:gmatch("[^\n]+") do
     if line:find("end critical", 1, true) then
       end_line = line
@@ -135,6 +156,8 @@ test("end critical does not mirror the hint tabstop", function()
     end
   end
   assert_true(open_line ~= nil and end_line ~= nil, "critical body lost a line:")
+  ---@cast open_line -nil
+  ---@cast end_line -nil
   -- The opening line's tabstop 1 carries the optional `, hint(...)` clause;
   -- `hint` is not permitted on `end critical`, so the end line must not repeat
   -- that tabstop.
@@ -146,7 +169,7 @@ end)
 test("snippet prefix and definition counts are stable", function()
   local defs, prefixes = 0, 0
   for _, f in ipairs(contributed_files()) do
-    for _, snip in pairs(read_json(f.path)) do
+    for _, snip in pairs(read_json(f.path) --[[@as table<string, AuditFortranSnippetsDef>]]) do
       defs = defs + 1
       prefixes = prefixes + (type(snip.prefix) == "string" and 1 or #snip.prefix)
     end

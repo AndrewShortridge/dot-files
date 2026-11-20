@@ -21,25 +21,40 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/path_reference_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq = _H.test, _H.assert_eq
 
 local config_dir = vim.fn.stdpath("config")
 package.path = config_dir .. "/lua/?.lua;" .. package.path
 
+--- What the fake `+` provider last received (see `:h clipboard-provider`).
+---@class PathReferenceSpecClipboard
+---@field lines string[]
+---@field regtype string  "v", "V" or a blockwise "\22{width}"
+
+---@class PathReferenceSpecNotification
+---@field message string
+---@field level? integer
+
+---@type PathReferenceSpecClipboard
 local clipboard = { lines = {}, regtype = "v" }
 vim.g.clipboard = {
   name = "path-reference-spec",
   copy = {
+    ---@param lines string[]
+    ---@param regtype string
     ["+"] = function(lines, regtype)
       clipboard.lines, clipboard.regtype = lines, regtype
     end,
     ["*"] = function() end,
   },
   paste = {
+    ---@return [string[], string]
     ["+"] = function()
       return { clipboard.lines, clipboard.regtype }
     end,
+    ---@return [string[], string]
     ["*"] = function()
       return { {}, "v" }
     end,
@@ -48,7 +63,10 @@ vim.g.clipboard = {
 
 dofile(config_dir .. "/lua/andrew/core/keymaps.lua")
 
-local notifications = {}
+local notifications = {} ---@type PathReferenceSpecNotification[]
+--- Fake of vim.notify(msg: string, level?: integer, opts?: table); opts is not recorded.
+---@param message string
+---@param level? integer
 vim.notify = function(message, level)
   notifications[#notifications + 1] = { message = message, level = level }
 end
@@ -59,12 +77,13 @@ vim.fn.delete(sandbox, "rf")
 vim.fn.mkdir(sandbox .. "/project/src", "p")
 vim.fn.mkdir(sandbox .. "/elsewhere", "p")
 
-local source_lines = {}
+local source_lines = {} ---@type string[]
 for line_number = 1, 30 do
   source_lines[line_number] = "line " .. line_number
 end
 vim.fn.writefile(source_lines, sandbox .. "/project/src/solver.f90")
 
+---@param working_directory string  directory under the sandbox to :cd into
 local function open_source_file(working_directory)
   vim.cmd("silent! %bwipeout!")
   vim.cmd.cd(vim.fn.fnameescape(sandbox .. "/" .. working_directory))
@@ -74,10 +93,12 @@ local function open_source_file(working_directory)
 end
 
 --- Type `keys` as the user would, mappings included.
+---@param keys string
 local function type_keys(keys)
   vim.api.nvim_feedkeys(vim.keycode(keys), "mx", false)
 end
 
+---@return string
 local function copied()
   return table.concat(clipboard.lines, "\n")
 end

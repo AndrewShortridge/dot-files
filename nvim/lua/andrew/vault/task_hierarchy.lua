@@ -17,7 +17,7 @@ local M = {}
 local ns = vim.api.nvim_create_namespace("vault_task_hierarchy")
 
 --- Per-buffer debounce timers for render scheduling.
----@type table<number, uv_timer_t>
+---@type table<number, uv.uv_timer_t>
 local _timers = {}
 
 --- Per-file fold state in the tree view (LRU-bounded).
@@ -165,7 +165,7 @@ function M.render_completion_vtext(bufnr)
           local label, hl
 
           local cache_key = fc and (bufnr .. ":" .. root.line .. ":" .. done .. ":" .. total)
-          local cached_vtext = cache_key and fc:get(cache_key)
+          local cached_vtext = fc and fc:get(cache_key)
           if cached_vtext then
             label, hl = cached_vtext.label, cached_vtext.hl
           else
@@ -508,7 +508,7 @@ function M.show_tree()
   -- <Tab> toggle collapse for root tasks
   vim.keymap.set("n", "<Tab>", function()
     local cp, fm = fold_state_at_cursor()
-    if not fm or fm[cp.node_line] == nil then return end
+    if not cp or not fm or fm[cp.node_line] == nil then return end
     fm[cp.node_line] = not fm[cp.node_line]
     refresh()
   end, kopts)
@@ -516,7 +516,7 @@ function M.show_tree()
   -- zo - expand
   vim.keymap.set("n", "zo", function()
     local cp, fm = fold_state_at_cursor()
-    if not fm or not fm[cp.node_line] then return end
+    if not cp or not fm or not fm[cp.node_line] then return end
     fm[cp.node_line] = false
     refresh()
   end, kopts)
@@ -524,7 +524,7 @@ function M.show_tree()
   -- zc - collapse
   vim.keymap.set("n", "zc", function()
     local cp, fm = fold_state_at_cursor()
-    if not fm or fm[cp.node_line] == nil then return end
+    if not cp or not fm or fm[cp.node_line] == nil then return end
     fm[cp.node_line] = true
     refresh()
   end, kopts)

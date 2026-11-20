@@ -141,10 +141,11 @@ end
 --- @param text_ast table text AST for ripgrep
 --- @param file_paths string[] absolute file paths to search
 --- @param vault_path string vault root
---- @param on_done fun|nil async callback (nil = sync mode)
---- @param finish fun(results: string[], rg_limit: boolean|nil): any... callback that transforms ripgrep output into final return values
+--- @param on_done function|nil async callback (nil = sync mode)
+--- @param finish fun(results: string[], rg_limit: boolean|nil): table, table|nil callback that transforms ripgrep output into the final return values (result, metadata_matches)
 --- @param op_id number|nil operation ID to check before delivering async results
---- @return any ... finish(...) return values in sync mode; nil in async mode
+--- @return table|nil result finish(...) return values in sync mode; nil in async mode
+--- @return table|nil metadata_matches
 local function dispatch_ripgrep(text_ast, file_paths, vault_path, on_done, finish, op_id)
   if on_done then
     search_filter.ripgrep_in_files(text_ast, file_paths, vault_path, function(results, rg_limit)
@@ -155,6 +156,8 @@ local function dispatch_ripgrep(text_ast, file_paths, vault_path, on_done, finis
     return nil
   end
   local results, rg_limit = search_filter.ripgrep_in_files(text_ast, file_paths, vault_path)
+  -- Without a callback ripgrep_in_files runs synchronously and returns the lines.
+  ---@cast results -nil
   return finish(results, rg_limit)
 end
 
@@ -206,6 +209,9 @@ local function resolve_query(split, idx, vault_path, graph_sets, group_mode, res
     end
 
     local matches, limit_reached = search_filter.evaluate(split.metadata_ast, idx, graph_sets, restrict_to)
+    -- No `cancelled` callback is passed, so evaluate cannot return nil, "cancelled".
+    ---@cast matches -nil
+    ---@cast limit_reached boolean
     local entries = {}
     for rel_path, _ in pairs(matches) do
       entries[#entries + 1] = rel_path
@@ -229,7 +235,11 @@ local function resolve_query(split, idx, vault_path, graph_sets, group_mode, res
 
   if split.mode == "metadata_then_text" then
     if on_done then
-      local op_id = eval_async_cancellable(split.metadata_ast, idx, graph_sets, restrict_to,
+      -- Declared before the call, because the callback reads it once the call
+      -- has returned. Named inside its own initialiser it was the GLOBAL
+      -- `op_id` (nil), and dispatch_ripgrep skipped its stale check.
+      local op_id
+      op_id = eval_async_cancellable(split.metadata_ast, idx, graph_sets, restrict_to,
         function(matches, limit_reached)
           local file_paths_inner = collect_abs_paths(matches)
           if #file_paths_inner == 0 then
@@ -244,6 +254,9 @@ local function resolve_query(split, idx, vault_path, graph_sets, group_mode, res
     end
 
     local matches, limit_reached = search_filter.evaluate(split.metadata_ast, idx, graph_sets, restrict_to)
+    -- No `cancelled` callback is passed, so evaluate cannot return nil, "cancelled".
+    ---@cast matches -nil
+    ---@cast limit_reached boolean
     local file_paths = collect_abs_paths(matches)
 
     if #file_paths == 0 then
@@ -257,7 +270,9 @@ local function resolve_query(split, idx, vault_path, graph_sets, group_mode, res
 
   -- mixed_or: evaluate both metadata and text, union results
   if on_done and split.metadata_ast then
-    local op_id = eval_async_cancellable(split.metadata_ast, idx, graph_sets, restrict_to,
+    -- Declared before the call for the same reason as above.
+    local op_id
+    op_id = eval_async_cancellable(split.metadata_ast, idx, graph_sets, restrict_to,
       function(meta_matches, limit_reached_meta)
         local file_paths_inner = collect_abs_paths(get_snap())
         dispatch_ripgrep(split.text_ast, file_paths_inner, vault_path, on_done, function(rg_results, rg_limit)
@@ -270,7 +285,11 @@ local function resolve_query(split, idx, vault_path, graph_sets, group_mode, res
   local meta_matches = {}
   local limit_reached_meta = false
   if split.metadata_ast then
-    meta_matches, limit_reached_meta = search_filter.evaluate(split.metadata_ast, idx, graph_sets, restrict_to)
+    local matches, limit_reached = search_filter.evaluate(split.metadata_ast, idx, graph_sets, restrict_to)
+    -- No `cancelled` callback is passed, so evaluate cannot return nil, "cancelled".
+    ---@cast matches -nil
+    ---@cast limit_reached boolean
+    meta_matches, limit_reached_meta = matches, limit_reached
   end
   local file_paths = collect_abs_paths(get_snap())
   local op_id = nil
@@ -400,7 +419,7 @@ function M.execute_advanced_query(query_string, opts)
   search_filter.semaphore_reset()
 
   M.evaluate_advanced_ast(ast, group_mode, idx, current_path, nil,
-    function(result, effective_group_mode, _metadata_matches)
+    function(result, effective_group_mode)
       group_mode = effective_group_mode
 
       if result.limit_reached then
@@ -420,7 +439,7 @@ function M.execute_advanced_query(query_string, opts)
       actions["ctrl-/"] = { fn = function() require("andrew.vault.search.help").search_help() end, reload = false }
       if config.graph.search_to_graph then
         actions["ctrl-g"] = {
-          fn = function(selected)
+          fn = function()
             -- Collect all result file paths and open as graph
             local file_set = {}
             for _, line in ipairs(result.entries) do

@@ -1,6 +1,7 @@
 -- Unit tests for lua/andrew/vault/lru_cache.lua
 -- Run with: nvim --headless -u NONE -l tests/lru_cache_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -9,7 +10,22 @@ local test, assert_eq, assert_true, assert_nil =
 -- Load module under test
 -- ============================================================================
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
-local lru = require("andrew.vault.lru_cache")
+
+-- lru_cache.new is annotated `---@return table`; this is the instance it
+-- builds (see M.new in lua/andrew/vault/lru_cache.lua). Keys and values are
+-- arbitrary on purpose: the tests store strings, numbers, booleans, tables, nil.
+---@class LruCacheSpecCache
+---@field get fun(self: LruCacheSpecCache, key: any): any
+---@field put fun(self: LruCacheSpecCache, key: any, value: any)
+---@field clear fun(self: LruCacheSpecCache)
+---@field size fun(self: LruCacheSpecCache): integer
+---@field remove fun(self: LruCacheSpecCache, key: any)
+---@field entries fun(self: LruCacheSpecCache): (fun(): any, any)
+
+---@class LruCacheSpecModule
+---@field new fun(max_size: number): LruCacheSpecCache
+
+local lru = require("andrew.vault.lru_cache") --[[@as LruCacheSpecModule]]
 
 -- ============================================================================
 -- Tests
@@ -240,7 +256,7 @@ test("entries yields all key-value pairs", function()
   c:put("a", 1)
   c:put("b", 2)
   c:put("c", 3)
-  local collected = {}
+  local collected = {} ---@type table<string, integer>
   for k, v in c:entries() do
     collected[k] = v
   end
@@ -267,7 +283,7 @@ test("entries reflects evictions", function()
   c:put("a", 1)
   c:put("b", 2)
   c:put("c", 3) -- evicts a
-  local collected = {}
+  local collected = {} ---@type table<string, integer>
   for k, v in c:entries() do
     collected[k] = v
   end
@@ -310,10 +326,12 @@ end)
 test("max_size <= 0 raises an error", function()
   local ok_zero, err_zero = pcall(function() lru.new(0) end)
   assert_true(not ok_zero, "max_size=0 should error")
+  ---@cast err_zero string
   assert_true(err_zero:match("positive"), "error message should mention 'positive'")
 
   local ok_neg, err_neg = pcall(function() lru.new(-1) end)
   assert_true(not ok_neg, "max_size=-1 should error")
+  ---@cast err_neg string
   assert_true(err_neg:match("positive"), "error message should mention 'positive'")
 end)
 

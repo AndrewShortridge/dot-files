@@ -44,6 +44,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_registry_fresh_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -64,10 +65,12 @@ local function read(path)
 end
 
 --- Is the machine source this generator needs present?
+---@return boolean
 local function have_mpi_mod()
   return vim.fn.filereadable(vim.fn.expand("~/miniconda3/include/mpi.mod")) == 1
 end
 
+---@return boolean
 local function have_omp_lib()
   local out = vim.fn.system({ "gfortran", "-print-file-name=finclude" })
   if vim.v.shell_error ~= 0 then
@@ -96,6 +99,8 @@ end
 local function assert_same_bytes(got, want, label)
   assert_true(want ~= nil, label .. ": the committed file exists")
   assert_true(got ~= nil, label .. ": the generator produced output")
+  ---@cast got -nil
+  ---@cast want -nil
   if got == want then
     assert_eq(#got, #want, label .. " byte length:")
     return

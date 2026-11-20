@@ -18,6 +18,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/tag_pattern_boundary_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
@@ -28,16 +29,20 @@ local parser = require("andrew.vault.vault_index_parser")
 print("\n=== tag pattern left-boundary Tests ===\n")
 
 -- Collect the tags patterns.gmatch_tags yields for one line, in order.
+---@param line string
+---@return string[]
 local function tags_of(line)
-  local out = {}
+  local out = {} ---@type string[]
   for tag in pat.gmatch_tags(line) do
     out[#out + 1] = tag
   end
   return out
 end
 
+---@param list string[]
+---@return table<string, boolean>
 local function set_of(list)
-  local s = {}
+  local s = {} ---@type table<string, boolean>
   for _, v in ipairs(list) do s[v] = true end
   return s
 end
@@ -47,6 +52,8 @@ end
 local STAT = { mtime = { sec = 0 }, size = 0 }
 
 -- Parse a note body through the real index parser and return its tag set.
+---@param body_lines string[]
+---@return table<string, boolean>
 local function parsed_tags(body_lines)
   local entry = parser.parse_content(table.concat(body_lines, "\n"), "Note.md", STAT)
   return set_of(entry.tags or {})

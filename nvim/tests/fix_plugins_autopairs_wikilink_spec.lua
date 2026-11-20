@@ -29,6 +29,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fix_plugins_autopairs_wikilink_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -47,6 +48,13 @@ vim.opt.runtimepath:prepend(lazy_root .. "/nvim-autopairs")
 local shown = 0
 package.loaded["blink.cmp"] = { show = function() shown = shown + 1 end }
 
+-- The slice of the lazy.nvim plugin spec returned by plugins/autopairs.lua that
+-- this test drives.
+---@class AutopairsWikilinkPluginSpec
+---@field config fun(self: AutopairsWikilinkPluginSpec, opts: table?)
+---@field opts? table
+
+---@type AutopairsWikilinkPluginSpec
 local spec = dofile(cfg .. "/lua/andrew/plugins/autopairs.lua")
 spec.config(spec, spec.opts)
 
@@ -60,6 +68,8 @@ test("the `[` rule exists and now has an end-pair callback", function()
 end)
 
 --- Make a scratch buffer of the given filetype.
+---@param ft string
+---@return integer
 local function buf_of(ft)
   local b = vim.api.nvim_create_buf(false, true)
   vim.bo[b].filetype = ft
@@ -68,15 +78,26 @@ end
 
 local md, lua_buf = buf_of("markdown"), buf_of("lua")
 
+-- The subset of nvim-autopairs' CondOpts that the `[` hook reads.
+---@class AutopairsWikilinkPairOpts
+---@field char string    the character being typed
+---@field line string    the line before insertion
+---@field col integer    1-based index of `char`
+---@field bufnr integer
+
 --- Call the rule exactly as nvim-autopairs' autopairs_map does: `col` is the
 --- 1-based index of the `[` being typed, `line` is the line BEFORE insertion.
 --- Returns the end pair plus how many blink shows were scheduled.
+---@param opts AutopairsWikilinkPairOpts
+---@return string end_pair
+---@return integer shown
 local function pair(opts)
   shown = 0
   local real_mode = vim.api.nvim_get_mode
   -- The scheduled callback bails unless we are still in insert mode.
-  vim.api.nvim_get_mode = function() return { mode = "i" } end
-  local ret = rule:get_end_pair(opts)
+  ---@return vim.api.keyset.get_mode
+  vim.api.nvim_get_mode = function() return { mode = "i", blocking = false } end
+  local ret = rule:get_end_pair(opts) ---@type string
   vim.wait(100, function() return shown > 0 end)
   vim.api.nvim_get_mode = real_mode
   return ret, shown
@@ -121,7 +142,8 @@ test("the hook survives blink.cmp being absent", function()
   package.loaded["blink.cmp"] = nil
   package.preload["blink.cmp"] = function() error("blink not installed") end
   local real_mode = vim.api.nvim_get_mode
-  vim.api.nvim_get_mode = function() return { mode = "i" } end
+  ---@return vim.api.keyset.get_mode
+  vim.api.nvim_get_mode = function() return { mode = "i", blocking = false } end
   local ok, err = pcall(rule.get_end_pair, rule, { char = "[", line = "x [", col = 4, bufnr = md })
   vim.wait(80)
   vim.api.nvim_get_mode = real_mode

@@ -39,6 +39,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_openacc_sentinel_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_false, _H.assert_nil
@@ -107,6 +108,7 @@ test("the sentinel's byte offset is the `$`", function()
   local kind, send = omp.sentinel("      !$OMP PARALLEL")
   assert_eq(kind, "directive")
   assert_eq(send, 8, "1-based index of the `$`:")
+  ---@cast send -nil
   assert_eq(("      !$OMP PARALLEL"):sub(send, send), "$", "and it indexes a `$`:")
 end)
 

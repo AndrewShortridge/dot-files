@@ -11,13 +11,14 @@
 -- Make the vault package requirable headlessly.
 do
   local src = (debug.getinfo(1, "S").source:gsub("^@", ""))
-  local tests_dir = src:match("^(.*)[/\\][^/\\]*$") or "."
-  local root = tests_dir:match("^(.*)[/\\]tests$") or (tests_dir .. "/..")
+  local tests_dir = src:match("^(.*)[/\\][^/\\]*$") or "." ---@type string
+  local root = tests_dir:match("^(.*)[/\\]tests$") or (tests_dir .. "/..") ---@type string
   package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
 end
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
-local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
+local test, assert_true = _H.test, _H.assert_true
 
 print("\n=== engine_watcher self-write coalesce tests ===")
 
@@ -27,13 +28,17 @@ local VAULT = "/tmp/coalesce-test-vault"
 
 -- Build a fresh fake environment for each test: a spy engine and a fake
 -- vault_index whose update_files_batch records the paths it was asked to index.
+---@return string[][] updated  the path-arrays passed to update_files_batch, in call order
 local function setup_env()
-  local updated = {} -- list of path-arrays passed to update_files_batch
+  local updated = {} ---@type string[][]
 
   local fake_idx = {
     vault_path = VAULT,
     _building = false,
-    update_files_batch = function(_self, paths)
+    -- VaultIndex:update_files_batch(abs_paths), called as a method.
+    ---@param _ table  self
+    ---@param paths string[]
+    update_files_batch = function(_, paths)
       updated[#updated + 1] = paths
     end,
     build_async = function() end,
@@ -41,6 +46,7 @@ local function setup_env()
 
   -- flush_pending_files reads package.loaded["andrew.vault.vault_index"].current()
   package.loaded["andrew.vault.vault_index"] = {
+    ---@return table
     current = function() return fake_idx end,
   }
 
@@ -56,8 +62,10 @@ local function setup_env()
 end
 
 -- Flatten the recorded update batches into a seen-set of paths.
+---@param updated string[][]
+---@return table<string, true>
 local function indexed_set(updated)
-  local seen = {}
+  local seen = {} ---@type table<string, true>
   for _, batch in ipairs(updated) do
     for _, p in ipairs(batch) do
       seen[p] = true

@@ -33,6 +33,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/inlink_outlink_unchanged_skip_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true =
   _H.test, _H.assert_eq, _H.assert_true
@@ -45,6 +46,9 @@ print("\n=== Inlink Outlink-Unchanged Skip Tests ===\n")
 -- ---------------------------------------------------------------------------
 -- Temp vault helpers.
 -- ---------------------------------------------------------------------------
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -54,6 +58,8 @@ local function write_file(dir, rel, lines)
   f:close()
 end
 
+---@param dir string
+---@param rel string
 local function rm_file(dir, rel)
   os.remove(dir .. "/" .. rel)
 end
@@ -61,6 +67,7 @@ end
 -- A web of links:
 --   A -> B, A -> C, B -> C, D -> A
 -- plus an isolated note linking to nothing.
+---@return string dir
 local function make_web_vault()
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -72,6 +79,8 @@ local function make_web_vault()
   return dir
 end
 
+---@param dir string
+---@return VaultIndex
 local function fresh_vi(dir)
   vault_index._instance = nil
   -- Force a brand-new instance each time (do NOT share the singleton).
@@ -92,11 +101,15 @@ end
 -- simply never creates it. Restricting to live targets compares the invariant
 -- that actually matters (inlinks of every file still in the vault) and is exactly
 -- the property Issue H must preserve.
+---@alias InlinkOutlinkSkipCanon table<string, table<string, true>>  target rel_path -> set of source stems
+
+---@param idx VaultIndex
+---@return InlinkOutlinkSkipCanon
 local function canon_inlinks(idx)
-  local out = {}
+  local out = {} ---@type InlinkOutlinkSkipCanon
   for target_rel, list in pairs(idx._inlinks) do
     if idx.files[target_rel] then
-      local s = {}
+      local s = {} ---@type table<string, true>
       for _, rec in ipairs(list) do
         s[rec.path] = true
       end
@@ -106,6 +119,10 @@ local function canon_inlinks(idx)
   return out
 end
 
+---@param a InlinkOutlinkSkipCanon
+---@param b InlinkOutlinkSkipCanon
+---@return boolean equal
+---@return string? why  first difference found
 local function sets_equal(a, b)
   for k, av in pairs(a) do
     local bv = b[k]
@@ -125,6 +142,9 @@ end
 
 -- Assert the incremental index's inlinks == a fresh full rebuild of the same
 -- on-disk state.
+---@param dir string
+---@param idx VaultIndex
+---@param label string
 local function assert_parity(dir, idx, label)
   local full = fresh_vi(dir)
   local inc_c = canon_inlinks(idx)
@@ -208,16 +228,25 @@ end)
 -- ===========================================================================
 -- 2. DISCRIMINATING POWER for FIX (2): prose-only edit invokes resolver 0x.
 -- ===========================================================================
+---@class InlinkOutlinkSkipVaultIndex: VaultIndex
+---@field _resolve_fn? fun(link: table): table|nil  memoized resolver closure (internal to vault_index)
+
 -- Wrap _build_resolve_fn so we can count how many times the resolver fn is
 -- actually called during a save. (We wrap PER-INDEX on the metatable-bound
 -- method via a per-instance override.)
+---@param idx VaultIndex
+---@return fun(): integer get_count
 local function with_resolver_counter(idx)
+  -- the wrapper reaches into the memoized closure slot, an internal field
+  ---@cast idx InlinkOutlinkSkipVaultIndex
   local real = idx._build_resolve_fn
   local count = 0
   -- Reset memoized closure so our wrapper installs cleanly, then re-memoize a
   -- counting wrapper around the real (cached) resolver.
   idx._resolve_fn = nil
   local inner = real(idx)
+  ---@param link table
+  ---@return table|nil
   local wrapped = function(link)
     count = count + 1
     return inner(link)

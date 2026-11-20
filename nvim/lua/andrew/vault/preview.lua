@@ -241,13 +241,17 @@ focus_preview = function()
   if state._focus_keymaps_set then return end
   state._focus_keymaps_set = true
 
-  local buf = state.buf
+  local buf = state.buf --[[@as integer]] -- is_active() above checked it
   local opts = { buffer = buf, nowait = true, silent = true }
 
   -- Follow wikilink under cursor within the preview
   local function follow_link(verbose)
     if not vim.api.nvim_buf_is_valid(buf) then return end
-    local details = link_utils.get_wikilink_in_buf(buf, state.win)
+    -- Closing the preview clears state.win but keeps this buffer and its maps,
+    -- so the buffer can be shown again in some other window (`:b N`).
+    local preview_win = state.win
+    if not preview_win then return end
+    local details = link_utils.get_wikilink_in_buf(buf, preview_win)
     if not details then
       if verbose then notify.info("no wikilink under cursor in preview") end
       return
@@ -379,7 +383,7 @@ function M.preview()
     local buf
     local new_buf = false
     if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-      buf = state.buf
+      buf = state.buf --[[@as integer]] -- checked by the condition above
       vim.bo[buf].modifiable = true
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, target.lines)
     else

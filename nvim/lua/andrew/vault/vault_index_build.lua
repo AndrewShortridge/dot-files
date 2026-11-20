@@ -219,6 +219,8 @@ local function entry_from_old(old_entry, stat, overrides)
   return parser.make_entry(overrides, old_entry)
 end
 
+local validate_log = require("andrew.vault.vault_log").scope("chunker")
+
 --- Validate a chunked-parse entry against a full parse of the same content.
 --- Compares array fields by count and key-value fields by key set.
 --- Logs discrepancies via the "chunker" log scope. Dev-only (high overhead).
@@ -226,7 +228,6 @@ end
 ---@param content string Normalized file content
 ---@param rel_path string
 ---@param stat table
-local validate_log = require("andrew.vault.vault_log").scope("chunker")
 local function validate_chunked_entry(entry, content, rel_path, stat)
   local full = parser.parse_content(content, rel_path, stat)
   if not full then

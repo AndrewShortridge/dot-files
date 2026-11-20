@@ -51,6 +51,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_case_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil, assert_deep_eq = _H.assert_nil, _H.assert_deep_eq
@@ -69,10 +70,34 @@ local PROJECT_DEFS = {
   { lname = "physics", kind = "module" },
 }
 
+-- Any subset of fortran.case.Options, merged over the defaults below.
+---@class FortranCaseOverrides
+---@field enabled? boolean
+---@field severity? integer
+---@field intrinsics? boolean
+---@field defined? boolean
+---@field documented? boolean
+---@field all_calls? boolean
+---@field units? boolean
+---@field keyword_set? table<string, string>
+---@field dotted_set? table<string, string>
+---@field fixed? boolean
+---@field unit_names? table<string, string>
+
+-- One occurrence returned by case.scan_lines (which annotates it as a bare table).
+---@class FortranCaseFinding
+---@field lnum integer   1-based
+---@field col integer    1-based
+---@field name string    the name as written
+---@field upper string   its uppercase replacement
+---@field source string  which rule found it
+
 -- The tests above the "Language keywords" divider exercise the PROCEDURE rule
 -- in isolation, so they turn the keyword rule off. With it on, half of them
 -- would also see `real`, `call`, `subroutine` and friends as keyword findings
 -- -- correct behaviour, but a different rule, tested separately below.
+---@param overrides? FortranCaseOverrides
+---@return fortran.case.Options
 local function opts(overrides)
   local o = {
     enabled = true,
@@ -90,6 +115,9 @@ local function opts(overrides)
 end
 
 --- opts() with the keyword rule on, for the given classes (nil = all).
+---@param classes? string[]  nil = every class
+---@param overrides? FortranCaseOverrides
+---@return fortran.case.Options
 local function kw_opts(classes, overrides)
   local kw = require("andrew.fortran.keywords")
   return opts(vim.tbl_extend("force",
@@ -99,24 +127,36 @@ end
 
 --- opts() with unit names (module / type / program) on and keywords off, so
 --- the unit rule is exercised alone.
+---@param lines string[]
+---@param overrides? FortranCaseOverrides
+---@return FortranCaseFinding[]
 local function unit_findings(lines, overrides)
   local o = opts(vim.tbl_extend("force", { units = true }, overrides or {}))
   o.unit_names = case.known_units(PROJECT_DEFS, o)
   return case.scan_lines(lines, case.known_names(PROJECT_DEFS, o), o)
 end
 
+---@param lines string[]
+---@param classes? string[]  nil = every class
+---@param overrides? FortranCaseOverrides
+---@return FortranCaseFinding[]
 local function kw_findings(lines, classes, overrides)
   local o = kw_opts(classes, overrides)
   return case.scan_lines(lines, case.known_names(PROJECT_DEFS, o), o)
 end
 
+---@param lines string[]
+---@param overrides? FortranCaseOverrides
+---@return FortranCaseFinding[]
 local function findings(lines, overrides)
   local o = opts(overrides)
   return case.scan_lines(lines, case.known_names(PROJECT_DEFS, o), o)
 end
 
+---@param list FortranCaseFinding[]
+---@return string[]  "lnum:col name->upper" per finding
 local function summarize(list)
-  local out = {}
+  local out = {} ---@type string[]
   for _, f in ipairs(list) do
     out[#out + 1] = string.format("%d:%d %s->%s", f.lnum, f.col, f.name, f.upper)
   end
@@ -252,9 +292,13 @@ test("fix rewrites only the names and is idempotent", function()
 
   local o = opts()
   local known = case.known_names(PROJECT_DEFS, o)
+  ---@param src string[]
+  ---@return string[]
   local function apply(src)
     local out = vim.deepcopy(src)
-    for _, f in ipairs(case.scan_lines(out, known, o)) do
+    ---@type FortranCaseFinding[]
+    local found = case.scan_lines(out, known, o)
+    for _, f in ipairs(found) do
       local line = out[f.lnum]
       out[f.lnum] = line:sub(1, f.col - 1) .. f.upper .. line:sub(f.col + #f.name)
     end

@@ -167,7 +167,10 @@ M.parse_task_fields = parser.parse_task_fields
 ---@field _last_inv_ctx InvalidationContext|nil
 ---@field _inv_stats table
 ---@field _summary_tree table Hierarchical summary tree for O(1) aggregate queries
-
+---@field _entry_mt table Metatable computing the derived entry fields (make_entry_mt)
+---@field _vault_prefix string vault_path with a trailing slash
+---@field _index_dir string
+---@field _tag_intern table|nil Tag-table intern store, with config.sharing only
 M.VaultIndex = {}
 M.VaultIndex.__index = M.VaultIndex
 
@@ -1433,6 +1436,7 @@ end
 ---@return string[] aliases
 local function entry_index_keys(entry)
   local lower = entry.basename_lower
+  ---@type string|nil
   local rel_stem = entry.rel_stem_lower
   if rel_stem == lower then rel_stem = nil end
   return lower, rel_stem, entry.aliases

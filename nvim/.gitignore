@@ -9,3 +9,7 @@ spell/*.spl
 # Apptainer images: 1.5GB build artifacts, rebuilt via container/build.sh
 container/*.sif
 container/*.sif.*
+
+# Scratch clones of plugins kept for reading. Ignored so lua_ls (which honours
+# .gitignore) leaves them out of the workspace diagnostics.
+/temp/

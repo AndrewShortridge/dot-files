@@ -203,7 +203,7 @@ local function tokenize_line_legacy(line_text, line_nr, code_excl)
   local consumed = {} -- sorted list of {start, end} pairs (0-indexed)
 
   -- Pass 1: Embeds ![[...]]
-  pat.scan_embeds(line_text, function(inner, start_col, end_col)
+  pat.scan_embeds(line_text, function(_, start_col, end_col)
     local col0, col1 = start_col - 1, end_col -- 0-indexed, exclusive end
     if not overlaps_consumed(col0, col1, consumed) then
       consumed[#consumed + 1] = { col0, col1 }
@@ -219,7 +219,7 @@ local function tokenize_line_legacy(line_text, line_nr, code_excl)
   end)
 
   -- Pass 2: Wikilinks [[...]] (skip if preceded by !)
-  pat.scan_wikilinks(line_text, function(inner, start_col, end_col)
+  pat.scan_wikilinks(line_text, function(_, start_col, end_col)
     local col0, col1 = start_col - 1, end_col -- 0-indexed, exclusive end
     if not overlaps_consumed(col0, col1, consumed) then
       consumed[#consumed + 1] = { col0, col1 }
@@ -239,6 +239,7 @@ local function tokenize_line_legacy(line_text, line_nr, code_excl)
   while true do
     local s, e, id = line_text:find(FOOTNOTE_REF_PAT, pos)
     if not s then break end
+    ---@cast e -nil  find() returns both positions or neither
     local col0, col1 = s - 1, e
     if not overlaps_consumed(col0, col1, consumed) then
       consumed[#consumed + 1] = { col0, col1 }
@@ -591,9 +592,9 @@ end
 --- Evict cached lines outside the visible range when cache exceeds max size.
 --- Keeps lines closest to the viewport, evicting the furthest first.
 ---@param buf_cache table { tick: number, lines: table<number, LineToken[]>, texts: table<number, string> }
----@param bufnr number
+---@param _ number buffer handle (unused: the viewport centre comes from the current window)
 ---@param max_lines number
-local function evict_if_needed(buf_cache, bufnr, max_lines)
+local function evict_if_needed(buf_cache, _, max_lines)
   if max_lines <= 0 then return end
   local count = 0
   for _ in pairs(buf_cache.lines) do

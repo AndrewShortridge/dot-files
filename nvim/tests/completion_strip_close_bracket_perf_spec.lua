@@ -25,6 +25,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/completion_strip_close_bracket_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -40,6 +41,16 @@ print("\n=== Completion Strip Close-Bracket Perf Tests ===\n")
 -- ---------------------------------------------------------------------------
 -- Temp vault + buffer helpers
 -- ---------------------------------------------------------------------------
+---@class CompletionStripCloseBracketItem  an item the vault wikilinks source emits (note/heading/block items all carry both)
+---@field label string
+---@field insertText string
+
+---@class CompletionStripCloseBracketResponse  what the vault source hands its get_completions callback
+---@field items CompletionStripCloseBracketItem[]
+
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -53,11 +64,16 @@ end
 --- `line` is the full buffer line; `col` is the 0-indexed cursor column (chars
 --- before the cursor count, chars at/after are the "after" segment). Defaults to
 --- end-of-line (cursor after everything, nothing after).
+---@param line string
+---@param col? integer
+---@return CompletionStripCloseBracketResponse
 local function complete(line, col)
   col = col or #line
-  local result = nil
+  local result = nil ---@type CompletionStripCloseBracketResponse?
   local ctx = { line = line, cursor = { 1, col }, bufnr = vim.api.nvim_get_current_buf() }
-  source:get_completions(ctx, function(r) result = r end)
+  source:get_completions(ctx,
+    ---@param r CompletionStripCloseBracketResponse
+    function(r) result = r end)
   vim.wait(2000, function() return result ~= nil end, 5)
   return result or {}
 end
@@ -94,6 +110,8 @@ completion_base.invalidate_all()
 -- Warm the source cache so the note-name path returns the stable cached_items.
 complete("[[")
 
+---@param items CompletionStripCloseBracketItem[]
+---@return boolean
 local function any_insert_ends_double(items)
   for _, it in ipairs(items) do
     if it.insertText and it.insertText:sub(-2) == "]]" then return true end
@@ -128,7 +146,7 @@ test("stripped insertText equals un-stripped minus the trailing ']]'", function(
   local stripped = complete("[[Foobar]]", 8).items -- before="[[Foobar", after="]]"
 
   -- Build a label->insertText map from the un-stripped run.
-  local base_by_label = {}
+  local base_by_label = {} ---@type table<string, string>
   for _, it in ipairs(unstripped) do base_by_label[it.label] = it.insertText end
 
   local checked = 0

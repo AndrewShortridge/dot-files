@@ -11,6 +11,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_vault_b_sidebar_meta_add_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -41,14 +42,15 @@ test("`a` hands focus back to the source window before opening the editor", func
 
   sidebar_meta.setup_keymaps(side_buf, source_win)
 
-  local cb
+  local cb ---@type function?
   for _, m in ipairs(vim.api.nvim_buf_get_keymap(side_buf, "n")) do
     if m.lhs == "a" then cb = m.callback end
   end
   assert_true(cb ~= nil, "the Meta panel must map `a`")
+  ---@cast cb -nil
 
   -- Stub frontmatter_editor so the assertion is about the buffer it would see.
-  local seen_buf
+  local seen_buf ---@type integer?
   package.loaded["andrew.vault.frontmatter_editor"] = {
     open = function() seen_buf = vim.api.nvim_get_current_buf() end,
   }

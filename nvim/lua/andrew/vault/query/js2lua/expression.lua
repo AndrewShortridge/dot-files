@@ -270,7 +270,7 @@ local function transform_arrow(ctx, arrow)
   -- Arrow body: either { block } or expression
   if C.tk_is(ctx, TK.PUNCT, "{") then
     -- Block body
-    _transform_block(ctx, true)
+    _transform_block(ctx)
     C.emit(ctx, " end")
   else
     -- Expression body: collect until we hit something that ends the expression
@@ -1143,11 +1143,7 @@ function M.transform_expression(ctx)
     -- Semicolons -> remove (Lua doesn't need them, but they're valid)
     if v == ";" then
       C.tk_advance(ctx)
-      -- Emit newline if the next token isn't already a newline
-      local next_t = C.tk_cur(ctx)
-      if next_t.type ~= TK.NL and next_t.type ~= TK.EOF then
-        -- Don't emit anything; the next newline or statement will provide separation
-      end
+      -- Emit nothing: the next newline or statement provides the separation.
       return
     end
 

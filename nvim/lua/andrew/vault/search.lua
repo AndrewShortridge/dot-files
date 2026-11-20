@@ -87,21 +87,21 @@ function M.execute_advanced_query(...)
   if not _execute_advanced_query then _execute_advanced_query = require("andrew.vault.search.advanced").execute_advanced_query end
   return _execute_advanced_query(...)
 end
-function M.search_advanced(...)
+function M.search_advanced()
   if not _search_advanced then _search_advanced = require("andrew.vault.search.prompt").search_advanced end
-  return _search_advanced(...)
+  return _search_advanced()
 end
-function M.search_advanced_live(...)
+function M.search_advanced_live()
   if not _search_advanced_live then _search_advanced_live = require("andrew.vault.search.live").search_advanced_live end
-  return _search_advanced_live(...)
+  return _search_advanced_live()
 end
 function M.search_in_files(...)
   if not _search_in_files then _search_in_files = require("andrew.vault.search.live").search_in_files end
   return _search_in_files(...)
 end
-function M.search_help(...)
+function M.search_help()
   if not _search_help then _search_help = require("andrew.vault.search.help").search_help end
-  return _search_help(...)
+  return _search_help()
 end
 function M._complete_advanced(...)
   if not _complete_advanced then _complete_advanced = require("andrew.vault.search.completion")._complete_advanced end

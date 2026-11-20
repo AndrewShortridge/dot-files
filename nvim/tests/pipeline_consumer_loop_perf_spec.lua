@@ -28,6 +28,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/pipeline_consumer_loop_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -41,13 +42,18 @@ local pipeline = require("andrew.vault.transform_pipeline")
 --- Build a real markdown buffer in a temp vault with `n_content` lines, each
 --- carrying a wikilink + a #tag + a ==highlight== + an [inline:: field], plus a
 --- run of blank lines so the empty-line fast-skip path is also exercised.
+---@param n_content integer
+---@param n_blank integer
+---@return integer buf
+---@return integer n_content
+---@return integer n_blank
 local function make_buffer(n_content, n_blank)
   local vault = vim.fn.tempname()
   vim.fn.mkdir(vault, "p")
   local buf = vim.api.nvim_create_buf(false, false)
   vim.api.nvim_buf_set_name(buf, vault .. "/note.md")
   vim.bo[buf].filetype = "markdown"
-  local lines = {}
+  local lines = {} ---@type string[]
   for i = 1, n_content do
     lines[#lines + 1] =
       "[[Target" .. i .. "]] #tag" .. i .. " ==hl" .. i .. "== [key" .. i .. ":: val]"
@@ -59,6 +65,7 @@ local function make_buffer(n_content, n_blank)
   return buf, n_content, n_blank
 end
 
+---@return boolean
 local function code_excl() return false end
 
 -- --------------------------------------------------------------------------
@@ -77,10 +84,14 @@ test("transform_pipeline.run resolves each line once, not once per consumer", fu
   -- Wrap get_resolved with a counter for the next (warm) full run.
   local calls = 0
   local real_get_resolved = semantic.get_resolved
-  semantic.get_resolved = function(b, ln)
+  ---@param b number
+  ---@param ln number
+  ---@return ResolvedToken[]
+  local function counting_get_resolved(b, ln)
     calls = calls + 1
     return real_get_resolved(b, ln)
   end
+  semantic.get_resolved = counting_get_resolved
 
   local ok, err = pcall(function()
     pipeline.run(buf, code_excl, { full = true })
@@ -115,7 +126,7 @@ test("more than one consumer is registered (bug would change the count)", functi
   -- Collect distinct namespaces with extmarks on this buffer. The built-in
   -- consumers use 4 distinct namespaces (wikilink/tag/highlight/inline_field).
   local ns_map = vim.api.nvim_get_namespaces()
-  local distinct = 0
+  local distinct = 0 ---@type integer
   for _, ns in pairs(ns_map) do
     local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {})
     if #marks > 0 then distinct = distinct + 1 end
@@ -173,7 +184,7 @@ test("rendered output is still produced after the loop inversion (parity smoke)"
   pipeline.run(buf, code_excl, { full = true })
 
   local ns_map = vim.api.nvim_get_namespaces()
-  local total_marks = 0
+  local total_marks = 0 ---@type integer
   for _, ns in pairs(ns_map) do
     total_marks = total_marks + #vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {})
   end

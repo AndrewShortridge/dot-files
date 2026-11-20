@@ -3,7 +3,7 @@ local types = require("andrew.vault.query.types")
 local M = {}
 
 local function date_offset(field, amount)
-  local d = os.date("*t")
+  local d = os.date("*t") --[[@as osdate]]
   d[field] = d[field] + amount
   local r = os.date("*t", os.time(d))
   return types.Date.new(r.year, r.month, r.day)
@@ -583,7 +583,7 @@ function M.make_fns(deps)
 
     -- eom() -- end of current month
     eom = function()
-      local d = os.date("*t")
+      local d = os.date("*t") --[[@as osdate]]
       d.month = d.month + 1
       d.day = 0 -- day 0 of next month = last day of current month
       local r = os.date("*t", os.time(d))

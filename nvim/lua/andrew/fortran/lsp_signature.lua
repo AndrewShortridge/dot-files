@@ -44,6 +44,7 @@ local inlay = require("andrew.fortran.lsp_inlayhint")
 local registry = require("andrew.fortran.registry")
 local render = require("andrew.fortran.render")
 local scan = require("andrew.fortran.scan")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 --- How far back a continued statement may reach. Shares lsp_inlayhint's cap
 --- so an unbalanced paren cannot walk the whole file from either end.
@@ -60,7 +61,7 @@ M.MAX_CONTINUATION = inlay.MAX_CONTINUATION
 --- the test a plain suffix match.
 ---@param lines string[] 1-based raw lines
 ---@param lnum integer
----@param fixed boolean
+---@param fixed boolean|nil
 ---@return integer
 function M.statement_start(lines, lnum, fixed)
   local at = lnum
@@ -220,7 +221,7 @@ function M.signature(params, cb)
   if not (uri and pos) then
     return cb(nil, nil)
   end
-  local bufnr = vim.uri_to_bufnr(uri)
+  local bufnr = nvim_compat.uri_to_buffer(uri)
   if not vim.api.nvim_buf_is_loaded(bufnr) then
     return cb(nil, nil)
   end

@@ -1,6 +1,7 @@
 -- Unit tests for lua/andrew/vault/query/js2lua/ (DataviewJS-to-Lua transpiler)
 -- Run with: nvim --headless -u NONE -l tests/js2lua_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil, assert_deep_eq =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil, _H.assert_deep_eq
@@ -47,7 +48,7 @@ test("tokenizer: member-access + call tokens", function()
   assert_eq(toks[4].type, "punct")
   assert_eq(toks[4].value, "(")
   -- collect significant (non-ws, non-eof) tokens
-  local sig = {}
+  local sig = {} ---@type table[]
   for _, t in ipairs(toks) do
     if t.type ~= "ws" and t.type ~= "nl" and t.type ~= "eof" then
       sig[#sig + 1] = t
@@ -75,7 +76,7 @@ end)
 
 test("tokenizer: double-quoted string is one STR token with quotes retained", function()
   local toks = tokenizer.tokenize('a = "hi"')
-  local str_tok
+  local str_tok ---@type table?
   for _, t in ipairs(toks) do
     if t.type == "str" then
       assert_nil(str_tok, "only one str token expected")
@@ -83,6 +84,7 @@ test("tokenizer: double-quoted string is one STR token with quotes retained", fu
     end
   end
   assert_true(str_tok ~= nil, "expected a str token")
+  ---@cast str_tok -nil
   assert_eq(str_tok.value, '"hi"', "quotes are retained")
 end)
 
@@ -94,12 +96,13 @@ end)
 
 test("tokenizer: slash is division after identifier", function()
   local toks = tokenizer.tokenize("a / b")
-  local slash_tok
+  local slash_tok ---@type table?
   for _, t in ipairs(toks) do
     assert_true(t.type ~= "regex", "no regex token expected")
     if t.value == "/" then slash_tok = t end
   end
   assert_true(slash_tok ~= nil, "expected a '/' token")
+  ---@cast slash_tok -nil
   assert_eq(slash_tok.type, "op", "slash after ident is division")
 end)
 
@@ -121,7 +124,7 @@ end)
 
 test("tokenizer: numbers - hex, float, exponent each a single NUM", function()
   local toks = tokenizer.tokenize("0x1F 3.14 1e3")
-  local nums = {}
+  local nums = {} ---@type string[]
   for _, t in ipairs(toks) do
     if t.type == "num" then nums[#nums + 1] = t.value end
   end
@@ -298,12 +301,16 @@ end)
 -- ---------------------------------------------------------------------------
 
 test("transpile: nil input errors", function()
+  -- Invalid on purpose: transpile must reject a nil input with an error.
+  ---@diagnostic disable-next-line: param-type-mismatch
   local out, err = js2lua.transpile(nil)
   assert_nil(out)
   assert_eq(err, "transpile: input must be a non-empty string")
 end)
 
 test("transpile: non-string input errors", function()
+  -- Invalid on purpose: transpile must reject a non-string input with an error.
+  ---@diagnostic disable-next-line: param-type-mismatch
   local out, err = js2lua.transpile(42)
   assert_nil(out)
   assert_eq(err, "transpile: input must be a non-empty string")
@@ -319,6 +326,8 @@ end)
 -- 6. End-to-end transpile
 -- ---------------------------------------------------------------------------
 
+---@param js string
+---@param expected_lua string
 local function assert_transpile(js, expected_lua)
   local out, err = js2lua.transpile(js)
   assert_nil(err, "unexpected transpile error")
@@ -351,6 +360,8 @@ end)
 test("e2e: array literal in block-bodied arrow return -> table", function()
   local out, err = js2lua.transpile("const g = p => { return [p.a, p.b]; }")
   assert_nil(err, "unexpected transpile error")
+  -- transpile returns code exactly when it returns no error (asserted above)
+  ---@cast out -nil
   assert_true(out:find("return {p.a, p.b}", 1, true) ~= nil, "block arrow should return a Lua table")
   assert_true(load("return function() " .. out .. " end") ~= nil, "output must compile")
 end)
@@ -470,6 +481,8 @@ end)
 
 -- True when the transpiled Lua loads as a function body (catches malformed
 -- output like `return .rating`).
+---@param lua string
+---@return boolean
 local function loads(lua)
   return select(1, load("return function() " .. lua .. " end")) ~= nil
 end
@@ -477,23 +490,26 @@ end
 test("optional chaining: a?.b emits nil-safe access", function()
   local out = js2lua.transpile("a?.b")
   assert_eq(out, '__index_safe(a, "b")')
+  ---@cast out -nil
   assert_true(loads(out), "emitted Lua loads")
 end)
 
 test("optional chaining: dv.current()?.rating", function()
   local out = js2lua.transpile("dv.current()?.rating")
   assert_eq(out, '__index_safe(dv.current(), "rating")')
+  ---@cast out -nil
   assert_true(loads(out), "emitted Lua loads")
 end)
 
 test("optional chaining chains: a?.b?.c nests left-associative", function()
   local out = js2lua.transpile("a?.b?.c")
   assert_eq(out, '__index_safe(__index_safe(a, "b"), "c")')
+  ---@cast out -nil
   assert_true(loads(out), "emitted Lua loads")
 end)
 
 test("optional chaining with assignment: const x = a?.b", function()
-  local out = js2lua.transpile("const x = a?.b")
+  local out = assert(js2lua.transpile("const x = a?.b"))
   assert_true(out:find('__index_safe(a, "b")', 1, true) ~= nil, "contains nil-safe access")
   assert_true(loads(out), "emitted Lua loads")
 end)
@@ -501,17 +517,19 @@ end)
 test("optional chaining computed: a?.[k]", function()
   local out = js2lua.transpile("a?.[k]")
   assert_eq(out, "__index_safe(a, k)")
+  ---@cast out -nil
   assert_true(loads(out), "emitted Lua loads")
 end)
 
 test("regression: ternary still works (cond ? x : y)", function()
   local out = js2lua.transpile("cond ? x : y")
   assert_eq(out, "(function() if cond then return x else return y end end)()")
+  ---@cast out -nil
   assert_true(loads(out), "emitted Lua loads")
 end)
 
 test("regression: mixed x = a?.b ? 1 : 2 (ternary cond is nil-safe access)", function()
-  local out = js2lua.transpile("x = a?.b ? 1 : 2")
+  local out = assert(js2lua.transpile("x = a?.b ? 1 : 2"))
   assert_true(out:find('if __index_safe(a, "b") then', 1, true) ~= nil, "ternary condition is nil-safe")
   assert_true(loads(out), "emitted Lua loads")
 end)
@@ -522,6 +540,8 @@ end)
 
 test("runtime: __index_safe returns nil for nil obj, value otherwise", function()
   local api = require("andrew.vault.query.api")
+  -- Invalid on purpose: __index_safe needs no index or file, so the env is built without them.
+  ---@diagnostic disable-next-line: param-type-mismatch
   local env = api.create_env(nil, nil)
   assert_nil(env.__index_safe(nil, "x"), "nil obj -> nil")
   assert_eq(env.__index_safe({ x = 1 }, "x"), 1, "present key -> value")

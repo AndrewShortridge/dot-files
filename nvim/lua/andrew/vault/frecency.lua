@@ -80,7 +80,8 @@ end
 ---@param abs_path string absolute file path
 function M.record(abs_path)
   if not engine.is_vault_path(abs_path) then return end
-  local rel = engine.vault_relative(abs_path)
+  -- vault_relative() returns nil only for paths outside the vault (ruled out above)
+  local rel = engine.vault_relative(abs_path) --[[@as string]]
   if not rel:match(pat.MD_EXTENSION) then return end
 
   local db = load_db()

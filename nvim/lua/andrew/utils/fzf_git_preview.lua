@@ -147,6 +147,8 @@ local function get_git_status_previewer()
     return git_status_previewer
   end
 
+  ---@class FzfGitStatusPreviewer : fzf-lua.previewer.VTerm
+  ---@field super fzf-lua.previewer.VTerm
   local GitStatusPreviewer = require("fzf-lua.previewer.builtin").vterm:extend()
 
   function GitStatusPreviewer:new(previewer_opts, picker_opts)
@@ -165,7 +167,8 @@ local function get_git_status_previewer()
     -- A renamed file is listed as `old -> new`; the diff shown is the new one's.
     local file = self:entry_to_file(status_row:match("%s%->%s(.*)$") or status_row).path
     if file then
-      local shown_path = require("fzf-lua.path").relative_to(file, self.opts.cwd or vim.uv.cwd())
+      local shown_path =
+        require("fzf-lua.path").relative_to(file, self.opts.cwd or assert(vim.uv.cwd()))
       entry.title = " " .. shown_path .. " "
     end
     return entry

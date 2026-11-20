@@ -343,7 +343,7 @@ end
 ---@param pages table
 ---@param ast table
 ---@param current_page table|nil
----@return table groups  list of { key = any, pages = {page,...} }
+---@return table|nil groups  list of { key = any, pages = {page,...} }; nil without GROUP BY
 local function apply_group_by(pages, ast, current_page)
   if not ast.group_by then
     return nil

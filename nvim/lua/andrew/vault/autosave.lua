@@ -15,7 +15,7 @@ local _enabled = false
 
 --- Per-buffer debounce timers.
 --- Keyed by buffer number to allow independent debounce per buffer.
----@type table<number, uv_timer_t>
+---@type table<number, uv.uv_timer_t>
 local _timers = {}
 
 --- Augroup ID (nil when not active).

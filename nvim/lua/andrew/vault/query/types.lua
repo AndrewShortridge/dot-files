@@ -295,7 +295,7 @@ function Date.parse(str)
   if mname then
     local mn = month_names[mname:lower()]
     if mn then
-      return Date.new(tonumber(year_str), mn, tonumber(day_str))
+      return Date.new(tonumber(year_str) --[[@as integer]], mn, tonumber(day_str) --[[@as integer]])
     end
   end
 
@@ -319,7 +319,7 @@ end
 ---@param fmt string
 ---@return string
 function Date:format(fmt)
-  return os.date(fmt, self:timestamp())
+  return os.date(fmt, self:timestamp()) --[[@as string]]
 end
 
 --- Default string representation: "YYYY-MM-DD".

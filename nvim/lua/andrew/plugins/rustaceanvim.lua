@@ -71,7 +71,7 @@ return {
       -- =============================================================================
       server = {
         -- Capabilities are inherited from default LSP config
-        on_attach = function(_client, bufnr)
+        on_attach = function(_, bufnr)
           -- =============================================================================
           -- Rust-specific Keybindings
           -- =============================================================================

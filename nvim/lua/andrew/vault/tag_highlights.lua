@@ -75,7 +75,7 @@ M.toggle = hl_coord.make_toggle(M, "tag highlights")
 --- Pipeline-aware tag scanner for navigation. Reads from the pipeline parse
 --- cache when warm; returns nothing if cache is not available (no legacy
 --- fallback).
-local function scan_tags_pipeline_aware(_lines, _start_line, _code_excl, _fm_start, _fm_end, callback)
+local function scan_tags_pipeline_aware(_, _, _, _, _, callback)
   local parse_cache = require("andrew.vault.line_parse_cache")
   local bufnr = vim.api.nvim_get_current_buf()
   local iter = parse_cache.pipeline_token_iter(bufnr, "tag")
@@ -86,7 +86,7 @@ local function scan_tags_pipeline_aware(_lines, _start_line, _code_excl, _fm_sta
   end
 end
 
-local jump_tag = hl_coord.make_scan_nav(_nav_cache, scan_tags_pipeline_aware, function(row, hash_pos, _tag)
+local jump_tag = hl_coord.make_scan_nav(_nav_cache, scan_tags_pipeline_aware, function(row, hash_pos)
   return row + 1, hash_pos
 end)
 

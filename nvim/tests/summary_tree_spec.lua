@@ -1,10 +1,14 @@
 -- Unit tests for lua/andrew/vault/summary_tree.lua
 -- Run with: nvim --headless -u NONE -l tests/summary_tree_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
+---@param got any
+---@param expected any
+---@param msg? string
 local function assert_table_eq(got, expected, msg)
   local g = vim.inspect(got)
   local e = vim.inspect(expected)
@@ -20,6 +24,7 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 -- Stub vault_log to avoid loading full vault infrastructure
 package.loaded["andrew.vault.vault_log"] = {
+  ---@return table
   scope = function()
     return {
       debug = function() end,
@@ -36,7 +41,27 @@ local summary_tree = require("andrew.vault.summary_tree")
 -- Test helpers
 -- ============================================================================
 
+---@class SummaryTreeSpecEntry
+---@field tags string[]
+---@field frontmatter table<string, string>
+---@field tasks { status?: string, text?: string }[]
+---@field outlinks table[]
+---@field headings table[]
+---@field aliases string[]
+---@field block_ids { id: string }[]
+
+---@class SummaryTreeSpecEntryOpts
+---@field tags? string[]
+---@field frontmatter? table<string, string>
+---@field tasks? { status?: string, text?: string }[]
+---@field outlinks? table[]
+---@field headings? table[]
+---@field aliases? string[]
+---@field block_ids? { id: string }[]
+
 --- Create a minimal vault index entry for testing.
+---@param opts? SummaryTreeSpecEntryOpts
+---@return SummaryTreeSpecEntry
 local function make_entry(opts)
   opts = opts or {}
   return {
@@ -61,7 +86,7 @@ print("\n=== Summary Tree Tests ===\n")
 -- ---------------------------------------------------------------------------
 test("new tree has zero file_count", function()
   local tree = summary_tree.new()
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 0)
   assert_eq(root.task_count, 0)
   assert_eq(root.link_count, 0)
@@ -72,7 +97,7 @@ end)
 
 test("query on empty tree returns empty tables", function()
   local tree = summary_tree.new()
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_table_eq(root.tag_counts, {})
   assert_table_eq(root.tag_file_counts, {})
   assert_table_eq(root.fm_key_counts, {})
@@ -90,14 +115,14 @@ end)
 test("update root-level file increments file_count", function()
   local tree = summary_tree.new()
   tree:update("notes.md", make_entry())
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 1)
 end)
 
 test("update root-level file with tags", function()
   local tree = summary_tree.new()
   tree:update("notes.md", make_entry({ tags = { "foo", "bar", "foo" } }))
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.tag_counts["foo"], 2, "foo should appear twice")
   assert_eq(root.tag_counts["bar"], 1)
   assert_eq(root.tag_file_counts["foo"], 1, "IDF: file counts once per tag")
@@ -113,7 +138,7 @@ test("update root-level file with tasks", function()
       { status = " " },
     },
   }))
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.task_count, 3)
   assert_eq(root.task_status_counts[" "], 2)
   assert_eq(root.task_status_counts["x"], 1)
@@ -124,7 +149,7 @@ test("update root-level file with frontmatter", function()
   tree:update("notes.md", make_entry({
     frontmatter = { type = "daily", date = "2024-01-01" },
   }))
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.fm_key_counts["type"], 1)
   assert_eq(root.fm_key_counts["date"], 1)
 end)
@@ -137,7 +162,7 @@ test("update root-level file counts links/headings/aliases/block_ids", function(
     aliases = { "alias1" },
     block_ids = { { id = "blk-1" }, { id = "blk-2" } },
   }))
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.link_count, 3)
   assert_eq(root.heading_count, 2)
   assert_eq(root.alias_count, 1)
@@ -152,12 +177,12 @@ test("update nested file creates directory hierarchy", function()
   tree:update("daily/2024-01-01.md", make_entry({ tags = { "journal" } }))
   tree:update("daily/2024-01-02.md", make_entry({ tags = { "journal", "review" } }))
 
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 2)
   assert_eq(root.tag_counts["journal"], 2)
   assert_eq(root.tag_counts["review"], 1)
 
-  local daily = tree:query("daily/")
+  local daily = tree:query("daily/") ---@type SummaryNode
   assert_true(daily ~= nil, "daily/ directory should exist")
   assert_eq(daily.file_count, 2)
   assert_eq(daily.tag_counts["journal"], 2)
@@ -168,14 +193,14 @@ test("deeply nested files propagate to root", function()
   tree:update("projects/alpha/tasks.md", make_entry({
     tasks = { { status = " " }, { status = " " } },
   }))
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 1)
   assert_eq(root.task_count, 2)
 
-  local projects = tree:query("projects/")
+  local projects = tree:query("projects/") ---@type SummaryNode
   assert_eq(projects.file_count, 1)
 
-  local alpha = tree:query("projects/alpha/")
+  local alpha = tree:query("projects/alpha/") ---@type SummaryNode
   assert_eq(alpha.file_count, 1)
   assert_eq(alpha.task_count, 2)
 end)
@@ -186,7 +211,7 @@ test("multiple directories aggregate correctly at root", function()
   tree:update("projects/note2.md", make_entry({ tags = { "b" } }))
   tree:update("root.md", make_entry({ tags = { "c" } }))
 
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 3)
   assert_eq(root.tag_counts["a"], 1)
   assert_eq(root.tag_counts["b"], 1)
@@ -205,7 +230,7 @@ test("updating existing file replaces its summary", function()
   assert_eq(tree:query("").tag_counts["old"], 1)
 
   tree:update("notes.md", make_entry({ tags = { "new" } }))
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 1, "file_count should still be 1")
   assert_nil(root.tag_counts["old"], "old tag should be gone")
   assert_eq(root.tag_counts["new"], 1)
@@ -217,7 +242,7 @@ test("updating file in subdirectory updates ancestors", function()
   assert_eq(tree:query("").task_count, 1)
 
   tree:update("daily/note.md", make_entry({ tasks = { { status = "x" }, { status = "x" } } }))
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.task_count, 2)
   assert_nil(root.task_status_counts[" "], "old status gone")
   assert_eq(root.task_status_counts["x"], 2)
@@ -233,7 +258,7 @@ test("remove file decrements counts", function()
   assert_eq(tree:query("").file_count, 2)
 
   tree:remove("a.md")
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 1)
   assert_nil(root.tag_counts["x"])
   assert_eq(root.tag_counts["y"], 1)
@@ -263,7 +288,7 @@ test("remove does not prune dirs with other children", function()
   tree:update("dir/b.md", make_entry())
   tree:remove("dir/a.md")
 
-  local dir = tree:query("dir/")
+  local dir = tree:query("dir/") ---@type SummaryNode
   assert_true(dir ~= nil, "dir/ should not be pruned")
   assert_eq(dir.file_count, 1)
 end)
@@ -279,13 +304,13 @@ test("batch_begin/batch_update/batch_end produces correct tree", function()
   tree:batch_update("projects/p.md", make_entry({ outlinks = { {}, {} } }))
   tree:batch_end()
 
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 3)
   assert_eq(root.tag_counts["journal"], 2)
   assert_eq(root.tag_counts["review"], 1)
   assert_eq(root.link_count, 2)
 
-  local daily = tree:query("daily/")
+  local daily = tree:query("daily/") ---@type SummaryNode
   assert_eq(daily.file_count, 2)
 end)
 
@@ -312,7 +337,7 @@ test("mixed batch update and remove", function()
   tree:batch_update("b.md", make_entry({ tags = { "new" } }))
   tree:batch_end()
 
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 1)
   assert_nil(root.tag_counts["old"])
   assert_eq(root.tag_counts["new"], 1)
@@ -330,7 +355,7 @@ test("build_from_files creates tree from files table", function()
   }
   tree:build_from_files(files)
 
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 3)
   assert_eq(root.tag_counts["journal"], 2)
   assert_eq(root.task_count, 1)
@@ -345,7 +370,7 @@ test("build_from_files resets tree state", function()
   tree:build_from_files({
     ["new.md"] = make_entry({ tags = { "fresh" } }),
   })
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 1, "should have only the new file")
   assert_nil(root.tag_counts["stale"], "old tag should be gone")
   assert_eq(root.tag_counts["fresh"], 1)
@@ -360,7 +385,7 @@ test("tag_counts sums references, tag_file_counts counts files", function()
   tree:update("a.md", make_entry({ tags = { "foo", "foo", "bar" } }))
   tree:update("b.md", make_entry({ tags = { "foo" } }))
 
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   -- tag_counts: total references
   assert_eq(root.tag_counts["foo"], 3, "foo: 2 refs in a.md + 1 in b.md")
   assert_eq(root.tag_counts["bar"], 1)
@@ -377,7 +402,7 @@ test("fm_key_counts aggregates across files", function()
   tree:update("a.md", make_entry({ frontmatter = { type = "daily", date = "2024" } }))
   tree:update("b.md", make_entry({ frontmatter = { type = "note" } }))
 
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.fm_key_counts["type"], 2)
   assert_eq(root.fm_key_counts["date"], 1)
 end)
@@ -388,7 +413,7 @@ end)
 test("empty entry produces zero summary", function()
   local tree = summary_tree.new()
   tree:update("empty.md", make_entry())
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 1)
   assert_eq(root.task_count, 0)
   assert_eq(root.link_count, 0)
@@ -403,7 +428,7 @@ test("entry with nil fields handled gracefully", function()
   tree:update("sparse.md", {
     -- All fields nil except what entry_to_summary checks with "or {}"
   })
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 1)
   assert_eq(root.task_count, 0)
   assert_eq(root.link_count, 0)
@@ -414,7 +439,7 @@ test("task with nil status defaults to space", function()
   tree:update("t.md", make_entry({
     tasks = { { text = "do something" } }, -- no status field
   }))
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.task_count, 1)
   assert_eq(root.task_status_counts[" "], 1, "nil status defaults to space")
 end)
@@ -422,7 +447,7 @@ end)
 test("build_from_files with empty table produces empty tree", function()
   local tree = summary_tree.new()
   tree:build_from_files({})
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.file_count, 0)
 end)
 
@@ -441,12 +466,12 @@ test("scoped query returns only subtree data", function()
   tree:update("daily/a.md", make_entry({ tags = { "journal" } }))
   tree:update("projects/b.md", make_entry({ tags = { "work" } }))
 
-  local daily = tree:query("daily/")
+  local daily = tree:query("daily/") ---@type SummaryNode
   assert_eq(daily.file_count, 1)
   assert_eq(daily.tag_counts["journal"], 1)
   assert_nil(daily.tag_counts["work"], "work tag not in daily/")
 
-  local projects = tree:query("projects/")
+  local projects = tree:query("projects/") ---@type SummaryNode
   assert_eq(projects.file_count, 1)
   assert_eq(projects.tag_counts["work"], 1)
   assert_nil(projects.tag_counts["journal"])
@@ -458,9 +483,9 @@ end)
 test("snapshot returns correct path field", function()
   local tree = summary_tree.new()
   tree:update("daily/a.md", make_entry())
-  local daily = tree:query("daily/")
+  local daily = tree:query("daily/") ---@type SummaryNode
   assert_eq(daily.path, "daily/")
-  local root = tree:query("")
+  local root = tree:query("") ---@type SummaryNode
   assert_eq(root.path, "")
 end)
 

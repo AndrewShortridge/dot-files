@@ -21,6 +21,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/tabline_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -38,12 +39,15 @@ tabline.apply_colours()
 local scratch_dir = vim.fn.tempname()
 vim.fn.mkdir(scratch_dir, "p")
 
+---@param name string
+---@return string
 local function scratch_file(name)
   local path = scratch_dir .. "/" .. name
   vim.fn.writefile({ "first", "second" }, path)
   return path
 end
 
+---@param path string
 local function reset_to(path)
   vim.cmd("silent! tabonly | silent! only")
   vim.cmd("silent! %bwipeout!")
@@ -52,11 +56,15 @@ end
 
 --- What Neovim would draw: the text, and the highlight group in force at the
 --- start of `needle`.
+---@return string text
+---@return fun(needle: string): string? group_at
 local function drawn()
   local evaluated = vim.api.nvim_eval_statusline(tabline.render(), { use_tabline = true, highlights = true })
+  ---@param needle string
+  ---@return string?
   local function group_at(needle)
     local start = assert(evaluated.str:find(needle, 1, true), "not drawn: " .. needle) - 1
-    local group
+    local group ---@type string?
     for _, span in ipairs(evaluated.highlights) do
       if span.start <= start then
         group = span.group

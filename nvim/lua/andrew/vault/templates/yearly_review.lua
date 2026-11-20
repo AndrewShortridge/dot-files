@@ -3,7 +3,7 @@ local config = require("andrew.vault.config")
 local M = {}
 M.name = "Yearly Review"
 
-function M.run(e, p)
+function M.run(e)
   local date = e.today()
   local date_long = e.today_long()
 

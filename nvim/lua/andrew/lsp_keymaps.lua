@@ -69,7 +69,7 @@ function M.has(buf, method)
   if not method then
     return true
   end
-  local methods = type(method) == "string" and { method } or method
+  local methods = type(method) == "string" and { method } or method --[[@as string[] ]]
   for _, m in ipairs(methods) do
     m = m:find("/") and m or ("textDocument/" .. m)
     if #vim.lsp.get_clients({ bufnr = buf, method = m }) > 0 then
@@ -88,12 +88,16 @@ end
 function M.code_action_kinds(buf)
   local ret = {}
   for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf })) do
-    vim.list_extend(ret, vim.tbl_get(client, "server_capabilities", "codeActionProvider", "codeActionKinds") or {})
+    vim.list_extend(
+      ret,
+      vim.tbl_get(client, "server_capabilities", "codeActionProvider", "codeActionKinds") or {}
+    )
 
     -- Dynamic registrations live off the client object and the accessor has
     -- moved between nvim versions; never let a probe break attach.
     local ok, regs = pcall(function()
-      return client.dynamic_capabilities and client.dynamic_capabilities:get("textDocument/codeAction", { bufnr = buf })
+      return client.dynamic_capabilities
+        and client.dynamic_capabilities:get("textDocument/codeAction", { bufnr = buf })
     end)
     if ok then
       for _, reg in ipairs(regs or {}) do
@@ -201,13 +205,16 @@ local function lsp_info()
     entries = { "(no LSP clients attached to this buffer)" }
   end
 
-  require("fzf-lua").fzf_exec(entries, require("andrew.utils.fzf_look").titled("LSP Info", {
-    actions = {
-      ["default"] = function()
-        vim.cmd("checkhealth vim.lsp")
-      end,
-    },
-  }))
+  require("fzf-lua").fzf_exec(
+    entries,
+    require("andrew.utils.fzf_look").titled("LSP Info", {
+      actions = {
+        ["default"] = function()
+          vim.cmd("checkhealth vim.lsp")
+        end,
+      },
+    })
+  )
 end
 
 --- Document / workspace symbol picker, Fortran-aware.
@@ -310,7 +317,13 @@ M._keys = {
 
   -- Codelens. Off until asked for: nvim 0.12 does not display lenses unless
   -- codelens is enabled for the buffer, which is what <leader>cC does.
-  { "<leader>cc", vim.lsp.codelens.run, desc = "Run Codelens", mode = { "n", "x" }, has = "codeLens" },
+  {
+    "<leader>cc",
+    vim.lsp.codelens.run,
+    desc = "Run Codelens",
+    mode = { "n", "x" },
+    has = "codeLens",
+  },
   {
     "<leader>cC",
     function()
@@ -353,8 +366,18 @@ M._keys = {
   { "<leader>cS", symbols("workspace"), desc = "Workspace Symbols", has = "workspace/symbol" },
   { "<leader>ss", symbols("document"), desc = "LSP Symbols", has = "documentSymbol" },
   { "<leader>sS", symbols("workspace"), desc = "LSP Workspace Symbols", has = "workspace/symbol" },
-  { "gai", fzf("lsp_incoming_calls"), desc = "C[a]lls Incoming", has = "callHierarchy/incomingCalls" },
-  { "gao", fzf("lsp_outgoing_calls"), desc = "C[a]lls Outgoing", has = "callHierarchy/outgoingCalls" },
+  {
+    "gai",
+    fzf("lsp_incoming_calls"),
+    desc = "C[a]lls Incoming",
+    has = "callHierarchy/incomingCalls",
+  },
+  {
+    "gao",
+    fzf("lsp_outgoing_calls"),
+    desc = "C[a]lls Outgoing",
+    has = "callHierarchy/outgoingCalls",
+  },
 
   -- Reference jumps (Snacks.words).
   { "]]", words_jump(1), desc = "Next Reference", has = "documentHighlight" },

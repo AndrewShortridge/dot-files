@@ -39,16 +39,43 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/session_keymaps_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
 local cfg = vim.fn.stdpath("config")
 
+-- Loads which-key's types (wk.Spec) for the stub in the which-key test.
+---@module "which-key"
+
 print("\n=== Quit/Session (<leader>q) Port Tests ===\n")
 
-local spec = dofile(cfg .. "/lua/andrew/plugins/persistence.lua")
+-- The two plugin spec files return a LazyPluginSpec; these classes narrow it
+-- to the shapes the files actually have, so keys/config are not unions.
 
-local pkeys = {}
+---@class SessionKeymapsSpecPersistence
+---@field [1] string
+---@field event string
+---@field lazy? boolean
+---@field opts table
+---@field keys LazyKeysSpec[]
+
+---@class SessionKeymapsSpecWhichKey
+---@field config? fun(self?: LazyPlugin, opts?: table)
+---@field opts? table
+
+---@class SessionKeymapsSpecKey
+---@field desc? string
+---@field rhs? string|fun():string?|false
+
+---@class SessionKeymapsSpecMapCall
+---@field mode string|string[]
+---@field rhs string|function
+---@field desc? string
+
+local spec = dofile(cfg .. "/lua/andrew/plugins/persistence.lua") ---@type SessionKeymapsSpecPersistence
+
+local pkeys = {} ---@type table<string, SessionKeymapsSpecKey>
 for _, k in ipairs(spec.keys or {}) do
   pkeys[k[1]] = { desc = k.desc, rhs = k[2] }
 end
@@ -85,8 +112,13 @@ end)
 test("<leader>qq Quit All is registered from core/keymaps.lua", function()
   -- LazyVim keeps Quit All in config/keymaps.lua, not the plugin spec, because
   -- it must work whether or not persistence has loaded.
-  local seen = {}
+  local seen = {} ---@type table<string, SessionKeymapsSpecMapCall>
   local real_set = vim.keymap.set
+  -- `lhs string` as on 0.12.5; 0.13 also accepts a list, which core/keymaps.lua never passes.
+  ---@param mode string|string[]
+  ---@param lhs string
+  ---@param rhs string|function
+  ---@param opts? vim.keymap.set.Opts
   vim.keymap.set = function(mode, lhs, rhs, opts)
     seen[lhs] = { mode = mode, rhs = rhs, desc = opts and opts.desc }
   end
@@ -103,16 +135,18 @@ test("<leader>qq Quit All is registered from core/keymaps.lua", function()
 end)
 
 test("which-key registers the Quit/Session group", function()
-  local groups = {}
+  local groups = {} ---@type table<string, string|fun():string>
   package.loaded["which-key"] = {
+    ---@param entries wk.Spec
     add = function(entries)
       for _, e in ipairs(entries) do
-        if e.group then groups[e[1]] = e.group end
+        -- Every group entry in plugins/which-key.lua carries its lhs at [1].
+        if e.group then groups[e[1] --[[@as string]]] = e.group end
       end
     end,
     setup = function() end,
   }
-  local wk = dofile(cfg .. "/lua/andrew/plugins/which-key.lua")
+  local wk = dofile(cfg .. "/lua/andrew/plugins/which-key.lua") ---@type SessionKeymapsSpecWhichKey
   if type(wk.config) == "function" then pcall(wk.config, nil, wk.opts or {}) end
   assert_eq(groups["<leader>q"], "Quit/Session", "<leader>q must be the Quit/Session group:")
 end)
@@ -121,7 +155,7 @@ test("sessionoptions matches LazyVim and excludes terminal", function()
   local had = vim.o.sessionoptions
   vim.o.sessionoptions = ""
   dofile(cfg .. "/lua/andrew/core/options.lua")
-  local got = {}
+  local got = {} ---@type table<string, boolean>
   for _, v in ipairs(vim.split(vim.o.sessionoptions, ",", { plain = true })) do
     if v ~= "" then got[v] = true end
   end

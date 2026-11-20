@@ -19,6 +19,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fix_markdown_cr_pair_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_deep_eq = _H.test, _H.assert_eq, _H.assert_true, _H.assert_deep_eq
 
@@ -47,12 +48,35 @@ local AP_EXPAND = vim.api.nvim_replace_termcodes(
 )
 local PLAIN_CR = "\r"
 
+---@class FixMarkdownCrPairRule  the nvim-autopairs Rule fields cr_action() reads
+---@field start_pair string
+---@field end_pair string
+---@field is_regex? boolean
+
+---@class FixMarkdownCrPairAutopairsState  what the stubbed nvim-autopairs answers
+---@field rules? FixMarkdownCrPairRule[]
+---@field cr_result? string
+
+---@class FixMarkdownCrPairResult  what one cr() run observed
+---@field handled boolean
+---@field delegated boolean
+---@field fell_through boolean
+---@field fallback_called boolean
+---@field fed string
+---@field lines string[]
+---@field cursor integer[]
+
+---@param start_pair string
+---@param end_pair string
+---@param extra? { is_regex?: boolean }
+---@return FixMarkdownCrPairRule
 local function rule(start_pair, end_pair, extra)
   return vim.tbl_extend("force", { start_pair = start_pair, end_pair = end_pair }, extra or {})
 end
 
 --- The default rule set nvim-autopairs installs for a markdown buffer, reduced
 --- to the fields cr_action() looks at.
+---@return FixMarkdownCrPairRule[]
 local function default_rules()
   return {
     rule("(", ")"),
@@ -66,14 +90,18 @@ local function default_rules()
   }
 end
 
-local ap = {}
+local ap = {} ---@type FixMarkdownCrPairAutopairsState
+---@param rules FixMarkdownCrPairRule[]
+---@param cr_result? string  what autopairs_cr() returns (default AP_EXPAND)
 local function install_autopairs(rules, cr_result)
   ap.rules = rules
   ap.cr_result = cr_result == nil and AP_EXPAND or cr_result
   package.loaded["nvim-autopairs"] = {
+    ---@return FixMarkdownCrPairRule[]?
     get_buf_rules = function()
       return ap.rules
     end,
+    ---@return string?
     autopairs_cr = function()
       return ap.cr_result
     end,
@@ -88,6 +116,10 @@ end
 -- Drivers
 -- ---------------------------------------------------------------------------
 
+---@param lines string[]
+---@param row integer  1-based
+---@param col integer  0-based
+---@return integer buf
 local function md_buf(lines, row, col)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -101,6 +133,10 @@ end
 ---   handled  -- true when cr_action did the edit itself (returned "")
 ---   fed      -- everything the returned delegate pushed into the typeahead
 ---   called   -- whether the captured autopairs fallback was invoked
+---@param lines string[]
+---@param row integer
+---@param col integer
+---@return FixMarkdownCrPairResult
 local function cr(lines, row, col)
   md_buf(lines, row, col)
   local called = false
@@ -108,13 +144,20 @@ local function cr(lines, row, col)
     called = true
   end
   local result = lc.cr_action(fallback)
-  local fed = {}
+  local fed = {} ---@type string[]
   if type(result) == "function" then
     local real = vim.api.nvim_feedkeys
-    vim.api.nvim_feedkeys = function(keys, mode, escape)
+    ---@param keys string
+    ---@param mode string
+    ---@param escape boolean
+    ---@return nil
+    ---@return string mode
+    ---@return boolean escape
+    local function recording_feedkeys(keys, mode, escape)
       fed[#fed + 1] = keys
       return nil, mode, escape
     end
+    vim.api.nvim_feedkeys = recording_feedkeys
     local ok, err = pcall(result)
     vim.api.nvim_feedkeys = real
     assert(ok, err)
@@ -134,6 +177,10 @@ end
 
 --- The list-continuation result as `line|line|line`, for the byte-identical
 --- regression cases (cr_action does those edits itself and returns "").
+---@param lines string[]
+---@param row integer
+---@param col integer
+---@return string
 local function cr_text(lines, row, col)
   local r = cr(lines, row, col)
   assert_true(r.handled, "expected cr_action to handle this line itself")
@@ -161,6 +208,10 @@ test("the queued fixup re-indents to the list item's content column", function()
 end)
 
 test("content column is per-marker: ordered, task, nested, bare item", function()
+  ---@param lines string[]
+  ---@param row integer
+  ---@param col integer
+  ---@return string|nil prefix
   local function prefix_of(lines, row, col)
     local fed = cr(lines, row, col).fed
     return fed:match('_indent_pair_expansion%("([^"]*)"')
@@ -260,11 +311,17 @@ end)
 
 --- Put the buffer in the exact shape autopairs' expansion leaves behind, with
 --- the cursor on the blank middle line, then run the fixup.
+---@param lines string[]
+---@param row integer
+---@param prefix string
+---@param closer string
+---@return { [1]: string[], [2]: integer[] } got  buffer lines, then the cursor
 local function run_fixup(lines, row, prefix, closer)
   md_buf(lines, row, 0)
   -- The fixup arrives as a <Cmd> key in insert mode. `:startinsert` does not
   -- take effect until the main loop runs, so fake the mode read instead.
   local real_get_mode = vim.api.nvim_get_mode
+  ---@return vim.api.keyset.get_mode
   vim.api.nvim_get_mode = function()
     return { mode = "i", blocking = false }
   end

@@ -392,9 +392,9 @@ local function follow_link()
   end
 
   -- 4) Fall back to normal gf
-  local ok, _ = pcall(vim.cmd, "normal! gF")
+  local ok, _ = pcall(vim.cmd --[[@as function]], "normal! gF")
   if not ok then
-    local ok2, err2 = pcall(vim.cmd, "normal! gf")
+    local ok2, err2 = pcall(vim.cmd --[[@as function]], "normal! gf")
     if not ok2 then log.debug("gf fallback failed: %s", err2) end
   end
 end
@@ -406,11 +406,11 @@ end
 local function find_links_on_line(line)
   local cols = {}
   -- Find wikilinks: [[...]]
-  pat.scan_wikilinks(line, function(inner, start_col, end_col)
+  pat.scan_wikilinks(line, function(_, start_col)
     cols[#cols + 1] = start_col
   end)
   -- Find markdown links: [text](url) — but skip wikilinks (preceded by [)
-  pos = 1
+  local pos = 1
   while true do
     local s = line:find(pat.MARKDOWN_LINK, pos)
     if not s then break end

@@ -20,8 +20,8 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/snacks_tmux_terminal_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
@@ -30,34 +30,55 @@ vim.opt.runtimepath:append(vim.fn.stdpath("data") .. "/lazy/snacks.nvim")
 local XTVERSION_QUERY = "\27[>q"
 
 --- Everything the code under test sent to the terminal.
-local sent_to_terminal = {}
+local sent_to_terminal = {} ---@type string[]
+---@param data string
 vim.api.nvim_ui_send = function(data)
   sent_to_terminal[#sent_to_terminal + 1] = data
 end
 
 --- snacks' own tmux calls (`set -p allow-passthrough all`, `show -g extended-keys`).
-local snacks_tmux_calls = {}
-vim.fn.system = function(command)
-  snacks_tmux_calls[#snacks_tmux_calls + 1] = table.concat(command, " ")
+local snacks_tmux_calls = {} ---@type string[]
+--- Stand-in for vim.fn.system; snacks always passes the command as a list.
+---@param command string|string[]
+---@return string
+local function fake_system(command)
+  snacks_tmux_calls[#snacks_tmux_calls + 1] = table.concat(command --[[@as string[] ]], " ")
   return "extended-keys off\n"
 end
+vim.fn.system = fake_system
 
 --- What `tmux display-message -p` prints; nil makes the call fail.
-local tmux_answer
+local tmux_answer ---@type string?
+-- Returns vim.system's real type, not a fake class: lua_ls merges what a stub
+-- assigned to `vim.system` returns into `vim.system` for the WHOLE workspace,
+-- so a fake return type leaks into the config's own calls.
+---@return vim.SystemObj
 vim.system = function()
-  return {
+  -- Only `:wait()`, the one method the module under test uses.
+  local fake_system_obj = {
+    ---@return { code: integer, stdout: string }
     wait = function()
       return tmux_answer and { code = 0, stdout = tmux_answer .. "\n" } or { code = 1, stdout = "" }
     end,
   }
+  return fake_system_obj --[[@as vim.SystemObj]]
 end
 
+---@class SnacksTmuxSpecTerminalOptions
+---@field is_inside_tmux boolean
+---@field is_adapted? boolean  run andrew.utils.snacks_tmux_terminal.setup()
+---@field tmux_answer? string
+
 --- A fresh snacks terminal module, as a new session has it.
+---@param options SnacksTmuxSpecTerminalOptions
+---@return snacks.image.terminal
 local function fresh_terminal(options)
   vim.env.TMUX = options.is_inside_tmux and "/tmp/tmux-1000/default,1,0" or nil
   tmux_answer = options.tmux_answer
   sent_to_terminal, snacks_tmux_calls = {}, {}
+  ---@type table?
   package.loaded["snacks.image.terminal"] = nil
+  ---@type table?
   package.loaded["andrew.utils.snacks_tmux_terminal"] = nil
   local terminal = require("snacks.image.terminal")
   if options.is_adapted then
@@ -66,6 +87,7 @@ local function fresh_terminal(options)
   return terminal
 end
 
+---@return boolean
 local function was_query_sent()
   for _, data in ipairs(sent_to_terminal) do
     if data:find(XTVERSION_QUERY, 1, true) then
@@ -91,12 +113,14 @@ test(
 test("inside tmux no query is sent and the terminal comes from tmux", function()
   local terminal =
     fresh_terminal({ is_inside_tmux = true, is_adapted = true, tmux_answer = "kitty(0.49.2)" })
-  local detected
+  local detected ---@type snacks.image.Terminal?
+  ---@param result snacks.image.Terminal
   terminal.detect(function(result)
     detected = result
   end)
   assert_eq(#sent_to_terminal, 0, "bytes sent to the terminal:")
   assert_true(detected ~= nil, "the callback did not run")
+  ---@cast detected -nil
   assert_eq(detected.terminal, "kitty(0.49.2)", "terminal:")
   assert_true(terminal.env().placeholders, "kitty was not recognised from the name")
 end)

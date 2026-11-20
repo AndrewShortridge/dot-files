@@ -20,6 +20,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_core_floatterm_complete_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -31,6 +32,8 @@ dofile(vim.fn.stdpath("config") .. "/lua/andrew/custom/plugins/terminal.lua")
 local ALL = { "open", "close", "hide", "toggle", "restart", "send" }
 
 
+---@param arg_lead string text after `FloatingTerminal `
+---@return string[]
 local function complete(arg_lead)
   -- Go through the real completion machinery, exactly as <Tab> would.
   return vim.fn.getcompletion("FloatingTerminal " .. arg_lead, "cmdline")

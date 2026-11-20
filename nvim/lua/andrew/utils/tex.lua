@@ -41,7 +41,7 @@ local _mz_cache = { key = nil, val = false }
 --- memo wrapper can capture every return path with a single assignment.
 local function _in_mathzone_uncached(buf, ft, row, col)
   local lok, lang = pcall(function()
-    local parser = vim.treesitter.get_parser(buf)
+    local parser = assert(vim.treesitter.get_parser(buf))
     local lang_tree = parser:language_for_range({ row, col, row, col })
     return lang_tree:lang()
   end)

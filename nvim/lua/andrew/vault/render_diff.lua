@@ -13,7 +13,6 @@ local M = {}
 ---@field line number 0-indexed
 ---@field col number 0-indexed start column
 ---@field opts table extmark options (hl_group, end_col, priority, hl_mode, etc.)
----@field key string unique identity for diffing
 ---@field _id? number extmark id (set after nvim_buf_set_extmark)
 
 ---@type table<number, table<number, table<string, ExtmarkSpec>>> -- bufnr -> line -> col_key -> spec

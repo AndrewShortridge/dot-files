@@ -319,7 +319,7 @@ local PRECEDENCE = {
 --- Merge, de-duplicate and sort scan records into fzf entries.
 ---@param items table[] records with path/lnum/col/name/kind and optional text
 ---@param root string used to shorten displayed paths
----@param lines_for fun(path: string): string[]|nil source of the display text
+---@param lines_for (fun(path: string): string[]|nil)|nil source of the display text
 ---@param opts { show_path?: boolean, source_column?: boolean }|nil
 ---@return string[]
 function M.build_entries(items, root, lines_for, opts)

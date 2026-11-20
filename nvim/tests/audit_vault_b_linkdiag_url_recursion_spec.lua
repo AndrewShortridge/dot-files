@@ -15,6 +15,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_vault_b_linkdiag_url_recursion_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -36,9 +37,12 @@ end)
 
 test("an excluded URL resolves its callback synchronously and caches nothing", function()
   local calls = 0
-  local result
+  local result ---@type { url: string, status: number, error: string|nil }?
+  ---@param r { url: string, status: number, error: string|nil }
   url_validate.validate_url("http://localhost:9/none", function(r) calls = calls + 1; result = r end)
   assert_eq(calls, 1, "callback must have fired synchronously")
+  -- Set by the callback that just fired; a nil here fails on the next line.
+  ---@cast result -nil
   assert_eq(result.error, "excluded", "excluded URLs report error='excluded'")
   assert_true(url_validate.get_cached("http://localhost:9/none") == nil,
     "excluded URLs must not be cached (this is what made the retry loop unbounded)")
@@ -54,7 +58,9 @@ test("validate() on a note with a localhost URL terminates", function()
   -- Count re-entries: before the fix this grew until "stack overflow".
   local entries = 0
   local orig = linkdiag.validate
-  local guard
+  local guard ---@type fun(b: number|nil)
+  ---@param b number|nil
+  ---@return nil
   guard = function(b)
     entries = entries + 1
     if entries > 50 then error("run-away recursion: validate() re-entered " .. entries .. " times") end

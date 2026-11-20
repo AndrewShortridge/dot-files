@@ -13,17 +13,24 @@
 --      byte past its end (normal insert-mode position) and must return an
 --      INCOMPLETE response so blink re-queries on each keystroke.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
+
+-- lazydev loads blink.cmp's annotations into lua_ls from this line.
+---@module "blink.cmp"
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 -- Stub the logger so requiring real modules does not pull the full vault infra.
 -- The catch-all __index also satisfies module-level calls like vault_log.configure().
 package.loaded["andrew.vault.vault_log"] = setmetatable({
+  ---@return table  a logger whose every method is a no-op
   scope = function()
+    ---@return fun()
     return setmetatable({}, { __index = function() return function() end end })
   end,
+  ---@return fun()
 }, { __index = function() return function() end end })
 
 local kanban = require("andrew.vault.task_kanban")
@@ -33,7 +40,15 @@ local K = kanban._internal
 local COL_W = 20
 local STRIDE = COL_W + #K.divider_char
 
+-- A card_position entry as task_kanban builds them (it declares `table[]`);
+-- only the fields these tests set and read.
+---@class AuditVaultcTasksCardPos
+---@field task { text: string }
+---@field row integer  0-indexed buffer row of the card's first line
+---@field col_index integer  1-based board column
+
 -- Three columns, two card rows. Rows 0-2 hold card row 1, rows 3-5 card row 2.
+---@return AuditVaultcTasksCardPos[]
 local function board()
   return {
     { task = { text = "c1r1" }, row = 0, col_index = 1 },
@@ -58,8 +73,9 @@ test("find_card_at_cursor returns the card in the cursor's own column", function
   local cps = board()
   local ri = K.build_spatial_index(cps)
   for ci = 1, 3 do
-    local cp = K.find_card_at_cursor(cps, 1, ri, (ci - 1) * STRIDE + 2, COL_W, 3)
+    local cp = K.find_card_at_cursor(cps, 1, ri, (ci - 1) * STRIDE + 2, COL_W, 3) --[[@as AuditVaultcTasksCardPos?]]
     assert_true(cp ~= nil, "a card is found for column " .. ci)
+    ---@cast cp -nil
     assert_eq(cp.col_index, ci, "column " .. ci .. " resolves to its own card")
     assert_eq(cp.task.text, "c" .. ci .. "r1")
   end
@@ -69,8 +85,9 @@ test("find_card_at_cursor picks the nearest existing column when its own is empt
   local cps = board()
   local ri = K.build_spatial_index(cps)
   -- Card row 2 has no column-2 card; column 2's cursor must land on 1 or 3.
-  local cp = K.find_card_at_cursor(cps, 4, ri, STRIDE + 2, COL_W, 3)
+  local cp = K.find_card_at_cursor(cps, 4, ri, STRIDE + 2, COL_W, 3) --[[@as AuditVaultcTasksCardPos?]]
   assert_true(cp ~= nil)
+  ---@cast cp -nil
   assert_true(cp.col_index == 1 or cp.col_index == 3, "fell back to an adjacent column")
   assert_eq(cp.row, 3, "stayed on the same card row")
 end)
@@ -78,16 +95,18 @@ end)
 test("find_card_at_cursor without a column hint still returns a card (back-compat)", function()
   local cps = board()
   local ri = K.build_spatial_index(cps)
-  local cp = K.find_card_at_cursor(cps, 1, ri)
+  local cp = K.find_card_at_cursor(cps, 1, ri) --[[@as AuditVaultcTasksCardPos?]]
   assert_true(cp ~= nil)
+  ---@cast cp -nil
   assert_eq(cp.row, 0)
 end)
 
 test("the nearest-search fallback (cursor off every card) is also column-aware", function()
   local cps = board()
   -- No row index -> linear nearest scan.
-  local cp = K.find_card_at_cursor(cps, 9, nil, STRIDE * 2 + 2, COL_W, 3)
+  local cp = K.find_card_at_cursor(cps, 9, nil, STRIDE * 2 + 2, COL_W, 3) --[[@as AuditVaultcTasksCardPos?]]
   assert_true(cp ~= nil)
+  ---@cast cp -nil
   assert_eq(cp.col_index, 3, "prefers the cursor's column among equidistant rows")
 end)
 
@@ -104,6 +123,9 @@ end)
 
 -- ── 2. timeline: the window follows center_date ────────────────────────────
 
+---@param center string  YYYY-MM-DD
+---@param range_days integer
+---@return string  the rendered range header line
 local function header_of(center, range_days)
   local data = {
     dated = {
@@ -137,6 +159,8 @@ test("only dated tasks inside the centred window are rendered", function()
     },
     undated = {},
   }
+  ---@param center string  YYYY-MM-DD
+  ---@return string
   local function blob(center)
     local res = timeline._internal.render_timeline(data,
       { center_date = center, range_days = 5 }, 80)
@@ -158,6 +182,12 @@ end)
 
 -- ── 3. completion_spell ───────────────────────────────────────────────────
 
+-- The part of a blink.cmp.Context that completion_spell's get_completions reads.
+---@class AuditVaultcTasksFakeSpellCtx
+---@field line string
+---@field cursor integer[]  { row (1-based), col (0-based byte) }
+---@field bufnr integer
+
 test("spell source finds the word when the cursor is one past its end", function()
   local spell = require("andrew.vault.completion_spell")
   local src = spell.new()
@@ -171,11 +201,15 @@ test("spell source finds the word when the cursor is one past its end", function
     -- behaviour is still asserted below via the empty-line case.
     print("    (note: no en_us spellfile; suggestion assertions skipped)")
   else
-    local res
+    local res ---@type blink.cmp.CompletionResponse?
     -- col 7 == one byte PAST the final "e" (the real insert-mode position).
-    src:get_completions({ line = "recieve", cursor = { 1, 7 }, bufnr = buf },
+    local ctx = { line = "recieve", cursor = { 1, 7 }, bufnr = buf } ---@type AuditVaultcTasksFakeSpellCtx
+    -- A partial context on purpose: get_completions reads only these fields.
+    src:get_completions(ctx --[[@as blink.cmp.Context]],
+      ---@param r blink.cmp.CompletionResponse
       function(r) res = r end)
     assert_true(res ~= nil, "callback fired")
+    ---@cast res -nil
     assert_true(#res.items > 0, "suggestions produced at end-of-word cursor")
     assert_eq(res.items[1].filterText, "recieve", "filterText is the misspelled word")
   end
@@ -188,9 +222,14 @@ test("spell responses are marked incomplete so blink re-queries per keystroke", 
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
   vim.api.nvim_set_current_buf(buf)
   vim.wo.spell = true
-  local res
-  src:get_completions({ line = "", cursor = { 1, 0 }, bufnr = buf }, function(r) res = r end)
+  local res ---@type blink.cmp.CompletionResponse?
+  local ctx = { line = "", cursor = { 1, 0 }, bufnr = buf } ---@type AuditVaultcTasksFakeSpellCtx
+  -- A partial context on purpose: get_completions reads only these fields.
+  src:get_completions(ctx --[[@as blink.cmp.Context]],
+    ---@param r blink.cmp.CompletionResponse
+    function(r) res = r end)
   assert_true(res ~= nil, "callback fired for an empty line")
+  ---@cast res -nil
   assert_eq(res.is_incomplete_forward, true, "forward-incomplete")
   assert_eq(res.is_incomplete_backward, true, "backward-incomplete")
   assert_eq(#res.items, 0)

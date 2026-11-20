@@ -17,6 +17,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/vault_index_persist_roundtrip_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -29,6 +30,9 @@ print("\n=== Vault Index Persist Round-Trip Tests ===\n")
 -- ---------------------------------------------------------------------------
 -- Build a throwaway vault on disk and return a freshly built index over it.
 -- ---------------------------------------------------------------------------
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -38,6 +42,7 @@ local function write_file(dir, rel, lines)
   f:close()
 end
 
+---@return string dir  absolute path of the temp vault
 local function make_vault()
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -72,9 +77,13 @@ local ALPHA = "notes/alpha.md"
 local BETA = "notes/beta.md"
 
 -- Find the (single) task on alpha, and its outlink to beta.
+---@param idx VaultIndex
+---@return table task  alpha's first task record
 local function alpha_task(idx)
   return idx.files[ALPHA].tasks[1]
 end
+---@param idx VaultIndex
+---@return table outlink  alpha's outlink to beta (else its first outlink)
 local function alpha_outlink(idx)
   for _, l in ipairs(idx.files[ALPHA].outlinks) do
     if (l._name_lower or ""):find("beta") or (l.path or ""):find("beta") then return l end
@@ -158,7 +167,8 @@ test("persisted JSON omits derived fields", function()
   local f = assert(io.open(dir .. "/.vault-index/index.json", "r"))
   local raw = f:read("*a")
   f:close()
-  local data = vim.json.decode(raw)
+  -- Raw JSON on disk: entries are plain decoded tables (no derived fields).
+  local data = vim.json.decode(raw) ---@type { files: table<string, table<string, any>> }
   local pe = data.files[ALPHA]
   assert_true(pe ~= nil, "alpha present in persisted index")
   assert_nil(pe.rel_stem, "persisted entry omits rel_stem")

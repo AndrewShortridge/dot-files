@@ -29,6 +29,7 @@ local M = {}
 ---@field ns number extmark namespace
 ---@field priority number rendering priority
 ---@field render fun(line_nr: number, resolved: ResolvedToken[]): ExtmarkSpec[]
+---@field _type_set? table<string, boolean> token_types as a set; filled in by register_consumer
 
 ---@type RenderConsumer[]
 local _consumers = {}
@@ -169,7 +170,7 @@ function M.run(bufnr, code_excl, opts)
     if resolved[1] ~= nil then
       for _, consumer in ipairs(_consumers) do
         -- type_set was precomputed at registration (token_types never changes).
-        local type_set = consumer._type_set
+        local type_set = consumer._type_set --[[@as table<string, boolean>]]
         -- Filter to token types this consumer handles. Allocate `relevant`
         -- lazily on the first match (arena-pooled when available) so lines with
         -- no matching tokens cost no table allocation.

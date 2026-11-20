@@ -32,6 +32,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fix_plugins_keys_hygiene_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil, assert_match =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil, _H.assert_match
@@ -39,6 +40,8 @@ local test, assert_eq, assert_true, assert_nil, assert_match =
 local cfg = vim.fn.stdpath("config")
 local lazy_root = vim.fn.stdpath("data") .. "/lazy"
 
+---@param path string
+---@return string
 local function read(path)
   return table.concat(vim.fn.readfile(path), "\n")
 end
@@ -47,6 +50,11 @@ end
 -- 1. insert-mode <C-k>
 -- ---------------------------------------------------------------------------
 
+-- The part of the plugins/blink-cmp.lua lazy.nvim spec this test reads.
+---@class KeysHygieneBlinkSpec
+---@field opts { keymap: blink.cmp.KeymapConfig }
+
+---@type KeysHygieneBlinkSpec
 local blink = dofile(cfg .. "/lua/andrew/plugins/blink-cmp.lua")
 
 test("blink-cmp.lua disables <C-k> outright (not just remaps it)", function()
@@ -61,14 +69,14 @@ test("blink's real keymap merger installs nothing on <C-k>", function()
   vim.opt.runtimepath:prepend(lazy_root .. "/blink.cmp")
   local mappings = require("blink.cmp.keymap").get_mappings(blink.opts.keymap, "default")
 
-  local normalized = {}
+  local normalized = {} ---@type table<string, blink.cmp.KeymapCommand[]>
   for lhs, cmds in pairs(mappings) do
     normalized[vim.api.nvim_replace_termcodes(lhs, true, true, true)] = cmds
   end
   assert_nil(normalized[vim.keycode("<C-k>")], "blink still maps <C-k>")
 
   -- ...and documentation scrolling is still reachable in both directions.
-  local up, down
+  local up, down ---@type string?, string?
   for lhs, cmds in pairs(mappings) do
     for _, c in ipairs(cmds) do
       if c == "scroll_documentation_up" then up = lhs end
@@ -76,6 +84,7 @@ test("blink's real keymap merger installs nothing on <C-k>", function()
     end
   end
   assert_true(up ~= nil, "no key scrolls documentation up")
+  ---@cast up -nil
   assert_true(down ~= nil, "no key scrolls documentation down")
   assert_true(
     vim.api.nvim_replace_termcodes(up, true, true, true) ~= vim.keycode("<C-k>"),

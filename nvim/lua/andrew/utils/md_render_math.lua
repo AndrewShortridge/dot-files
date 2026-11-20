@@ -709,6 +709,8 @@ local function math_pass_of(text, escapes, ...)
   end
   local pass = { openings = {}, closings = {} }
   math_pass = pass
+  -- Set: wrap_markdown_render() fills it before it puts the watch that leads here.
+  ---@cast upstream_markdown_render -nil
   upstream_markdown_render(md_render_text, ...)
   math_pass = nil
   return pass
@@ -795,10 +797,11 @@ local function is_paired_alike(text, scanned, spans, escapes, ...)
     position = pass.text:find("$", position + 1, true)
   end
   if given_count ~= #dollars then
-    rank = ranks_given(text, dollars, escapes, given_count, ...)
-    if not rank then
+    local rank_given = ranks_given(text, dollars, escapes, given_count, ...)
+    if not rank_given then
       return false
     end
+    rank = rank_given
   end
 
   local closing_of, may_close, wanted = {}, {}, 0
@@ -1166,7 +1169,8 @@ local function run_refresh()
     local waiting = session.content and session.content.math_pending
     if
       vim.api.nvim_buf_is_valid(view_bufnr)
-      and (is_full or (waiting and is_waiting_for(waiting, keys)))
+      -- Not a full refresh: refresh_views_waiting_for() queued it, with keys.
+      and (is_full or (waiting and is_waiting_for(waiting, keys --[[@as table<string, boolean>]])))
     then
       if #vim.fn.win_findbuf(view_bufnr) == 0 then
         session.dirty = true
@@ -1463,6 +1467,7 @@ local function inline_shown(span, width_limit, pending, source_line)
       and picture.columns <= kitty_module().MAX_CELLS
       and (not width_limit or picture.columns <= width_limit)
     if fits then
+      ---@cast picture -nil `fits` is nil without one
       local rows, group = cells_of(picture, nil, span.tex, equation, pending, source_line)
       if rows and group then
         return { text = rows[1], group = group, cells = picture.columns }
@@ -1635,6 +1640,7 @@ local function wrap_markdown_render()
     if not document or type(text) ~= "string" or not text:find("$", 1, true) then
       return upstream_render(text, ...)
     end
+    ---@cast build -nil `document` is its field
     local spans, escapes = inline_math_spans(text, ...)
     if escapes and text:find(CALLOUT_TITLE) then
       -- md-render gives a callout's title back as written, before its inline
@@ -2165,6 +2171,7 @@ local function blocks_as_md_render_reads_them(lines, line_offset)
     elseif not block_line and fence.opening(rest) then
       -- Not read by strip_container_indent: a fence line keeps its indent.
       open_fence, fence_prefix = fence.opening(rest), prefix
+      ---@cast open_fence -nil fence.opening(rest) gave one in the condition above
       local is_math = open_fence.lang
         and open_fence.lang:lower() == "math"
         and not is_in_note
@@ -2511,6 +2518,9 @@ local function wrap_content_builder()
     if document.text_items and hl_groups then
       note_text_pieces(self, document, text, hl_groups)
     end
+    -- md-render declares the field private (content_builder.lua:75). Reading
+    -- it is how the block's rows are told apart: see the top of the file.
+    ---@diagnostic disable-next-line: invisible
     local source_line = self._current_source_line
     if source_line > document.skipped_from and source_line <= document.skipped_up_to then
       -- Only what md-render emits for the block itself. After its loop it
@@ -2603,8 +2613,11 @@ local function wrap_content_builder()
     end
     document.skipped_up_to = up_to
     if shown.rows then
+      -- Only a block has `rows` (`block_shown`).
+      ---@cast shown MdRenderMathBlockShown
       add_block_rows(self, document, shown, prefix, prefix_groups, tex)
     else
+      ---@cast shown MdRenderMathShown
       add_wrapped_text(self, document, shown, prefix, prefix_groups, tex)
     end
   end
@@ -2658,6 +2671,8 @@ local function apply_math_highlights()
     end
   end
 
+  -- Replacing md-render's function with a wrapper of it: see the top of the file.
+  ---@diagnostic disable-next-line: duplicate-set-field
   display_utils.apply_content_to_buffer = function(buf, ns, content, ...)
     if
       vim.g.md_render_math == "off"

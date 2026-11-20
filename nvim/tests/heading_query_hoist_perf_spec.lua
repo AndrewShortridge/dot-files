@@ -25,6 +25,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/heading_query_hoist_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -48,7 +49,10 @@ vim.g.__md_wk_registered = nil
 -- parses (from other modules the ftplugin requires) don't pollute the count.
 -- ---------------------------------------------------------------------------
 local real_parse = vim.treesitter.query.parse
-local atx_parse_calls = 0
+local atx_parse_calls = 0 ---@type integer
+---@param lang string
+---@param q string
+---@return vim.treesitter.Query
 vim.treesitter.query.parse = function(lang, q)
   if type(q) == "string" and q:find("atx_heading", 1, true) then
     atx_parse_calls = atx_parse_calls + 1
@@ -59,7 +63,7 @@ end
 local vault = vim.fn.tempname()
 vim.fn.mkdir(vault, "p")
 local N = 8
-local bufs = {}
+local bufs = {} ---@type integer[]
 local SEED = { "# H1", "prose", "## H2", "### H3" }
 
 for i = 1, N do
@@ -113,18 +117,25 @@ dofile(ftplugin_path)
 -- Wrap nvim_buf_get_lines to count get_headings-shaped per-heading reads
 -- (single-row reads, end == start + 1) of the current buffer.
 local real_get_lines = vim.api.nvim_buf_get_lines
-local heading_reads = 0
-vim.api.nvim_buf_get_lines = function(b, s, e, strict)
+local heading_reads = 0 ---@type integer
+---@param b integer
+---@param s integer
+---@param e integer
+---@param strict boolean
+---@return string[]
+local function counting_get_lines(b, s, e, strict)
   if (b == 0 or b == nav_buf) and e == s + 1 then
     heading_reads = heading_reads + 1
   end
   return real_get_lines(b, s, e, strict)
 end
+vim.api.nvim_buf_get_lines = counting_get_lines
 
 -- Open a window so the heading motions (which use win_set_cursor) work.
 vim.cmd("buffer " .. nav_buf)
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
 
+---@param keys string
 local function press(keys)
   local termcodes = vim.api.nvim_replace_termcodes(keys, true, false, true)
   vim.api.nvim_feedkeys(termcodes, "x", false)

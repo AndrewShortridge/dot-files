@@ -113,6 +113,7 @@ function M.consume(bufnr)
   table.sort(lines)
   state.dirty = {}
 
+  ---@type LineShift[]|nil
   local shifts = state.shifts
   state.shifts = {}
   if #shifts == 0 then shifts = nil end

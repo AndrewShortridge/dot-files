@@ -38,14 +38,22 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_fortran_blink_source_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
+
+-- lazydev loads blink.cmp's annotations into lua_ls from this line.
+---@module "blink.cmp"
 
 local cfg = vim.fn.stdpath("config")
 package.path = cfg .. "/lua/?.lua;" .. package.path
 
 -- The plugin spec is read the same way audit_plugins_surround_blink_spec.lua
 -- reads it: dofile the module, which returns the lazy.nvim spec table.
+---@class AuditFortranBlinkSourcePluginSpec  the lazy.nvim spec; only opts.sources is read
+---@field opts { sources: blink.cmp.SourceConfig }
+
+---@type AuditFortranBlinkSourcePluginSpec
 local blink = dofile(cfg .. "/lua/andrew/plugins/blink-cmp.lua")
 local per_ft = blink.opts.sources.per_filetype
 local providers = blink.opts.sources.providers
@@ -63,6 +71,7 @@ test("no Fortran source list names fortran_docs, and lsp leads every one", funct
   for _, ft in ipairs(FORTRAN_FTS) do
     local list = per_ft[ft]
     assert_true(type(list) == "table", "per_filetype." .. ft .. " must still exist:")
+    ---@cast list { inherit_defaults?: boolean, [number]: string }
     for _, name in ipairs(list) do
       assert_true(name ~= "fortran_docs", "per_filetype." .. ft .. " still names fortran_docs:")
     end
@@ -93,8 +102,9 @@ test("the snippet-shadow lesson is carried by the LSP source", function()
   local prefixes = C.snippet_prefixes()
   assert_true(prefixes["ompdo"], "the snippet prefixes are no longer being read:")
   assert_true(prefixes["mpi_init"], "mpi_init is a snippet prefix and must be known:")
-  local demoted
-  for _, it in ipairs(C.items("      call MPI_Ini", 19, {})) do
+  local demoted ---@type string?
+  -- C.items() is declared `table[]`; its entries are LSP completion items.
+  for _, it in ipairs(C.items("      call MPI_Ini", 19, {}) --[[@as lsp.CompletionItem[] ]]) do
     if it.label == "MPI_Init" then
       demoted = it.sortText
     end
@@ -106,16 +116,19 @@ test("Fortran completion still works, through the LSP source", function()
   -- The whole point of the removal: what the old source could not do.
   local C = require("andrew.fortran.lsp_completion")
   local line = "      !$OMP PARALLEL DO priv"
-  local found
-  for _, it in ipairs(C.items(line, #line, {})) do
+  local found ---@type lsp.CompletionItem?
+  -- C.items() is declared `table[]`; its entries are LSP completion items.
+  for _, it in ipairs(C.items(line, #line, {}) --[[@as lsp.CompletionItem[] ]]) do
     if it.label == "PRIVATE(…)" then
       found = it
     end
   end
   assert_true(found ~= nil, "the clause the old source could not offer in context:")
+  ---@cast found -nil
   -- A snippet, so the closing paren is written too and the cursor lands inside
   -- it (autopairs never sees an LSP textEdit, so a bare `PRIVATE(` stayed open).
-  assert_eq(found.textEdit.newText, "PRIVATE($1)", "...and what accepting it now inserts (A-F2):")
+  -- `.newText` would raise on a missing textEdit anyway; assert names the cause.
+  assert_eq(assert(found.textEdit).newText, "PRIVATE($1)", "...and what accepting it now inserts (A-F2):")
   assert_eq(found.insertTextFormat, 2, "inserted as a snippet, not plain text:")
 end)
 

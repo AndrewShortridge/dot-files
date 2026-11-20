@@ -31,6 +31,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/legacy_md_syntax_suppressed_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -54,8 +55,9 @@ end)
 -- `runtime! syntax/markdown.{vim,lua}` finds the shadow FIRST (exactly as it
 -- does in the real config, where the config dir precedes $VIMRUNTIME in rtp).
 -- ---------------------------------------------------------------------------
+---@param fn fun()
 local function with_config_rtp(fn)
-  local saved = vim.o.runtimepath
+  local saved = vim.o.runtimepath ---@type string
   -- Prepend the config dir; $VIMRUNTIME stays present so the runtime markdown.vim
   -- (the thing we are gating) is still on the path and would cascade if unguarded.
   vim.opt.runtimepath:prepend(config_dir)
@@ -67,6 +69,8 @@ local function with_config_rtp(fn)
 end
 
 -- Fresh scratch buffer with the given lines, made the current buffer.
+---@param lines string[]
+---@return integer buf
 local function scratch_md(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -78,6 +82,7 @@ end
 -- `*htmlComplete` (autoload/htmlcomplete.vim) is pulled in by the runtime
 -- markdown/html ftplugin+syntax cascade. Its absence proves the cascade was
 -- skipped; its presence proves the cascade ran.
+---@return boolean
 local function html_cascade_loaded()
   -- Multiple independent signals; any one being present means legacy cascade ran.
   if vim.fn.exists("*htmlcomplete#CompleteTags") == 1 then return true end

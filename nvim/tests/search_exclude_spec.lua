@@ -41,6 +41,7 @@
 --   * make utils.obsidian unconditional                  -> test 8 fails
 -- =============================================================================
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
@@ -52,10 +53,14 @@ local se = require("andrew.vault.search_exclude")
 local DEFAULT_DIRS = { ".obsidian", "Templates" }
 
 --- Reassign (never mutate) so search_exclude's identity-keyed memo invalidates.
+---@param dirs string[]
 local function set_dirs(dirs)
   config.search.exclude_dirs = dirs
 end
 
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write(dir, rel, lines)
   local abs = dir .. "/" .. rel
   vim.fn.mkdir(abs:match("^(.*)/[^/]+$"), "p")
@@ -65,6 +70,7 @@ local function write(dir, rel, lines)
 end
 
 --- A vault holding one ordinary note plus every shape the predicate must judge.
+---@return string dir
 local function make_vault()
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -77,13 +83,18 @@ local function make_vault()
   return dir
 end
 
+---@param t table<string, any>
+---@return string[]
 local function sorted_keys(t)
-  local out = {}
+  local out = {} ---@type string[]
   for k in pairs(t) do out[#out + 1] = k end
   table.sort(out)
   return out
 end
 
+---@param list string[]
+---@param want string
+---@return boolean
 local function contains(list, want)
   for _, v in ipairs(list) do
     if v == want then return true end
@@ -142,7 +153,8 @@ test("search results drop template notes but keep a note named Templates.md", fu
   idx:build_sync()
 
   local ast = require("andrew.vault.search_query").parse_query("type:note")
-  local matches = require("andrew.vault.search_filter").evaluate(ast, idx, nil, nil)
+  -- evaluate() returns nil only when its `cancelled` poll fires; none is passed.
+  local matches = assert(require("andrew.vault.search_filter").evaluate(ast, idx, nil, nil))
   local got = sorted_keys(matches)
 
   assert_true(contains(got, "Notes/real.md"), "ordinary note is returned")
@@ -163,7 +175,7 @@ test("exclude_dirs = {} disables exclusion entirely", function()
   set_dirs({})
   assert_false(se.active(), "no exclusions configured")
   assert_false(se.is_excluded("Templates/Book.md"), "predicate is off")
-  local all = sorted_keys(require("andrew.vault.search_filter").evaluate(ast, idx, nil, nil))
+  local all = sorted_keys(assert(require("andrew.vault.search_filter").evaluate(ast, idx, nil, nil)))
   assert_eq(#all, 5, "every indexed note is searchable again")
   assert_eq(se.rg_opts(), "", "no rg globs emitted")
   assert_eq(#se.fzf_patterns(), 0, "no fzf patterns emitted")
@@ -228,7 +240,7 @@ test("real ripgrep honours the emitted exclusion globs", function()
   args[#args + 1] = dir
 
   local res = vim.system(args, { text = true }):wait()
-  local hits = {}
+  local hits = {} ---@type string[]
   for line in (res.stdout or ""):gmatch("[^\n]+") do
     hits[#hits + 1] = line:sub(#dir + 2)
   end

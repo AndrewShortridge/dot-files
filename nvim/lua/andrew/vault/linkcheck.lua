@@ -94,12 +94,13 @@ end
 ---@param filepath string
 ---@param heading_cache table<string, table<string, boolean>>
 ---@param idx VaultIndex|nil
----@param use_idx boolean
+---@param use_idx boolean|nil truthy only when idx is set and ready
 ---@param buffer_lines string[]|nil live buffer lines (only used when filepath == self_path and no idx)
 ---@return table<string, boolean> slug_set
 local function resolve_headings(filepath, heading_cache, idx, use_idx, buffer_lines)
   if not heading_cache[filepath] then
     if use_idx then
+      ---@cast idx -nil
       heading_cache[filepath] = idx:get_headings(filepath)
     elseif buffer_lines then
       heading_cache[filepath] = link_utils.extract_headings(buffer_lines)
@@ -114,7 +115,7 @@ end
 ---@param filepath string
 ---@param block_id_cache table<string, table<string, boolean>>
 ---@param idx VaultIndex|nil
----@param use_idx boolean
+---@param use_idx boolean|nil truthy only when idx is set and ready
 ---@param self_path string|nil current buffer path
 ---@param self_block_ids table<string, boolean>|nil pre-scanned block IDs for self_path
 ---@return table<string, boolean> block_id_set
@@ -123,6 +124,7 @@ local function resolve_block_ids(filepath, block_id_cache, idx, use_idx, self_pa
     if self_path and filepath == self_path then
       block_id_cache[filepath] = self_block_ids or {}
     elseif use_idx then
+      ---@cast idx -nil
       block_id_cache[filepath] = idx:get_block_ids(filepath)
     else
       -- Fallback: read file and scan for block IDs

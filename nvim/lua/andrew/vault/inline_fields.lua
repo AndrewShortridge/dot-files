@@ -1,11 +1,12 @@
-local engine = require("andrew.vault.engine")
+-- Loaded for its load-time setup (vault path, cache registry, autocmds,
+-- commands); nothing in this module calls it.
+require("andrew.vault.engine")
 local config = require("andrew.vault.config")
 local pat = require("andrew.vault.patterns")
 local link_scan = require("andrew.vault.link_scan")
 local hl_coord = require("andrew.vault.highlight_coordinator")
 local memo = require("andrew.vault.memoize")
 local notify = require("andrew.vault.notify")
-local log = require("andrew.vault.vault_log").scope("inline_fields")
 
 local M = {}
 

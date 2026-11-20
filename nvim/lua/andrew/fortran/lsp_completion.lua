@@ -63,6 +63,7 @@ local M = {}
 local openmp = require("andrew.fortran.openmp")
 local registry = require("andrew.fortran.registry")
 local render = require("andrew.fortran.render")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 --- LSP CompletionItemKind for each registry kind.
 local KIND = {
@@ -140,6 +141,7 @@ function M.snippet_prefixes()
         f:close()
         if ok_snips and type(snips) == "table" then
           for _, snip in pairs(snips) do
+            ---@type string|string[]|false|nil
             local prefix = type(snip) == "table" and snip.prefix
             if type(prefix) == "string" then
               prefix = { prefix }
@@ -671,7 +673,7 @@ function M.complete(params, cb)
   if not (uri and pos) then
     return cb(nil, nil)
   end
-  local bufnr = vim.uri_to_bufnr(uri)
+  local bufnr = nvim_compat.uri_to_buffer(uri)
   if not vim.api.nvim_buf_is_loaded(bufnr) then
     return cb(nil, nil)
   end

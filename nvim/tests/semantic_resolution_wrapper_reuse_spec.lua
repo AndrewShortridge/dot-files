@@ -24,9 +24,10 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/semantic_resolution_wrapper_reuse_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
-local test, assert_eq, assert_true, deep_equal =
-  _H.test, _H.assert_eq, _H.assert_true, _H.deep_equal
+local test, assert_true, deep_equal =
+  _H.test, _H.assert_true, _H.deep_equal
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
@@ -35,12 +36,14 @@ print("\n=== semantic_resolution wrapper-reuse Perf Tests ===\n")
 local parse_cache = require("andrew.vault.line_parse_cache")
 local semantic = require("andrew.vault.semantic_resolution")
 
+---@return boolean
 local function code_excl() return false end
 
 --- Build a real markdown buffer in a temp vault with a mix of:
 ---   row 0: prose only (no wikilink/tag)               -> passthrough, no link
 ---   row 1: wikilink-heavy                             -> link-bearing
 ---   row 2: tag + highlight + inline field (no link)   -> passthrough/tag-only
+---@return integer
 local function make_buffer()
   local vault = vim.fn.tempname()
   vim.fn.mkdir(vault, "p")
@@ -57,19 +60,31 @@ end
 
 -- A minimal index stub carrying just the _generation that semantic.resolve
 -- reads (link resolution itself goes through wikilinks.resolve_link).
+---@param gen integer
+---@return { _generation: integer }
 local function fake_index(gen) return { _generation = gen } end
+
+---@class SemanticReuseSpecSnapshot
+---@field status string
+---@field target? string
+---@field line_nr number
+---@field metadata? table
+---@field token_type string
 
 --- Deep-snapshot the resolved list for a line: status/target/metadata + token
 --- type so a parity comparison is structural, not identity-based.
+---@param list ResolvedToken[]
+---@return SemanticReuseSpecSnapshot[]
 local function snapshot(list)
-  local out = {}
+  local out = {} ---@type SemanticReuseSpecSnapshot[]
   for i, rt in ipairs(list) do
     out[i] = {
       status = rt.status,
       target = rt.target,
       line_nr = rt.line_nr,
       metadata = rt.metadata,
-      token_type = rt.token and rt.token.type,
+      -- ResolvedToken.token is declared as a bare `table`; it holds a LineToken.
+      token_type = rt.token and (rt.token --[[@as LineToken]]).type,
     }
   end
   return out
@@ -86,7 +101,7 @@ test("warm full resolve reuses prior wrappers verbatim (identity) with identical
   local idx = fake_index(1)
 
   semantic.resolve(buf, nil, parse_cache, idx)
-  local snaps, lists = {}, {}
+  local snaps, lists = {}, {} ---@type table<integer, SemanticReuseSpecSnapshot[]>, table<integer, ResolvedToken[]>
   for ln = 0, 2 do
     local r = semantic.get_resolved(buf, ln)
     snaps[ln] = snapshot(r)

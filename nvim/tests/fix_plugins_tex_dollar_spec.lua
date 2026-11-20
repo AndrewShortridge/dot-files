@@ -26,6 +26,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fix_plugins_tex_dollar_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_true, assert_false = _H.test, _H.assert_true, _H.assert_false
 
@@ -34,6 +35,9 @@ local tex = require("andrew.utils.tex")
 
 --- Put `line` in a fresh markdown buffer, park the cursor after the first
 --- occurrence of `upto`, and return in_mathzone().
+---@param line string
+---@param upto? string  nil parks the cursor at the end of the line
+---@return boolean
 local function mathzone_after(line, upto)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].filetype = "markdown"

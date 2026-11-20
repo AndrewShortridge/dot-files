@@ -240,7 +240,8 @@ local function extract_tags(fm_fields, stripped_body_lines)
     for pos, tag in line:gmatch(pat.TAG) do
       -- Left-boundary check: rejects the '#' inside [[Note#Heading]],
       -- ![[Note#Details]] and https://x.com#frag (phantom tags).
-      if pat.tag_boundary_ok(line, pos) and not tag:match("^%d+$") then
+      -- pat.TAG starts with a position capture "()", so pos is a number.
+      if pat.tag_boundary_ok(line, pos --[[@as integer]]) and not tag:match("^%d+$") then
         add_tag_with_parents(tag_set, tag)
       end
     end
@@ -254,9 +255,17 @@ local function extract_tags(fm_fields, stripped_body_lines)
   return tags
 end
 
+---@class VaultHeading
+---@field text string heading text, trailing whitespace trimmed
+---@field text_lower string
+---@field slug string
+---@field level integer number of leading '#'
+---@field line integer 1-indexed line number
+
 --- Extract headings from content.
 ---@param content string Full content (used when lines not provided)
 ---@param lines? string[] Pre-split lines (avoids redundant vim.split)
+---@return VaultHeading[]
 local function extract_headings(content, lines)
   local headings = {}
   lines = lines or vim.split(content, "\n", { plain = true })
@@ -289,8 +298,9 @@ end
 local function make_link_entry(path, display, is_embed)
   local clean_display = display:match("^([^#]+)") or display
   local raw_name_lower = filter_utils.normalize_link_name(path) or ""
-  local name_lower = string_intern.intern(_pools.lowercase, raw_name_lower)
-  local stem_lower = string_intern.intern(_pools.lowercase, name_lower:gsub(pat.MD_EXTENSION, ""))
+  -- intern() returns nil only for nil input; both inputs here are strings.
+  local name_lower = string_intern.intern(_pools.lowercase, raw_name_lower) --[[@as string]]
+  local stem_lower = string_intern.intern(_pools.lowercase, name_lower:gsub(pat.MD_EXTENSION, "")) --[[@as string]]
   local basename_lower = string_intern.intern(_pools.lowercase, stem_lower:match(pat.BASENAME) or stem_lower)
   return {
     path = path,
@@ -430,7 +440,7 @@ local function extract_tasks(body, lines, stripped_lines)
           or strip_inline_code(text)
         for pos, tag in clean_text:gmatch(pat.TAG) do
           -- Same left-boundary check as the body-tag scan above.
-          if pat.tag_boundary_ok(clean_text, pos) and not tag:match("^%d+$") then
+          if pat.tag_boundary_ok(clean_text, pos --[[@as integer]]) and not tag:match("^%d+$") then
             task_tags[#task_tags + 1] = intern_tag(tag)
           end
         end
@@ -545,7 +555,7 @@ end
 ---@return string rel_stem, string rel_stem_lower, string|nil day, number|nil day_ts
 local function compute_file_identity(rel_path)
   local rel_stem = rel_path:gsub(pat.MD_EXTENSION, "")
-  local rel_stem_lower = intern_lower(rel_stem)
+  local rel_stem_lower = intern_lower(rel_stem) --[[@as string]] -- nil only for nil input
   local basename = rel_path:match("([^/]+)%.md$") or rel_stem
   local day = basename:match(pat.ISO_DATE_PREFIX)
   local day_ts = day and date_utils.parse_iso_datetime(day) or nil
@@ -564,6 +574,38 @@ local function extract_timestamps(fm_fields)
     or nil
   return created_ts, modified_ts
 end
+
+--- One note in the index. The stored fields are the ones P.make_entry (below)
+--- writes; the derived ones are computed on first read by the metatable
+--- vault_index.lua puts on every entry (make_entry_mt) and never persisted.
+---@class VaultIndexEntry
+---@field rel_path string
+---@field rel_stem string
+---@field rel_stem_lower string
+---@field mtime integer
+---@field size integer
+---@field ctime integer|nil
+---@field frontmatter table<string, any>
+---@field aliases string[]
+---@field tags string[]
+---@field headings VaultHeading[]
+---@field block_ids table[]
+---@field outlinks table[]
+---@field tasks table[]
+---@field inline_fields table<string, any>
+---@field day string|nil
+---@field created_ts number|nil
+---@field modified_ts number|nil
+---@field day_ts number|nil
+---@field content_hash string|nil
+---@field _chunks table[]|nil
+---@field abs_path string                    derived
+---@field basename string                    derived
+---@field basename_lower string              derived
+---@field folder string                      derived
+---@field tag_set table<string, boolean>     derived
+---@field heading_slugs table<string, boolean> derived
+---@field block_id_set table<string, boolean>  derived
 
 --- Construct a VaultIndexEntry from components.
 --- Single source of truth for the entry table shape.

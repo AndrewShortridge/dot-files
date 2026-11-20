@@ -38,6 +38,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/ui_toggles_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
@@ -49,12 +50,42 @@ print("\n=== UI Toggle (<leader>u) Tests ===\n")
 -- Stub Snacks and capture everything the specs register
 -- ---------------------------------------------------------------------------
 
---- @return table captured  { toggles = {key -> name}, plain = {key -> desc}, defs = {name -> opts} }
-local function drive(path, how)
-  local captured = { toggles = {}, plain = {}, defs = {} }
+--- Opts a stubbed toggle constructor receives: full `snacks.toggle.Opts` from
+--- `Snacks.toggle(...)`, a `snacks.toggle.Config` from the builtin toggles.
+--- @alias UiTogglesSpecToggleOpts snacks.toggle.Opts|snacks.toggle.Config
 
+--- @class UiTogglesSpecCaptured
+--- @field toggles table<string, string>  key -> toggle name
+--- @field plain table<string, string>  key -> keymap desc
+--- @field defs table<string, UiTogglesSpecToggleOpts>  toggle name -> opts
+
+--- The lazy.nvim spec of snacks.lua / gitsigns.lua. Narrowed from
+--- `LazyPluginSpec`: `config` is called here with a nil `self` (and is never
+--- `true`), and `opts` is a table (snacks.lua) or a no-argument function (gitsigns.lua).
+--- @class UiTogglesSpecPluginSpec: LazyPluginSpec
+--- @field config? fun(self: LazyPlugin?, opts: table)
+--- @field opts? snacks.Config|fun(): table
+
+--- @param path string  plugin spec file to dofile
+--- @param how fun(spec: UiTogglesSpecPluginSpec)  drives the loaded spec
+--- @return UiTogglesSpecCaptured captured  { toggles = {key -> name}, plain = {key -> desc}, defs = {name -> opts} }
+--- @return UiTogglesSpecPluginSpec spec
+local function drive(path, how)
+  local captured = { toggles = {}, plain = {}, defs = {} } ---@type UiTogglesSpecCaptured
+
+  --- @param name string
+  --- @param opts? UiTogglesSpecToggleOpts
+  --- @return UiTogglesSpecFakeToggle
   local function make_toggle(name, opts)
+    --- Stand-in for `snacks.toggle.Class`: records its name and opts, and
+    --- `:map()` records the key instead of creating a mapping.
+    --- @class UiTogglesSpecFakeToggle
+    --- @field name string
+    --- @field opts UiTogglesSpecToggleOpts
     local t = { name = name, opts = opts or {} }
+    --- @param self UiTogglesSpecFakeToggle
+    --- @param keys string
+    --- @return UiTogglesSpecFakeToggle
     t.map = function(self, keys)
       captured.toggles[keys] = self.name
       captured.defs[self.name] = self.opts
@@ -64,28 +95,46 @@ local function drive(path, how)
   end
 
   local toggle = setmetatable({
+    --- @param o string
+    --- @param opts? snacks.toggle.Config|{ name?: string }
+    --- @return UiTogglesSpecFakeToggle
     option = function(o, opts) return make_toggle((opts or {}).name or o, opts) end,
+    --- @return UiTogglesSpecFakeToggle
     line_number = function() return make_toggle("Line Numbers") end,
+    --- @return UiTogglesSpecFakeToggle
     diagnostics = function() return make_toggle("Diagnostics") end,
+    --- @return UiTogglesSpecFakeToggle
     treesitter = function() return make_toggle("Treesitter Highlight") end,
+    --- @return UiTogglesSpecFakeToggle
     inlay_hints = function() return make_toggle("Inlay Hints") end,
+    --- @return UiTogglesSpecFakeToggle
     dim = function() return make_toggle("Dimming") end,
+    --- @return UiTogglesSpecFakeToggle
     animate = function() return make_toggle("Animations") end,
+    --- @return UiTogglesSpecFakeToggle
     scroll = function() return make_toggle("Smooth Scroll") end,
   }, {
+    --- @param _ table  the toggle table itself
+    --- @param opts snacks.toggle.Opts
+    --- @return UiTogglesSpecFakeToggle
     __call = function(_, opts) return make_toggle(opts.name, opts) end,
   })
 
   local prev_snacks, prev_loaded = _G.Snacks, package.loaded["snacks"]
-  _G.Snacks = { toggle = toggle, zen = function() end }
+  -- Partial Snacks on purpose: the driven specs only reach `toggle` and `zen`.
+  ---@class UiTogglesSpecFakeSnacks
+  local fake_snacks = { toggle = toggle, zen = function() end }
+  _G.Snacks = fake_snacks --[[@as Snacks]]
   package.loaded["snacks"] = { setup = function() end }
 
   local real_set = vim.keymap.set
-  vim.keymap.set = function(mode, lhs, rhs, opts)
+  --- Same signature as `vim.keymap.set`; records the desc instead of mapping.
+  ---@type fun(mode: string|string[], lhs: string, rhs: string|function, opts?: vim.keymap.set.Opts)
+  vim.keymap.set = function(_, lhs, _, opts)
     captured.plain[lhs] = (opts or {}).desc or ""
   end
 
-  local spec = dofile(path)
+  local spec = dofile(path) ---@type UiTogglesSpecPluginSpec
   local ok, err = pcall(how, spec)
 
   vim.keymap.set = real_set
@@ -94,11 +143,16 @@ local function drive(path, how)
   return captured, spec
 end
 
-local snacks = drive(cfg .. "/lua/andrew/plugins/snacks.lua", function(spec)
-  spec.config(nil, spec.opts or {})
+local snacks = drive(cfg .. "/lua/andrew/plugins/snacks.lua",
+  --- @param spec UiTogglesSpecPluginSpec
+  function(spec)
+  -- snacks.lua's opts is a table.
+  spec.config(nil, spec.opts --[[@as snacks.Config?]] or {})
 end)
 
-local gits = drive(cfg .. "/lua/andrew/plugins/gitsigns.lua", function(spec)
+local gits = drive(cfg .. "/lua/andrew/plugins/gitsigns.lua",
+  --- @param spec UiTogglesSpecPluginSpec
+  function(spec)
   assert(type(spec.opts) == "function", "gitsigns opts must be a function so uG registers on load")
   spec.opts()
 end)
@@ -121,7 +175,7 @@ test("every requested toggle exists on its LazyVim letter", function()
     ["<leader>ub"] = "Dark Background",
     ["<leader>ug"] = "Indention Guides",
   }
-  local wrong = {}
+  local wrong = {} ---@type string[]
   for key, name in pairs(expected) do
     if snacks.toggles[key] ~= name then
       wrong[#wrong + 1] = string.format("%s: want %q got %q", key, name, tostring(snacks.toggles[key]))
@@ -150,6 +204,7 @@ test("indent guides `get` does not force-load ibl", function()
   -- would load it in every filetype and defeat its `ft` gate.
   local def = snacks.defs["Indention Guides"]
   assert_true(def ~= nil and type(def.get) == "function", "no get function captured")
+  ---@type table?
   package.loaded["ibl.config"] = nil
   local ok, res = pcall(def.get)
   assert_true(ok, "get() errored when ibl was not loaded: " .. tostring(res))
@@ -163,10 +218,20 @@ test("git signs is registered from the gitsigns spec, not snacks", function()
 end)
 
 test("smooth scrolling is enabled in snacks opts", function()
-  local _, spec = drive(cfg .. "/lua/andrew/plugins/snacks.lua", function(s)
-    s.config(nil, s.opts or {})
+  local _, spec = drive(cfg .. "/lua/andrew/plugins/snacks.lua",
+    --- @param s UiTogglesSpecPluginSpec
+    function(s)
+    -- snacks.lua's opts is a table.
+    s.config(nil, s.opts --[[@as snacks.Config?]] or {})
   end)
+  -- snacks.lua's opts is a table.
+  ---@cast spec { opts: snacks.Config }
+  -- snacks.plugins.Config's per-plugin configs (snacks.scroll.Config, snacks.animate.Config)
+  -- do not declare `enabled`, which snacks/init.lua's setup() reads on every one of them.
+  ---@diagnostic disable-next-line: undefined-field
   assert_true(spec.opts.scroll ~= nil and spec.opts.scroll.enabled == true, "scroll must be enabled")
+  -- Same upstream gap as above (snacks.animate.Config has no `enabled`).
+  ---@diagnostic disable-next-line: undefined-field
   assert_true(spec.opts.animate ~= nil and spec.opts.animate.enabled == true, "animate must be enabled")
 end)
 
@@ -182,7 +247,7 @@ end)
 
 test("the theme module exposes light/dark and has dropped the cycler", function()
   package.loaded["andrew.themes.toggle"] = nil
-  local T = dofile(cfg .. "/lua/andrew/themes/toggle.lua")
+  local T = dofile(cfg .. "/lua/andrew/themes/toggle.lua") ---@type table<string, function>
   assert_true(type(T.set_dark) == "function", "set_dark missing")
   assert_true(type(T.is_dark) == "function", "is_dark missing")
   assert_true(type(T.activate_soft_paper) == "function", "activate_soft_paper missing")

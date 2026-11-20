@@ -242,6 +242,8 @@ end
 ---@param text string
 ---@return fun(): string?
 function M.gmatch_tags(text)
+  -- M.TAG opens with a `()` position capture, so the first value is a number.
+  ---@type fun(): integer, string
   local iter = text:gmatch(M.TAG)
   return function()
     for pos, tag in iter do
@@ -296,6 +298,7 @@ function M.scan_wikilinks(line, callback)
     else
       local close_start, close_end = line:find("]]", open_end + 1, true)
       if not close_start then break end
+      ---@cast close_end -nil
       local inner = line:sub(open_end + 1, close_start - 1)
       if callback(inner, open_start, close_end) then return end
       pos = close_end + 1
@@ -313,6 +316,7 @@ function M.scan_embeds(line, callback)
     if not open_start then break end
     local close_start, close_end = line:find("]]", open_end + 1, true)
     if not close_start then break end
+    ---@cast close_end -nil
     local inner = line:sub(open_end + 1, close_start - 1)
     if callback(inner, open_start, close_end) then return end
     pos = close_end + 1
@@ -331,6 +335,7 @@ function M.scan_all_links(line, callback)
     if is_embed then open_start = open_start - 1 end
     local close_start, close_end = line:find("]]", open_end + 1, true)
     if not close_start then break end
+    ---@cast close_end -nil
     local inner = line:sub(open_end + 1, close_start - 1)
     if callback(inner, open_start, close_end, is_embed) then return end
     pos = close_end + 1

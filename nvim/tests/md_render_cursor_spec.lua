@@ -24,8 +24,8 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/md_render_cursor_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq = _H.test, _H.assert_eq
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
@@ -73,8 +73,8 @@ local VIEW_LINES = {
   "  │ alpha │     1 │",
 }
 
-local SOURCE = { lines = SOURCE_LINES, first_line = 1 }
-local VIEW = { lines = VIEW_LINES, first_line = 1 }
+local SOURCE = { lines = SOURCE_LINES, first_line = 1 } ---@type MdRenderCursorStretch
+local VIEW = { lines = VIEW_LINES, first_line = 1 } ---@type MdRenderCursorStretch
 
 --- The text from the mapped position on in the buffer the cursor goes to, or
 --- nil when there is none. The cursor is given as a line of the buffer it is
@@ -94,11 +94,20 @@ local function target_text_at(origin, origin_line, cursor_on, target)
   return position and target.lines[position[1]]:sub(position[2] + 1)
 end
 
+---@param text string?
+---@param prefix string
+---@return boolean
 local function starts_with(text, prefix)
   return text ~= nil and text:sub(1, #prefix) == prefix
 end
 
 --- Assert on the start of the target text only; the rest of a line is noise.
+---@param origin MdRenderCursorStretch
+---@param origin_line integer
+---@param cursor_on string text in that line; the cursor is on its first byte
+---@param target MdRenderCursorStretch
+---@param expected_text string
+---@param direction "rendered"|"source"  which buffer the cursor starts in, for the message
 local function assert_target_text(origin, origin_line, cursor_on, target, expected_text, direction)
   local target_text = target_text_at(origin, origin_line, cursor_on, target)
   assert_eq(
@@ -109,15 +118,24 @@ local function assert_target_text(origin, origin_line, cursor_on, target, expect
 end
 
 --- Rendered view -> source: what `i` on the view does.
+---@param view_line integer
+---@param cursor_on string
+---@param expected_source_text string
 local function assert_lands_before(view_line, cursor_on, expected_source_text)
   assert_target_text(VIEW, view_line, cursor_on, SOURCE, expected_source_text, "rendered")
 end
 
 --- Source -> rendered view: what leaving Insert mode does.
+---@param source_line integer
+---@param cursor_on string
+---@param expected_view_text string
 local function assert_view_lands_before(source_line, cursor_on, expected_view_text)
   assert_target_text(SOURCE, source_line, cursor_on, VIEW, expected_view_text, "source")
 end
 
+---@param view_line integer
+---@param cursor_on string
+---@return string?
 local function source_text_at(view_line, cursor_on)
   return target_text_at(VIEW, view_line, cursor_on, SOURCE)
 end
@@ -192,11 +210,11 @@ test("a rendered line with no words gives no position", function()
 end)
 
 test("line numbers are those of the buffers, not of the stretches passed in", function()
-  local position = md_render_cursor.counterpart_position(
+  local position = assert(md_render_cursor.counterpart_position(
     { lines = { VIEW_LINES[9] }, first_line = 9 },
     { 9, (VIEW_LINES[9]:find("emphasis", 1, true)) - 1 },
     { lines = { SOURCE_LINES[8], SOURCE_LINES[9], SOURCE_LINES[10] }, first_line = 8 }
-  )
+  ))
   assert_eq(position[1], 10, "source line:")
   assert_eq(position[2], (SOURCE_LINES[10]:find("emphasis", 1, true)) - 1, "source column:")
 end)

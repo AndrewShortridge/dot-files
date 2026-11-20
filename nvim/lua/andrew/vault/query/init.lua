@@ -66,7 +66,7 @@ end
 -- index for the same vault is available.
 local _prev_index = nil -- retained between builds for incremental updates
 
-local _index_cache = gen_cache.gen_cache(function(_idx)
+local _index_cache = gen_cache.gen_cache(function()
   local vault_path = engine.vault_path
   if _prev_index and _prev_index.vault_path == vault_path then
     -- No ctx → full rebuild from the vault index (same-vault refresh path).
@@ -328,6 +328,8 @@ function M.render_block()
     end
     return
   end
+  -- find_code_block_at_cursor returns all four values together.
+  ---@cast close_line -nil
 
   local buf = vim.api.nvim_get_current_buf()
   local current_file = vim.api.nvim_buf_get_name(buf)
@@ -369,6 +371,8 @@ function M.clear_block()
     notify.warn("query: cursor not inside a code block")
     return
   end
+  -- find_code_block_at_cursor returns all four values together.
+  ---@cast close_line -nil
   render.clear(buf, close_line)
 end
 
@@ -379,6 +383,8 @@ function M.toggle_block()
     notify.warn("query: cursor not inside a code block")
     return
   end
+  -- find_code_block_at_cursor returns all four values together.
+  ---@cast close_line -nil
 
   local buf = vim.api.nvim_get_current_buf()
 

@@ -2,6 +2,13 @@
 --- Provides O(1) array-indexed access with ABA protection via generation counters.
 --- Inspired by Zed's entity_map.rs (SlotMap with generational IDs).
 ---@class SlotMap
+---@field _slots table[]            array of { value, generation }
+---@field _free_list integer[]      LIFO stack of available slot indices
+---@field _count integer            number of live entities
+---@field _next_slot integer        next unallocated slot index
+---@field _name string
+---@field _leak_detect boolean
+---@field _alloc_info table<integer, table>  slot -> { traceback, insert_time }, with leak_detect only
 local M = {}
 M.__index = M
 
@@ -227,8 +234,15 @@ function M:detect_leaks()
   return leaks
 end
 
+--- CacheStats (engine.lua) supplies the optional `vault` that
+--- register_with_engine's stats callback adds.
+---@class SlotMapStats : CacheStats
+---@field entries integer
+---@field max integer
+---@field free integer
+
 --- Return stats for engine cache registry integration.
----@return { entries: integer, max: integer, free: integer }
+---@return SlotMapStats
 function M:get_stats()
   return {
     entries = self._count,

@@ -25,6 +25,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/completion_item_array_cache_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -37,9 +38,25 @@ local source = require("andrew.vault.completion") -- wikilinks source
 
 print("\n=== Completion Item Array Cache Perf Tests ===\n")
 
+-- Loads blink.cmp's type library for this file (lazydev), for blink.cmp.CompletionResponse below.
+---@module "blink.cmp"
+
+-- An item as completion_base.make_item builds it (annotated there as a bare
+-- `table`): label, insertText, filterText and kind are always set.
+---@class CompletionItemArrayCacheItem: lsp.CompletionItem
+---@field label string
+---@field insertText string
+
+-- What the wikilinks source hands its get_completions callback.
+---@class CompletionItemArrayCacheResponse: blink.cmp.CompletionResponse
+---@field items CompletionItemArrayCacheItem[]
+
 -- ---------------------------------------------------------------------------
 -- Temp vault + buffer helpers
 -- ---------------------------------------------------------------------------
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -50,13 +67,22 @@ local function write_file(dir, rel, lines)
 end
 
 --- Run `fn` with completion_base.make_item spied; returns the call count.
+---@param fn fun()
+---@return integer
 local function count_make_item(fn)
   local orig = completion_base.make_item
   local n = 0
-  completion_base.make_item = function(...)
+  ---@param label string
+  ---@param insertText string
+  ---@param filterText string
+  ---@param kind number  CompletionItemKind
+  ---@param opts { description: string|nil, sortText: string|nil, documentation: table|nil, data: table|nil }|nil
+  ---@return table
+  local function counting_make_item(label, insertText, filterText, kind, opts)
     n = n + 1
-    return orig(...)
+    return orig(label, insertText, filterText, kind, opts)
   end
+  completion_base.make_item = counting_make_item
   local ok, err = pcall(fn)
   completion_base.make_item = orig -- finally: always restore
   assert_true(ok, "spied body did not error: " .. tostring(err))
@@ -64,10 +90,14 @@ local function count_make_item(fn)
 end
 
 --- Drive the source's get_completions synchronously and return the result table.
+---@param line string
+---@return CompletionItemArrayCacheResponse
 local function complete(line)
-  local result = nil
+  local result = nil ---@type CompletionItemArrayCacheResponse?
   local ctx = { line = line, cursor = { 1, #line }, bufnr = vim.api.nvim_get_current_buf() }
-  source:get_completions(ctx, function(r) result = r end)
+  source:get_completions(ctx,
+    ---@param r CompletionItemArrayCacheResponse?
+    function(r) result = r end)
   vim.wait(2000, function() return result ~= nil end, 5)
   return result or {}
 end
@@ -106,8 +136,10 @@ test("standalone block: second identical trigger does zero make_item, same array
     "standalone block items produced (got " .. tostring(first.items and #first.items) .. ")")
 
   -- Second identical trigger on the unchanged buffer (same changedtick).
-  local second
+  local second ---@type CompletionItemArrayCacheResponse?
   local n = count_make_item(function() second = complete("^blk") end)
+  -- count_make_item asserted the body ran without error, so complete() assigned it.
+  ---@cast second -nil
   assert_eq(n, 0, "no make_item calls on cached second trigger (standalone block)")
   assert_true(first.items == second.items,
     "cached block array is the SAME table reference across triggers")
@@ -140,8 +172,10 @@ test("same-file heading: second identical trigger does zero make_item, same arra
   assert_true(first.items and #first.items >= 3,
     "same-file heading items produced (got " .. tostring(first.items and #first.items) .. ")")
 
-  local second
+  local second ---@type CompletionItemArrayCacheResponse?
   local n = count_make_item(function() second = complete("[[#") end)
+  -- count_make_item asserted the body ran without error, so complete() assigned it.
+  ---@cast second -nil
   assert_eq(n, 0, "no make_item calls on cached second trigger (same-file heading)")
   assert_true(first.items == second.items,
     "cached heading array is the SAME table reference across triggers")
@@ -157,8 +191,10 @@ test("editing buffer invalidates block cache and surfaces the new block", functi
   -- Append a new block line, bumping changedtick.
   vim.api.nvim_buf_set_lines(0, -1, -1, false, { "Third paragraph. ^blk-cccccc" })
 
-  local after
+  local after ---@type CompletionItemArrayCacheResponse?
   local n = count_make_item(function() after = complete("^blk") end)
+  -- count_make_item asserted the body ran without error, so complete() assigned it.
+  ---@cast after -nil
   assert_true(n >= 1, "make_item rebuilt items after edit (got " .. n .. " calls)")
   assert_true(after.items ~= before, "post-edit array is a fresh table (not the cached one)")
   assert_eq(#after.items, before_count + 1, "the newly added block appears in results")
@@ -180,16 +216,20 @@ test("editing buffer invalidates heading item-array cache (rebuild on new tick)"
   local before = complete("[[#").items
 
   -- Warm the cache, confirm a hit does zero rebuild.
-  local hit
+  local hit ---@type CompletionItemArrayCacheResponse?
   local hit_n = count_make_item(function() hit = complete("[[#") end)
+  -- count_make_item asserted the body ran without error, so complete() assigned it.
+  ---@cast hit -nil
   assert_eq(hit_n, 0, "cached heading trigger does zero make_item before edit")
   assert_true(hit.items == before, "warm heading array is the cached reference")
 
   -- Edit the buffer (bump changedtick) -> next trigger must rebuild.
   vim.api.nvim_buf_set_lines(0, -1, -1, false, { "", "## Section C" })
 
-  local after
+  local after ---@type CompletionItemArrayCacheResponse?
   local n = count_make_item(function() after = complete("[[#") end)
+  -- count_make_item asserted the body ran without error, so complete() assigned it.
+  ---@cast after -nil
   assert_true(n >= 1, "make_item rebuilt heading items after edit (got " .. n .. " calls)")
   assert_true(after.items ~= before, "post-edit heading array is a fresh table")
 end)

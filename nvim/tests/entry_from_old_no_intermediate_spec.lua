@@ -24,6 +24,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/entry_from_old_no_intermediate_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_deep_eq =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_deep_eq
@@ -37,6 +38,9 @@ print("\n=== entry_from_old No-Intermediate-Copy Tests ===\n")
 local NOTE = "note.md"
 local N_HEADINGS = 4
 
+---@param dir string
+---@param body string
+---@return string abs
 local function write_note(dir, body)
   local abs = dir .. "/" .. NOTE
   local f = assert(io.open(abs, "w"))
@@ -45,8 +49,18 @@ local function write_note(dir, body)
   return abs
 end
 
+---@class EntryFromOldContentOpts  which heading's task build_content rewrites
+---@field edit_heading? integer
+---@field edited_task? boolean
+
+---@class EntryFromOldPlainTask  the task fields test B compares
+---@field text string
+---@field checked boolean
+
 -- Multi-chunk note: frontmatter + N headings (>= min_chunk_lines, >1 chunk),
 -- modeled on chunk_reparse_reuse_spec's build_content.
+---@param opts? EntryFromOldContentOpts
+---@return string
 local function build_content(opts)
   opts = opts or {}
   local lines = { "---", "title: Note", "tags: [base]", "---", "" }
@@ -68,6 +82,10 @@ end
 -- Seed an index whose note.md entry carries a populated _chunks cache. The
 -- first update_file builds the chunk cache; the second is the genuine
 -- incremental diff (the path that calls entry_from_old).
+---@param content string
+---@return VaultIndex idx
+---@return string dir
+---@return string abs
 local function seed_index(content)
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -98,12 +116,16 @@ test("incremental make_entry receives no derived keys from old_entry", function(
   assert_true(rawget(old, "basename") ~= nil, "basename materialized on live entry")
 
   -- Capture the fields table make_entry receives on the next (incremental) call.
-  local captured = nil
+  local captured = nil ---@type table?
   local orig_make_entry = parser.make_entry
-  parser.make_entry = function(fields, old_entry)
+  ---@param fields table
+  ---@param old_entry table|nil
+  ---@return VaultIndexEntry
+  local function capturing_make_entry(fields, old_entry)
     captured = fields
     return orig_make_entry(fields, old_entry)
   end
+  parser.make_entry = capturing_make_entry
 
   -- Edit one heading's body so exactly one chunk's digest changes -> incremental
   -- entry_from_old path (FM unchanged branch).
@@ -113,6 +135,7 @@ test("incremental make_entry receives no derived keys from old_entry", function(
   parser.make_entry = orig_make_entry
 
   assert_true(captured ~= nil, "make_entry was invoked on the incremental update")
+  ---@cast captured -nil
   assert_eq(captured.abs_path, nil, "abs_path not forwarded into make_entry fields")
   assert_eq(captured.tag_set, nil, "tag_set not forwarded into make_entry fields")
   assert_eq(captured.basename, nil, "basename not forwarded into make_entry fields")
@@ -136,8 +159,9 @@ test("incremental entry shape matches full parse + derived fields resolve", func
   local entry = idx.files[NOTE]
 
   -- Full parse of the same content as the reference shape.
-  local content = parser.read_file(abs)
-  local stat = vim.uv.fs_stat(abs)
+  -- assert: a nil content/stat would crash parse_content / `stat.mtime` below anyway.
+  local content = assert(parser.read_file(abs))
+  local stat = assert(vim.uv.fs_stat(abs))
   local ref = parser.parse_content(content, NOTE, stat)
   assert_true(ref ~= nil, "reference full parse succeeded")
 
@@ -152,8 +176,10 @@ test("incremental entry shape matches full parse + derived fields resolve", func
   -- tasks: chunked path normalizes task line numbers to absolute while
   -- parse_content uses body-relative lines (a pre-existing parser quirk). Compare
   -- text/checked, not line, to stay byte-equivalent on the perf-relevant content.
+  ---@param arr? table[]
+  ---@return EntryFromOldPlainTask[]
   local function plain_tasks(arr)
-    local out = {}
+    local out = {} ---@type EntryFromOldPlainTask[]
     for i, t in ipairs(arr or {}) do out[i] = { text = t.text, checked = t.checked } end
     return out
   end

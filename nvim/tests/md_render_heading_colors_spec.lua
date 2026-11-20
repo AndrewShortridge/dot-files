@@ -23,8 +23,8 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/md_render_heading_colors_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq = _H.test, _H.assert_eq
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
@@ -40,7 +40,7 @@ end
 
 ---@return string colors of MdRenderH1..6, e.g. "#aa0000 #bb0000 ..."
 local function md_render_heading_colors()
-  local colors = {}
+  local colors = {} ---@type string[]
   for level = 1, 6 do
     local foreground = vim.api.nvim_get_hl(0, { name = "MdRenderH" .. level, link = false }).fg
     colors[level] = foreground and ("#%06x"):format(foreground) or "none"
@@ -111,7 +111,8 @@ test(":MdRenderHeadingColors changes the two for the session", function()
   )
 
   -- Refused with an error message, which `vim.cmd` raises in a headless run.
-  pcall(vim.cmd, "MdRenderHeadingColors red nosuchcolour")
+  -- Cast: vim.cmd is a callable table (_core/editor.lua), typed `function|table`.
+  pcall(vim.cmd --[[@as fun(command: string)]], "MdRenderHeadingColors red nosuchcolour")
   assert_eq(
     md_render_heading_colors(),
     scheme_colors_with(onedark_palette.cyan, onedark_palette.green),

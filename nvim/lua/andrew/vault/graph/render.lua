@@ -66,12 +66,12 @@ end
 --- All layout math uses display-width columns; highlight byte offsets are
 --- derived from tracked positions during string construction (hot loop) or
 --- string.find (header/footer sections).
----@param note_name string
+---@param _ string  note name, accepted but unused (the layout does not show it)
 ---@param backlinks {name: string, path: string|nil}[]
 ---@param forward_links {name: string, path: string|nil}[]
 ---@param total_width number  display columns
 ---@return string[] lines, table[] highlight_ranges, table<number, {backlink: string|nil, forward: string|nil, backlink_name: string|nil, forward_name: string|nil}> line_to_note
-function M.render_graph(note_name, backlinks, forward_links, total_width)
+function M.render_graph(_, backlinks, forward_links, total_width)
   local stop = profiler.start_timer("graph.layout")
   local lines = {}
   local highlights = {} -- { line (0-indexed), col_start, col_end, group } (byte offsets)

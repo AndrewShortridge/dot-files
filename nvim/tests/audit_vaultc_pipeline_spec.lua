@@ -12,27 +12,36 @@
 -- Part 2 drives the real pipeline over a real buffer and asserts a `full` run
 -- repaints after an out-of-band namespace clear.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 package.loaded["andrew.vault.vault_log"] = setmetatable({
+  ---@return table  a logger whose every method is a no-op
   scope = function()
+    ---@return fun()
     return setmetatable({}, { __index = function() return function() end end })
   end,
+  ---@return fun()
 }, { __index = function() return function() end end })
 
 local render_diff = require("andrew.vault.render_diff")
 
 local NS = vim.api.nvim_create_namespace("audit_vaultc_pipeline_ns")
 
+---@param lines string[]
+---@return integer bufnr
 local function fresh_buf(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   return buf
 end
 
+---@param buf integer
+---@param ns integer
+---@return integer  number of extmarks of `ns` in `buf`
 local function marks(buf, ns)
   return #vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {})
 end
@@ -131,6 +140,7 @@ end)
 -- autocmds, no :VaultWarmDebug, no "warming" cache registration.
 
 test("cache_warming loads standalone (no top-level engine require cycle)", function()
+  ---@type table?
   package.loaded["andrew.vault.cache_warming"] = nil
   local ok, mod = pcall(require, "andrew.vault.cache_warming")
   assert_true(ok, "require must succeed: " .. tostring(mod))

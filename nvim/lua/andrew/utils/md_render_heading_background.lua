@@ -123,9 +123,13 @@ function M.setup()
 
   -- Both only queue a paint, so the placements are pointed at their groups
   -- before the first one goes out.
+  -- Replacing md-render's `attach` and `refresh` with wrappers of them is what
+  -- this function is for.
+  ---@diagnostic disable-next-line: duplicate-set-field
   text_size.attach = function(window, content)
     return track_heading_state(upstream_attach(window, content), window)
   end
+  ---@diagnostic disable-next-line: duplicate-set-field
   text_size.refresh = function(state, window, content)
     return track_heading_state(upstream_refresh(state, window, content), window)
   end

@@ -224,7 +224,7 @@ end
 ---@param center_abs string absolute path of center note
 ---@return string|nil center_rel
 ---@return table|nil center_entry
----@return fun(link_path: string): string|nil resolver memoized link resolver
+---@return (fun(link_path: string): string|nil)|nil resolver memoized link resolver (nil when the center note is not indexed)
 function M.bfs_init(idx, center_abs)
   local engine = require("andrew.vault.engine")
   local center_rel = engine.vault_relative(center_abs)

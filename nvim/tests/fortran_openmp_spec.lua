@@ -50,12 +50,20 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_openmp_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 local omp = require("andrew.fortran.openmp")
+
+--- A seeded or project entry of the signature index `omp.seed` fills.
+---@class FortranOpenmpSpecSignature
+---@field name string
+---@field args string[]
+---@field builtin? boolean
+---@field path? string
 
 -- ---------------------------------------------------------------------------
 -- is_directive
@@ -121,7 +129,11 @@ test("the sentinel kind distinguishes a directive from conditional code", functi
 end)
 
 test("junk input is not a directive", function()
+  -- Invalid on purpose: a nil line must answer false, not raise.
+  ---@diagnostic disable-next-line: param-type-mismatch
   assert_false(omp.is_directive(nil), "nil:")
+  -- Invalid on purpose: a number must answer false, not raise.
+  ---@diagnostic disable-next-line: param-type-mismatch
   assert_false(omp.is_directive(42), "number:")
 end)
 
@@ -172,13 +184,14 @@ test("no OpenMP signature carries an ierror", function()
 end)
 
 test("seeding fills a gap", function()
-  local sigs = {}
+  local sigs = {} ---@type table<string, FortranOpenmpSpecSignature>
   omp.seed(sigs)
   assert_true(sigs.omp_set_num_threads ~= nil, "seeded:")
   assert_eq(sigs.omp_set_num_threads.builtin, true, "marked builtin:")
 end)
 
 test("seeding does not overwrite a project definition", function()
+  ---@type table<string, FortranOpenmpSpecSignature>
   local sigs = { omp_get_wtime = { name = "omp_get_wtime", args = { "mine" }, path = "/proj/t.f90" } }
   omp.seed(sigs)
   assert_eq(#sigs.omp_get_wtime.args, 1, "project args kept:")

@@ -11,8 +11,12 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_vault_b_links_prompt_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
+
+-- lazydev loads fzf-lua's annotations into lua_ls from this line.
+---@module "fzf-lua"
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
@@ -22,15 +26,25 @@ vim.g.vault_path = tmp_vault
 
 -- fzf-lua is a lazy plugin and is not on the rtp under `-u NONE`; stub the
 -- entry points the code under test uses so the pickers are observable.
-local captured = {}
+---@class AuditVaultBLinksPromptCaptured  what the fzf_exec stub saw last
+---@field items? string[]  the picker entries (the code under test passes a list)
+---@field opts? fzf-lua.config.Base|{ }
+
+local captured = {} ---@type AuditVaultBLinksPromptCaptured
 package.loaded["fzf-lua"] = {
-  fzf_exec = function(items, opts) captured.items = items; captured.opts = opts end,
+  ---@param items fzf-lua.content
+  ---@param opts? fzf-lua.config.Base|{ }
+  fzf_exec = function(items, opts) captured.items = items --[[@as string[] ]]; captured.opts = opts end,
   fzf_live = function() end,
   grep = function() end,
   live_grep = function() end,
   files = function() end,
+  ---@return fun()
   actions = setmetatable({}, { __index = function() return function() end end }),
-  utils = { rg_escape = function(s) return s end },
+  utils = {
+    ---@param s string
+    ---@return string
+    rg_escape = function(s) return s end },
 }
 
 vim.fn.writefile({ "# Real", "", "body" }, tmp_vault .. "/real.md")
@@ -54,7 +68,7 @@ test("forwardlinks lists an image embed by name, not as <name>.md", function()
   backlinks.forwardlinks()
 
   local items = captured.items or {}
-  local set = {}
+  local set = {} ---@type table<string, boolean>
   for _, v in ipairs(items) do set[v] = true end
 
   assert_true(set["pic.png"], "image embed must be listed verbatim; got " .. vim.inspect(items))
@@ -67,20 +81,23 @@ end)
 test("the Advanced Search prompt buffer disables blink.cmp", function()
   local prompt = require("andrew.vault.search.prompt")
   local before = vim.api.nvim_list_bufs()
-  local seen = {}
+  local seen = {} ---@type table<integer, boolean>
   for _, b in ipairs(before) do seen[b] = true end
 
   prompt.search_advanced()
 
-  local prompt_buf
+  local prompt_buf ---@type integer?
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if not seen[b] then prompt_buf = b end
   end
   assert_true(prompt_buf ~= nil, "search_advanced must create a prompt buffer")
+  ---@cast prompt_buf -nil
   assert_eq(vim.b[prompt_buf].completion, false,
     "prompt buffer must set vim.b.completion = false so blink.cmp does not steal <CR>")
 
   -- <CR> must still be the prompt's own submit mapping, in both n and i.
+  ---@param mode string
+  ---@return boolean
   local function has_cr(mode)
     for _, m in ipairs(vim.api.nvim_buf_get_keymap(prompt_buf, mode)) do
       if m.lhs == "<CR>" then return true end

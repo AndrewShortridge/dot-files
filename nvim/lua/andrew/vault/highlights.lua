@@ -20,7 +20,10 @@ M.toggle = hl_coord.make_toggle(M, "highlight marks")
 --- Pipeline-aware wrapper around scan_highlights. When the transform pipeline
 --- is active and the parse cache is warm for the current buffer, iterate cached
 --- tokens instead of doing a full buffer scan.
-local function scan_highlights_pipeline_aware(lines, start_line, code_excl, fm_start, fm_end, callback)
+--- Called with make_scan_nav's scan_fn arguments (lines, start_line, code_excl,
+--- fm_start, fm_end, callback); only the callback is used, because the
+--- positions come from the parse cache.
+local function scan_highlights_pipeline_aware(_, _, _, _, _, callback)
     local parse_cache = require("andrew.vault.line_parse_cache")
     local bufnr = vim.api.nvim_get_current_buf()
     local iter = parse_cache.pipeline_token_iter(bufnr, "highlight")
@@ -32,7 +35,7 @@ local function scan_highlights_pipeline_aware(lines, start_line, code_excl, fm_s
     end
 end
 
-local jump_highlight = hl_coord.make_scan_nav(_nav_cache, scan_highlights_pipeline_aware, function(row, s, _e)
+local jump_highlight = hl_coord.make_scan_nav(_nav_cache, scan_highlights_pipeline_aware, function(row, s)
     return row + 1, s
 end)
 

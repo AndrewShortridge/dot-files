@@ -32,6 +32,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/theme_switch_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -39,42 +40,70 @@ local cfg = vim.fn.stdpath("config")
 
 print("\n=== Theme Switch (<leader>ub) Tests ===\n")
 
+-- The functions of lua/andrew/themes/toggle.lua these tests drive (the module
+-- declares no class of its own).
+---@class ThemeSwitchSpecToggle
+---@field activate_onedark fun()
+---@field activate_soft_paper fun(variant: "light"|"dark")
+---@field set_dark fun(dark: boolean)
+
 --- Drive the real module, recording every vim.cmd call and background write.
----@param fn fun(T: table)
+---@param fn fun(T: ThemeSwitchSpecToggle)
 ---@param colors_name string|nil value of vim.g.colors_name when the switch starts
 ---@return string[] trace
 local function trace(fn, colors_name)
-  local log = {}
+  local log = {} ---@type string[]
 
   local real_cmd, real_g, real_o = vim.cmd, vim.g, vim.o
+  -- Read and written by option name in o_proxy below.
+  ---@cast real_o table<string, any>
   local bg = "dark"
 
   local cmd = setmetatable({
+    ---@param name string
     colorscheme = function(name)
       log[#log + 1] = "colorscheme " .. name
       -- the real :colorscheme sets this; mirror it so the module sees reality
       rawset(_G, "__colors_name", name)
     end,
   }, {
+    ---@param _ table
+    ---@param c string|table
     __call = function(_, c) log[#log + 1] = tostring(c) end,
+    ---@param _ table
+    ---@param k string
+    ---@return fun(...: any)
     __index = function(_, k)
+      ---@param ... any
       return function(...) log[#log + 1] = k .. " " .. tostring((...)) end
     end,
   })
 
   rawset(_G, "__colors_name", colors_name)
   local g_proxy = setmetatable({}, {
+    ---@param _ table
+    ---@param k string
+    ---@return any
     __index = function(_, k)
       if k == "colors_name" then return rawget(_G, "__colors_name") end
       return real_g[k]
     end,
+    ---@param _ table
+    ---@param k string
+    ---@param v any
     __newindex = function(_, k, v) real_g[k] = v end,
   })
   local o_proxy = setmetatable({}, {
+    ---@param _ table
+    ---@param k string
+    ---@return any
     __index = function(_, k)
       if k == "background" then return bg end
       return real_o[k]
     end,
+    ---@param _ table
+    ---@param k string
+    ---@param v any
     __newindex = function(_, k, v)
       if k == "background" then
         bg = v
@@ -92,20 +121,26 @@ local function trace(fn, colors_name)
   local real_sp = package.loaded["andrew.themes.soft-paper"]
   package.loaded["andrew.themes.soft-paper"] = {
     active_palette = {},
+    ---@return table
     lualine_theme = function() return {} end,
   }
 
   vim.cmd, vim.g, vim.o = cmd, g_proxy, o_proxy
+  ---@type table?
   package.loaded["andrew.themes.toggle"] = nil
-  local T = dofile(cfg .. "/lua/andrew/themes/toggle.lua")
+  local T = dofile(cfg .. "/lua/andrew/themes/toggle.lua") ---@type ThemeSwitchSpecToggle
   local ok, err = pcall(fn, T)
   vim.cmd, vim.g, vim.o = real_cmd, real_g, real_o
   package.loaded["andrew.themes.soft-paper"] = real_sp
+  ---@type table?
   package.loaded["andrew.themes.toggle"] = nil
   assert(ok, "driving the module failed: " .. tostring(err))
   return log
 end
 
+---@param log string[]
+---@param pattern string
+---@return integer|nil
 local function index_of(log, pattern)
   for i, line in ipairs(log) do
     if line:match(pattern) then return i end
@@ -115,6 +150,7 @@ end
 
 -- ---------------------------------------------------------------------------
 test("switching to dark clears highlights before applying the colorscheme", function()
+  ---@param T ThemeSwitchSpecToggle
   local log = trace(function(T) T.activate_onedark() end, "soft-paper-light")
   local clear = index_of(log, "^highlight clear$")
   local scheme = index_of(log, "^colorscheme onedark$")
@@ -126,6 +162,7 @@ end)
 test("the clear survives background having nulled colors_name", function()
   -- This is the whole bug: vim.o.background = "dark" sets colors_name to nil,
   -- so a `if vim.g.colors_name then` guard around the clear never fires.
+  ---@param T ThemeSwitchSpecToggle
   local log = trace(function(T) T.activate_onedark() end, "soft-paper-light")
   local bgi = index_of(log, "^background=dark$")
   local clear = index_of(log, "^highlight clear$")
@@ -138,6 +175,7 @@ end)
 test("a nil colors_name at entry still clears", function()
   -- Same assertion from the other direction: entering with no colorscheme at
   -- all must not skip the clear either.
+  ---@param T ThemeSwitchSpecToggle
   local log = trace(function(T) T.activate_onedark() end, nil)
   assert_true(index_of(log, "^highlight clear$") ~= nil,
     "clear skipped when colors_name started nil: " .. vim.inspect(log))
@@ -146,6 +184,7 @@ end)
 test("soft-paper is applied via :colorscheme, not load()", function()
   -- Only the real command fires ColorScheme, which vault/colors.lua needs to
   -- re-derive ~120 Vault* groups, and render-markdown.lua hangs off too.
+  ---@param T ThemeSwitchSpecToggle
   local log = trace(function(T) T.activate_soft_paper("light") end, "onedark")
   assert_true(index_of(log, "^colorscheme soft%-paper%-light$") ~= nil,
     "soft-paper must go through :colorscheme: " .. vim.inspect(log))
@@ -155,12 +194,14 @@ test("the light scheme keeps the name vault/colors.lua matches on", function()
   -- vault/colors.lua selects its palette by matching "^soft%-paper%-light$".
   -- Renaming the scheme sends every Vault highlight to the dark OneDark
   -- palette on a paper background.
+  ---@param T ThemeSwitchSpecToggle
   local log = trace(function(T) T.set_dark(false) end, "onedark")
   assert_true(index_of(log, "^colorscheme soft%-paper%-light$") ~= nil,
     "set_dark(false) must select exactly soft-paper-light: " .. vim.inspect(log))
 end)
 
 test("set_dark(true) routes to onedark", function()
+  ---@param T ThemeSwitchSpecToggle
   local log = trace(function(T) T.set_dark(true) end, "soft-paper-light")
   assert_true(index_of(log, "^colorscheme onedark$") ~= nil, vim.inspect(log))
 end)
@@ -169,10 +210,11 @@ test("fortran keyword highlights survive a hi clear", function()
   -- Plain `link =` groups: a colorscheme's `hi clear` removes them outright, so
   -- one theme switch used to drop Fortran keyword colouring for the session.
   pcall(vim.api.nvim_del_augroup_by_name, "FortranHighlights")
+  ---@type table?
   package.loaded["andrew.fortran.highlight"] = nil
   package.loaded["andrew.fortran.docs"] = { keywords = {} }
 
-  local H = dofile(cfg .. "/lua/andrew/fortran/highlight.lua")
+  local H = dofile(cfg .. "/lua/andrew/fortran/highlight.lua") ---@module "andrew.fortran.highlight"
   H.setup_highlights()
   assert_eq(vim.api.nvim_get_hl(0, { name = "FortranMPIKeyword" }).link, "Constant",
     "setup_highlights did not define the group:")

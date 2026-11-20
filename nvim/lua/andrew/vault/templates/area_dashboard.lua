@@ -3,7 +3,7 @@ local config = require("andrew.vault.config")
 local M = {}
 M.name = "Area Dashboard"
 
-function M.run(e, p)
+function M.run(e)
   local title = e.input({ prompt = "Area name (e.g., Finance, Health & Fitness, Vehicles, Home)" })
   if not title then return end
 

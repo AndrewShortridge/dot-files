@@ -8,6 +8,7 @@
 -- issue's substitution rule, this spec targets date_utils.lua, which provides
 -- the pure date-resolution/comparison primitives the calendar relies on.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_false, _H.assert_nil
@@ -19,6 +20,11 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 local du = require("andrew.vault.date_utils")
 
 -- Build a timestamp for an absolute local date (noon, to avoid DST edges).
+---@param y integer
+---@param m integer
+---@param d integer
+---@param hour? integer  defaults to 12
+---@return integer
 local function ts_for(y, m, d, hour)
   return os.time({ year = y, month = m, day = d, hour = hour or 12, min = 0, sec = 0 })
 end
@@ -125,7 +131,8 @@ end)
 
 test("resolve_date 'today' equals start of today", function()
   local ts = du.resolve_date("today")
-  assert_eq(ts, du.start_of_day(os.date("*t")))
+  -- "*t" always yields a table; os.date is annotated `string|osdate` for every format.
+  assert_eq(ts, du.start_of_day(os.date("*t") --[[@as osdate]]))
 end)
 
 test("resolve_date returns nil for empty/unrecognized", function()
@@ -188,6 +195,8 @@ end)
 test("is_relative_duration false otherwise", function()
   assert_false(du.is_relative_duration("today"))
   assert_false(du.is_relative_duration("2026-06-09"))
+  -- Invalid on purpose: checks is_relative_duration's guard against a nil value.
+  ---@diagnostic disable-next-line: param-type-mismatch
   assert_false(du.is_relative_duration(nil))
 end)
 

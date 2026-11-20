@@ -765,7 +765,7 @@ queue_collection = function()
     return
   end
   is_collection_queued = true
-  collection_timer = collection_timer or vim.uv.new_timer()
+  collection_timer = collection_timer or assert(vim.uv.new_timer())
   collection_timer:start(collection_delay_milliseconds, 0, collect_on_main_loop)
 end
 

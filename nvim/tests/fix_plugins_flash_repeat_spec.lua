@@ -50,17 +50,29 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fix_plugins_flash_repeat_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
 local cfgdir = vim.fn.stdpath("config")
+-- The fields of the lazy.nvim plugin spec returned by plugins/flash.lua that
+-- this test reads.
+---@class FlashRepeatPluginSpec
+---@field [1] string
+---@field config fun(self: FlashRepeatPluginSpec, opts: Flash.Config)
+---@field opts Flash.Config
+
+---@type FlashRepeatPluginSpec
 local spec = dofile(cfgdir .. "/lua/andrew/plugins/flash.lua")
 
 test("flash spec still points at folke/flash.nvim and defines a config hook", function()
   assert_eq(spec[1], "folke/flash.nvim", "spec must point at folke/flash.nvim")
   assert_eq(type(spec.config), "function", "spec must carry the guard in `config`")
+  -- Flash.Config types `modes` as table<string, Flash.Config>, which does not
+  -- declare the char-mode-only `multi_line` (flash/config.lua sets and
+  -- flash/plugins/char.lua reads it).
+  ---@diagnostic disable-next-line: undefined-field
   assert_eq(spec.opts.modes.char.multi_line, false, "char mode must stay line-local")
 end)
 
@@ -90,6 +102,9 @@ end)
 local Char = require("flash.plugins.char")
 local Repeat = require("flash.repeat")
 
+---@param key string
+---@param mode? string  defaults to "n"
+---@return string? source  the `source` of the mapping's Lua callback
 local function callback_source(key, mode)
   local map = vim.fn.maparg(key, mode or "n", false, true)
   if type(map) ~= "table" or type(map.callback) ~= "function" then
@@ -104,6 +119,7 @@ test("every char-mode key is wrapped by the config, not by char.lua", function()
     for _, mode in ipairs({ "n", "x", "o" }) do
       local src = callback_source(key, mode)
       assert_true(src ~= nil, ("%s (%s) must still be mapped to a Lua callback"):format(key, mode))
+      ---@cast src -nil
       assert_true(
         src:find("andrew/plugins/flash%.lua") ~= nil,
         ("%s (%s) must be the config's wrapper, got %s"):format(key, mode, src)
@@ -123,6 +139,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
 vim.api.nvim_win_set_buf(0, buf)
 
 --- Send keys through the real mapping, exactly as a typed batch would.
+--- @param keys string
 --- @return boolean ok, string? err
 local function type_keys(keys)
   return pcall(
@@ -159,6 +176,12 @@ test("a stale repeat flag makes every char key behave exactly as a plain press",
   -- The guard must be indistinguishable from "the `.` never happened": for each
   -- key, run it from a clean state WITHOUT the stale flag (the reference), then
   -- again WITH it, and require the same landing column.
+  ---@class FlashRepeatCase
+  ---@field keys string
+  ---@field from [integer, integer]  cursor (row, col) to start from
+  ---@field what string
+
+  ---@type FlashRepeatCase[]
   local cases = {
     { keys = "Fb", from = { 1, 12 }, what = "`Fb` from col 12" },
     { keys = "tg", from = { 1, 0 }, what = "`tg` from col 0" },
@@ -167,6 +190,10 @@ test("a stale repeat flag makes every char key behave exactly as a plain press",
     { keys = ",", from = { 1, 0 }, what = "`,` with no prior jump" },
   }
   --- Run `keys` from a pristine char-mode state; returns the landing column.
+  ---@param keys string
+  ---@param from [integer, integer]
+  ---@param stale boolean
+  ---@return integer col, boolean ok, string? err
   local function run(keys, from, stale)
     Char.state = nil
     Char.motion = "f"
@@ -251,7 +278,11 @@ test("config() tolerates flash internals being renamed or missing", function()
     end,
   }
 
-  local results = {}
+  ---@class FlashRepeatVariantResult
+  ---@field ok boolean
+  ---@field err any  whatever config() raised, only printed
+
+  local results = {} ---@type table<string, FlashRepeatVariantResult>
   for name, prepare in pairs(variants) do
     package.loaded["flash.plugins.char"] = saved.char
     package.loaded["flash.repeat"] = saved.rep

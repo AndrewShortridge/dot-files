@@ -32,6 +32,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/lsp_organize_imports_kind_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq = _H.test, _H.assert_eq
 

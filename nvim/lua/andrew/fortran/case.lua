@@ -101,7 +101,20 @@ function M.dotted_set()
   return keywords.dotted_set(nil)
 end
 
----@return { enabled: boolean, severity: integer, intrinsics: boolean, defined: boolean, documented: boolean, all_calls: boolean, keyword_set: table<string, string> }
+---@class fortran.case.Options
+---@field enabled boolean
+---@field severity integer
+---@field intrinsics boolean
+---@field defined boolean
+---@field documented boolean
+---@field all_calls boolean
+---@field units boolean
+---@field keyword_set table<string, string>
+---@field dotted_set table<string, string>
+---@field fixed? boolean fixed-form masking; set per buffer or per file by the entry points
+---@field unit_names? table<string, string> lowercase unit name -> kind, from M.known_units
+
+---@return fortran.case.Options
 function M.options()
   local sev = vim.g.fortran_case_severity
   return {
@@ -344,7 +357,7 @@ function M.scan_line(raw, masked, lnum, known, opts, out)
     while ks do
       local lname, col = scan._ident_at(masked, ke + 1)
       if lname and known[lname] then
-        consider(lname, col, known[lname])
+        consider(lname, col --[[@as integer]], known[lname])
       end
       ks, ke = scan._find_word(masked, kw, ke + 1)
     end
@@ -387,7 +400,7 @@ function M.scan_line(raw, masked, lnum, known, opts, out)
       while ks do
         local lname, col = M.unit_name_after(masked, ke + 1)
         if lname and units[lname] then
-          consider(lname, col, "defined")
+          consider(lname, col --[[@as integer]], "defined")
         end
         ks, ke = scan._find_word(masked, kw, ke + 1)
       end
@@ -438,7 +451,7 @@ function M.scan_line(raw, masked, lnum, known, opts, out)
       if label then
         consider(word, col, label)
       end
-      init = e
+      init = e --[[@as integer]]
     end
   end
 end
@@ -546,6 +559,7 @@ end
 ---@param cb fun(count: integer)|nil
 function M.check(bufnr, cb)
   bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
+  ---@cast bufnr integer
   with_known(bufnr, function(known, opts)
     if not vim.api.nvim_buf_is_valid(bufnr) then
       return
@@ -567,6 +581,7 @@ end
 ---@param cb fun(count: integer)|nil
 function M.fix(bufnr, cb)
   bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
+  ---@cast bufnr integer
   with_known(bufnr, function(known, opts)
     if not vim.api.nvim_buf_is_valid(bufnr) then
       return

@@ -46,6 +46,9 @@ return {
     {
       "<leader>df",
       function()
+        -- nvim-dap-ui declares `elem_name` required, but float_element() asks
+        -- for the element with vim.ui.select when it is nil (dapui/init.lua).
+        ---@diagnostic disable-next-line: missing-parameter
         require("dapui").float_element()
       end,
       desc = "Float element",

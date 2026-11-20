@@ -55,6 +55,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_keywords_data_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil = _H.assert_nil
@@ -65,6 +66,41 @@ local CONFIG = vim.fn.stdpath("config")
 local KEYWORDS_PATH = CONFIG .. "/lua/andrew/fortran/data/keywords.lua"
 local OVERRIDES_PATH = CONFIG .. "/snippets/overrides/openmp.lua"
 
+---@class FortranKeywordsDataMeta
+---@field generator string
+---@field source string
+
+--- One documentation entry, as both data files author it.
+---@class FortranKeywordsDataEntry
+---@field name string
+---@field kind string
+---@field module string
+---@field summary string
+---@field description string
+---@field standard string
+---@field see_also string[]
+---@field example? string
+---@field href? string
+---@field signature? string      absent on OpenMP runtime routines
+---@field valid_on? string[]     clauses only
+---@field clauses? string[]      directives only
+---@field result? string         runtime functions only
+---@field interface? string      must never be hand-authored (generated from omp_lib.f90)
+
+--- A data file: entry key -> entry.
+---@class FortranKeywordsDataFile
+---@field [string] FortranKeywordsDataEntry
+
+--- keywords.lua additionally carries provenance under `_meta`.
+---@class FortranKeywordsDataKeywordsFile: FortranKeywordsDataFile
+---@field _meta FortranKeywordsDataMeta
+
+--- `{ key, entry }`, as `entries` returns them.
+---@class FortranKeywordsDataPair
+---@field [1] string
+---@field [2] FortranKeywordsDataEntry
+
+---@type table<string, boolean>
 local KINDS = {
   subroutine = true,
   ["function"] = true,
@@ -81,6 +117,7 @@ local KINDS = {
 -- "\n", Lua keywords bracketed (do/end/if/... are legal entry names but not
 -- legal bare table keys), no trailing whitespace.
 
+---@type table<string, boolean>
 local RESERVED = {
   ["and"] = true, ["break"] = true, ["do"] = true, ["else"] = true, ["elseif"] = true,
   ["end"] = true, ["false"] = true, ["for"] = true, ["function"] = true, ["goto"] = true,
@@ -104,7 +141,7 @@ local function key_str(k)
   return "[" .. quote(k) .. "]"
 end
 
----@param t table
+---@param t table<any, any>
 ---@return boolean
 local function is_array(t)
   local n = 0
@@ -128,8 +165,9 @@ local function ser(v, ind)
     return tostring(v)
   elseif ty == "table" then
     local pad = string.rep(" ", ind + 2)
-    local out = {}
+    local out = {} ---@type string[]
     if is_array(v) then
+      ---@cast v any[]
       if #v == 0 then
         return "{}"
       end
@@ -137,7 +175,9 @@ local function ser(v, ind)
         out[#out + 1] = pad .. ser(v[i], ind + 2) .. ","
       end
     else
-      local keys = {}
+      -- Non-array tables in the data files are keyed by entry/field name.
+      ---@cast v table<string, any>
+      local keys = {} ---@type string[]
       for k in pairs(v) do
         keys[#keys + 1] = k
       end
@@ -167,6 +207,7 @@ end
 local function load_data(path)
   local chunk, err = loadfile(path)
   assert_true(chunk ~= nil, "loadfile(" .. path .. ") failed: " .. tostring(err))
+  ---@cast chunk -nil
   local ok, tbl = pcall(chunk)
   assert_true(ok and type(tbl) == "table", "chunk did not return a table: " .. path)
   return tbl
@@ -182,15 +223,17 @@ local function read_file(path)
 end
 
 --- Every entry, _meta excluded, as {key, entry} pairs sorted by key.
----@param tbl table
----@return table[]
+---@param tbl table<string, FortranKeywordsDataEntry>
+---@return FortranKeywordsDataPair[]
 local function entries(tbl)
-  local out = {}
+  local out = {} ---@type FortranKeywordsDataPair[]
   for k, v in pairs(tbl) do
     if k ~= "_meta" then
       out[#out + 1] = { k, v }
     end
   end
+  ---@param a FortranKeywordsDataPair
+  ---@param b FortranKeywordsDataPair
   table.sort(out, function(a, b)
     return a[1] < b[1]
   end)
@@ -205,14 +248,15 @@ local function walk_strings(v, path, fn)
   if type(v) == "string" then
     fn(path, v)
   elseif type(v) == "table" then
+    ---@cast v table<string|integer, any>
     for k, sub in pairs(v) do
       walk_strings(sub, path .. "." .. tostring(k), fn)
     end
   end
 end
 
-local keywords = load_data(KEYWORDS_PATH)
-local overrides = load_data(OVERRIDES_PATH)
+local keywords = load_data(KEYWORDS_PATH) ---@type FortranKeywordsDataKeywordsFile
+local overrides = load_data(OVERRIDES_PATH) ---@type FortranKeywordsDataFile
 
 -- Tests ---------------------------------------------------------------------
 
@@ -263,14 +307,15 @@ test("clauses declare valid_on and directives declare clauses plus a signature",
     if entry.kind == "clause" then
       nclause = nclause + 1
       assert_true(type(entry.valid_on) == "table", key .. " is a clause with no valid_on")
-      assert_true(#entry.valid_on > 0, key .. " has an empty valid_on")
+      assert_true(#(entry.valid_on --[[@as string[] ]]) > 0, key .. " has an empty valid_on")
       assert_true(type(entry.signature) == "string", key .. " is a clause with no signature")
     elseif entry.kind == "directive" then
       ndirective = ndirective + 1
       assert_true(type(entry.clauses) == "table", key .. " is a directive with no clauses list")
       assert_true(type(entry.signature) == "string", key .. " is a directive with no signature")
       assert_true(
-        entry.signature:match("^!%$OMP ") ~= nil,
+        -- Asserted to be a string on the line above.
+        (entry.signature --[[@as string]]):match("^!%$OMP ") ~= nil,
         key .. " signature is not a !$OMP directive line: " .. entry.signature
       )
     end
@@ -344,6 +389,8 @@ end)
 
 test("no renderer-hostile markup in either file", function()
   for _, file in ipairs({ { "keywords", keywords }, { "overrides", overrides } }) do
+    ---@param path string
+    ---@param s string
     walk_strings(file[2], file[1], function(path, s)
       assert_true(s:find("&nbsp;", 1, true) == nil, path .. " contains &nbsp;")
       assert_true(s:find("\\*", 1, true) == nil, path .. " contains an escaped \\*")

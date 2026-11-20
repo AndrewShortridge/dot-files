@@ -24,9 +24,25 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/rustaceanvim_lazy_ft_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
+-- Loads rustaceanvim's types (lazydev) for the classes below; before, they
+-- resolved only because the header comment happens to mention its require.
+---@module "rustaceanvim.config"
+
+--- vim.g.rustaceanvim as the plugin spec's `init` builds it. rustaceanvim.lsp.ClientOpts does
+--- not declare `on_attach` (rustaceanvim forwards it to the LSP client config) and
+--- types `default_settings` as a bare `table`.
+---@class RustaceanvimLazyFtServerOpts: rustaceanvim.lsp.ClientOpts
+---@field on_attach fun(client: vim.lsp.Client, bufnr: integer)
+---@field default_settings table<string, table<string, any>>  server name -> settings
+
+---@class RustaceanvimLazyFtOpts: rustaceanvim.Opts
+---@field server RustaceanvimLazyFtServerOpts
+
+---@module "andrew.plugins.rustaceanvim"
 local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/rustaceanvim.lua")
 
 test("plugin spec returns a table for mrcjkb/rustaceanvim", function()
@@ -47,6 +63,7 @@ end)
 test("init sets vim.g.rustaceanvim WITHOUT loading the plugin (no rtp require)", function()
   -- Under `-u NONE` rustaceanvim is not on the runtimepath. Defensively ensure no
   -- stale cached module masks a require regression.
+  ---@type table?
   package.loaded["rustaceanvim.config"] = nil
   vim.g.rustaceanvim = nil
   -- Must not error (proves init does not require the not-yet-loaded plugin).
@@ -57,7 +74,8 @@ end)
 test("vim.g.rustaceanvim settings preserved byte-identical", function()
   vim.g.rustaceanvim = nil
   plug.init()
-  local g = vim.g.rustaceanvim
+  -- init() just assigned the options table (the test above asserts it is a table).
+  local g = vim.g.rustaceanvim --[[@as RustaceanvimLazyFtOpts]]
   assert_true(type(g.server.on_attach) == "function", "server.on_attach must be a function")
   local ra = g.server.default_settings["rust-analyzer"]
   assert_eq(ra.cargo.allFeatures, true, "cargo.allFeatures must be preserved")
@@ -76,20 +94,28 @@ test("dap.adapter branches: nil when codelldb absent, correct shape when present
   local real_executable = vim.fn.executable
 
   -- Absent branch.
-  vim.fn.executable = function(_) return 0 end
+  ---@param _ string
+  ---@return 0|1
+  local function executable_absent(_) return 0 end
+  vim.fn.executable = executable_absent
   vim.g.rustaceanvim = nil
   plug.init()
   assert_nil(vim.g.rustaceanvim.dap.adapter, "adapter must be nil when codelldb not installed")
 
   -- Present branch — assert byte-identical to get_codelldb_adapter's contract.
-  vim.fn.executable = function(p)
+  ---@param p string
+  ---@return 0|1
+  local function executable_only_codelldb(p)
     if p == codelldb_path then return 1 end
     return 0
   end
+  vim.fn.executable = executable_only_codelldb
   vim.g.rustaceanvim = nil
   plug.init()
   local a = vim.g.rustaceanvim.dap.adapter
   assert_true(type(a) == "table", "adapter must be a table when codelldb installed")
+  -- init() builds the server-adapter form; the assertions below check its shape.
+  ---@cast a rustaceanvim.dap.server.Config
   assert_eq(a.type, "server", "adapter.type")
   assert_eq(a.port, "${port}", "adapter.port")
   assert_eq(a.host, "127.0.0.1", "adapter.host")

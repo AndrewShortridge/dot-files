@@ -59,6 +59,9 @@ return {
     end
 
     -- Configure treesitter
+    -- nvim-treesitter declares the TSConfig fields required, but setup() gives
+    -- each one left out its default (nvim-treesitter/configs.lua, M.setup).
+    ---@diagnostic disable-next-line: missing-fields
     treesitter.setup({
       -- nil on a normal workstation run, so upstream's default is used
       parser_install_dir = parser_install_dir,

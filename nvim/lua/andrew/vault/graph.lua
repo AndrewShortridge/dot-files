@@ -292,7 +292,7 @@ function M.local_graph()
   if state.depth <= 1 then
     -- Standard single-hop collection with filter applied (sync, fast)
     local forward_links = collect.collect_forward_links()
-    local backlinks_list = collect.collect_backlinks(note_name)
+    local backlinks_list = collect.collect_backlinks()
 
     -- Strip current note from both lists (self-references)
     local function filter_self(list)

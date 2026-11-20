@@ -25,6 +25,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/code_exclusion_indented_block_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_true = _H.test, _H.assert_true
 
@@ -36,6 +37,8 @@ local link_scan = require("andrew.vault.link_scan")
 
 print("\n=== link_scan indented-block gate-line exclusion Tests ===\n")
 
+---@param lines string[]
+---@return integer bufnr
 local function make_buffer(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -44,10 +47,13 @@ local function make_buffer(lines)
 end
 
 -- Snapshot the full per-(row,col) exclusion bitmap as a comparable string array.
+---@param closure fun(row: number, col: number): boolean
+---@param lines string[]
+---@return string[]
 local function snapshot(closure, lines)
-  local out = {}
+  local out = {} ---@type string[]
   for r = 0, #lines - 1 do
-    local cells = {}
+    local cells = {} ---@type string[]
     for c = 0, #(lines[r + 1] or "") do
       cells[c + 1] = closure(r, c) and "1" or "0"
     end
@@ -56,6 +62,9 @@ local function snapshot(closure, lines)
   return out
 end
 
+---@param a string[]
+---@param b string[]
+---@return boolean
 local function snapshots_equal(a, b)
   if #a ~= #b then return false end
   for i = 1, #a do
@@ -67,6 +76,12 @@ end
 -- Prime the incremental cache on `before`, apply `edit_fn` IN PLACE (so on_bytes
 -- fires), then assert the incremental closure matches a fresh full recompute on
 -- the SAME buffer's post-edit content.
+---@param before string[]
+---@param edit_fn fun(buf: integer)
+---@return boolean equal
+---@return string[] incremental
+---@return string[] fresh
+---@return string[] post
 local function assert_incremental_matches_fresh(before, edit_fn)
   local buf = make_buffer(before)
   link_scan.build_code_exclusion(buf) -- prime (cold full build)
@@ -88,7 +103,9 @@ end
 -- ===========================================================================
 test("gate-line edit DESTROYS an indented block (incremental == fresh)", function()
   local before = { "prose", "", "    code one", "    code two", "tail" }
-  local ok = assert_incremental_matches_fresh(before, function(buf)
+  local ok = assert_incremental_matches_fresh(before,
+    ---@param buf integer
+    function(buf)
     -- Insert "x" at the start of the blank gate line (row 1) -> non-blank.
     vim.api.nvim_buf_set_text(buf, 1, 0, 1, 0, { "x" })
   end)
@@ -103,7 +120,9 @@ end)
 -- ===========================================================================
 test("gate-line edit CREATES an indented block (incremental == fresh)", function()
   local before = { "prose", "para", "    code one", "    code two", "tail" }
-  local ok = assert_incremental_matches_fresh(before, function(buf)
+  local ok = assert_incremental_matches_fresh(before,
+    ---@param buf integer
+    function(buf)
     -- Replace the paragraph line (row 1) with a blank line.
     vim.api.nvim_buf_set_lines(buf, 1, 2, false, { "" })
   end)
@@ -120,7 +139,9 @@ end)
 -- ===========================================================================
 test("far-prose edit leaves the exclusion set correct (control)", function()
   local before = { "prose", "", "    code one", "    code two", "between", "tail prose", "more" }
-  local ok = assert_incremental_matches_fresh(before, function(buf)
+  local ok = assert_incremental_matches_fresh(before,
+    ---@param buf integer
+    function(buf)
     -- Edit row 5 (well below the indented block) prose-to-prose.
     vim.api.nvim_buf_set_lines(buf, 5, 6, false, { "edited tail" })
   end)

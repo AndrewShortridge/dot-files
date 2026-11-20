@@ -79,7 +79,8 @@ end
 --- simply "no result". Every caller already treats a nil line/column as "no
 --- position", so returning nil is the cheap, uniform failure.
 ---@param pos { line: integer, character: integer }|nil
----@return integer|nil lnum 1-based, integer|nil col 1-based
+---@return integer|nil lnum 1-based; nil, together with col, for a malformed position
+---@return integer|nil col 1-based
 function M.from_pos(pos)
   if type(pos) ~= "table" or type(pos.line) ~= "number" or type(pos.character) ~= "number" then
     return nil

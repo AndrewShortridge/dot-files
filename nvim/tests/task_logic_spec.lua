@@ -5,6 +5,7 @@
 --   andrew.vault.task_hierarchy  (build_tree, completion_stats)
 -- Run with: nvim --headless -u NONE -l tests/task_logic_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil, assert_deep_eq =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil, _H.assert_deep_eq
@@ -73,6 +74,8 @@ test("parse_rule: unknown string returns nil", function()
 end)
 
 test("parse_rule: nil input returns nil", function()
+  -- Invalid on purpose: parse_rule must tolerate a missing rule string.
+  ---@diagnostic disable-next-line: param-type-mismatch
   assert_nil(rec.parse_rule(nil))
 end)
 
@@ -428,6 +431,24 @@ end)
 -- 8. task_hierarchy.build_tree
 -- ---------------------------------------------------------------------------
 
+---@class TaskLogicSpecTask
+---@field line integer
+---@field indent_level integer
+---@field text string
+---@field completed boolean
+---@field children? TaskLogicSpecNode[]  only on build_tree's copies, never on an input task
+---@field parent_line? integer           only on build_tree's copies, never on an input task
+
+-- What task_hierarchy.build_tree adds to each task it returns.
+---@class TaskLogicSpecNode: TaskLogicSpecTask
+---@field children TaskLogicSpecNode[]
+---@field parent_line integer|nil
+
+---@param line integer
+---@param indent integer
+---@param text string
+---@param completed? boolean
+---@return TaskLogicSpecTask
 local function mk(line, indent, text, completed)
   return { line = line, indent_level = indent, text = text, completed = completed or false }
 end
@@ -458,7 +479,7 @@ test("build_tree: grandchild nesting", function()
   local tasks = { mk(1, 0, "root"), mk(2, 1, "child"), mk(3, 2, "grandchild") }
   local roots = th.build_tree(tasks)
   assert_eq(#roots, 1)
-  local child = roots[1].children[1]
+  local child = roots[1].children[1] ---@type TaskLogicSpecNode
   assert_eq(#child.children, 1)
   assert_eq(child.children[1].text, "grandchild")
   assert_eq(child.children[1].parent_line, 2)

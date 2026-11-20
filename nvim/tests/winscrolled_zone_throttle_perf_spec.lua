@@ -19,6 +19,7 @@
 -- Run with:
 --   nvim --headless -u NONE -l tests/winscrolled_zone_throttle_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -32,10 +33,13 @@ local config = require("andrew.vault.config")
 print("\n=== WinScrolled Zone/GC Throttle Perf Tests ===\n")
 
 -- Create a tall markdown buffer in a real window so w0/w$ are meaningful.
+---@param nlines integer
+---@return integer buf
+---@return integer winid
 local function make_buf(nlines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].filetype = "markdown"
-  local lines = {}
+  local lines = {} ---@type string[]
   for i = 1, nlines do lines[i] = "line " .. i end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.api.nvim_set_current_buf(buf)
@@ -56,10 +60,14 @@ test("refresh memo: line_count read at most once across stable-tick calls", func
 
   local orig = vim.api.nvim_buf_line_count
   local count = 0
-  vim.api.nvim_buf_line_count = function(b)
+  -- Counting wrapper with the real `vim.api.nvim_buf_line_count` signature.
+  ---@param b integer
+  ---@return integer
+  local function counting_line_count(b)
     count = count + 1
     return orig(b)
   end
+  vim.api.nvim_buf_line_count = counting_line_count
 
   local ok, zones1, _, zones2 = pcall(function()
     local z1 = viewport.get_zones(winid)
@@ -142,10 +150,14 @@ test("embed off-path GC throttled to debounce cadence", function()
   -- Spy on get_placement: the per-handle indirection inside gc_distant_placements.
   local orig_get = images.get_placement
   local gp_calls = 0
-  images.get_placement = function(...)
+  -- Counting wrapper with the real `images.get_placement(handle)` signature.
+  ---@param ... table  the placement handle
+  ---@return table|nil entry
+  local function counting_get_placement(...)
     gp_calls = gp_calls + 1
     return orig_get(...)
   end
+  images.get_placement = counting_get_placement
 
   local ok = pcall(function()
     -- Fire several ticks in immediate succession (same tick window, newly_visible nil).
@@ -181,10 +193,14 @@ test("coordinator refreshes viewport synchronously each tick (ordering invariant
 
   local orig_refresh = viewport.refresh
   local refresh_calls = 0
-  viewport.refresh = function(...)
+  -- Counting wrapper with the real `viewport.refresh(winid?)` signature.
+  ---@param ... number?  winid
+  ---@return ViewportRange
+  local function counting_refresh(...)
     refresh_calls = refresh_calls + 1
     return orig_refresh(...)
   end
+  viewport.refresh = counting_refresh
 
   local ok = pcall(function()
     highlight_coordinator.on_win_scrolled({ bufnr = buf, winid = winid })
@@ -216,11 +232,16 @@ test("refresh memo invalidates on resize (botline change, stable topline+changed
   local fake_first, fake_last = 1, 5
 
   local ok, err = pcall(function()
-    vim.fn.line = function(expr, w)
+    -- Fake w0/w$ with the real `vim.fn.line(expr, winid?)` signature.
+    ---@param expr string|integer[]
+    ---@param w? integer
+    ---@return integer
+    local function fake_line(expr, w)
       if expr == "w0" then return fake_first
       elseif expr == "w$" then return fake_last
       else return orig_line(expr, w) end
     end
+    vim.fn.line = fake_line
 
     -- 1. Baseline: small viewport (5 lines). No buffer edit -> changedtick stable.
     local r1 = viewport.refresh(winid)

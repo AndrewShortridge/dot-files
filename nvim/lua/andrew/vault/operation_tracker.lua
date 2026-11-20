@@ -104,7 +104,7 @@ end
 
 --- Convenience wrapper: start an operation and return a staleness-guarded callback.
 ---@param fn fun(op_id: number, ...: any): any  Function to call if not stale
----@return fun(...: any): any|nil callback  Wrapped function (returns nil, "stale" if superseded)
+---@return fun(...: any): any, string|nil callback  Wrapped function (returns nil, "stale" if superseded)
 ---@return number op_id  The operation ID
 function M:wrap(fn)
   local op_id = self:start()

@@ -10,6 +10,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/citation_completion_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
@@ -18,6 +19,27 @@ local cite = require("andrew.vault.completion_citations")
 
 print("\n=== citation completion Tests ===\n")
 
+-- The completion items `cite.build` returns (annotated there as a bare `table[]`),
+-- as far as this spec reads them.
+---@class CitationCompletionItem: lsp.CompletionItem
+---@field label string
+---@field sortText string
+---@field labelDetails { description: string }
+---@field documentation { kind: "markdown", value: string }
+
+-- An item of a `get_completions` response: `build`'s item plus its textEdit.
+---@class CitationCompletionEditedItem: CitationCompletionItem
+---@field textEdit lsp.TextEdit
+
+-- Loads blink.cmp's type library for this file (lazydev), for blink.cmp.CompletionResponse below.
+---@module "blink.cmp"
+
+-- What `source:get_completions` hands its callback.
+---@class CitationCompletionResponse: blink.cmp.CompletionResponse
+---@field items CitationCompletionEditedItem[]
+
+---@param line string
+---@return integer?
 local function start(line)
   return cite.cite_start(line, #line)
 end
@@ -40,6 +62,9 @@ end)
 -- Scratch vault: .obsidian marker, a draft with its own bibliography, a
 -- vault-wide database, and two Library notes (one DOI match, one title match).
 local root = vim.fn.tempname()
+---@param rel string
+---@param text string
+---@return string path
 local function write(rel, text)
   local path = root .. "/" .. rel
   vim.fn.mkdir(vim.fs.dirname(path), "p")
@@ -69,8 +94,10 @@ local draft = write("Drafts/Draft.md", "---\ntype: draft\nbibliography: refs.jso
 vim.cmd.edit(vim.fn.fnameescape(draft))
 local buf = vim.api.nvim_get_current_buf()
 
+---@param items CitationCompletionItem[]
+---@return table<string, CitationCompletionItem>
 local function by_key(items)
-  local m = {}
+  local m = {} ---@type table<string, CitationCompletionItem>
   for _, it in ipairs(items) do
     m[it.label] = it
   end
@@ -97,14 +124,19 @@ end)
 
 test("get_completions replaces the typed key and is silent in frontmatter", function()
   local src = cite.new({ databases = { "temporary/*.json" } })
-  local got
-  src:get_completions({ bufnr = buf, line = "Text [@pru", cursor = { 6, 10 } }, function(r) got = r end)
-  local item = by_key(got.items).prudhomme2020velocity
+  local got ---@type CitationCompletionResponse?
+  src:get_completions({ bufnr = buf, line = "Text [@pru", cursor = { 6, 10 } },
+    ---@param r CitationCompletionResponse
+    function(r) got = r end)
+  -- get_completions calls back synchronously; every response item carries a textEdit.
+  local item = by_key(assert(got).items).prudhomme2020velocity --[[@as CitationCompletionEditedItem]]
   assert_eq(item.textEdit.newText, "prudhomme2020velocity")
   assert_eq(item.textEdit.range.start.character, 7)
   assert_eq(item.textEdit.range["end"].character, 10)
-  src:get_completions({ bufnr = buf, line = "bibliography: @x", cursor = { 3, 16 } }, function(r) got = r end)
-  assert_eq(#got.items, 0)
+  src:get_completions({ bufnr = buf, line = "bibliography: @x", cursor = { 3, 16 } },
+    ---@param r CitationCompletionResponse
+    function(r) got = r end)
+  assert_eq(#assert(got).items, 0)
 end)
 
 vim.fn.delete(root, "rf")

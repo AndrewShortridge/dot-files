@@ -7,7 +7,7 @@ local source = base.create_source({
   name = "inline_fields",
   build = base.build_kv_fields("inline_fields", ":: "),
 
-  get_completions = base.kv_get_completions(function(before, _ctx, _bufnr)
+  get_completions = base.kv_get_completions(function(before)
     -- Value: standalone "key:: partial" (cheap, anchored) — always tried
     -- (cf. pat.INLINE_FIELD_STANDALONE — partial, no anchored value)
     -- (the optional %s*/[-*]?/%s* prefix already subsumes a bare "key:: ")

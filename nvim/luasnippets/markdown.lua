@@ -6,7 +6,6 @@ local c = ls.choice_node
 local f = ls.function_node
 local d = ls.dynamic_node
 local sn = ls.snippet_node
-local fmt = require("luasnip.extras.fmt").fmt
 local rep = require("luasnip.extras").rep
 local tex = require("andrew.utils.tex")
 
@@ -574,6 +573,7 @@ local snippets = {
       if not cols then
         cols, rows = 3, 2
       end
+      ---@cast rows -nil parse_dimensions() returns both numbers or neither
       local lines = table_gen.generate(cols, rows)
 
       -- Build text nodes: first line starts on a new line after the dimension

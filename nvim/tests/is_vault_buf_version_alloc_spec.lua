@@ -28,6 +28,7 @@
 --           to a new in-vault path produces a fresh miss (name is still the
 --           version).
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -46,13 +47,23 @@ engine.vaults.A = VAULT_A
 engine.vaults.B = VAULT_B
 
 -- Make a listed buffer whose name lives under `dir`. Returns the bufnr.
+---@param dir string
+---@param fname string
+---@return integer buf
 local function make_named_buf(dir, fname)
   local buf = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_buf_set_name(buf, dir .. "/" .. fname)
   return buf
 end
 
+---@class IsVaultBufMemoStats  one row of memoize.stats() (that function returns plain table[])
+---@field name string
+---@field entries integer
+---@field hits integer
+---@field misses integer
+
 -- Pull the named memo entry's stats ({hits, misses, ...}).
+---@return IsVaultBufMemoStats?
 local function memo_stats()
   for _, s in ipairs(memo.stats()) do
     if s.name == "is_vault_buf" then
@@ -94,13 +105,14 @@ test("is_vault_buf: repeated calls at unchanged buffer are cache hits", function
 
   local before = memo_stats()
   assert_true(before ~= nil, "is_vault_buf memo entry must be registered")
+  ---@cast before -nil
 
   local N = 50
   for _ = 1, N do
     engine.is_vault_buf(buf)
   end
 
-  local after = memo_stats()
+  local after = assert(memo_stats())
   local d_hits = after.hits - before.hits
   local d_misses = after.misses - before.misses
 
@@ -117,11 +129,11 @@ test("is_vault_buf: renaming the buffer busts the memo (name is version)", funct
   local buf = make_named_buf(VAULT_A, "before.md")
 
   engine.is_vault_buf(buf) -- prime
-  local before = memo_stats()
+  local before = assert(memo_stats())
 
   vim.api.nvim_buf_set_name(buf, VAULT_A .. "/after.md")
   engine.is_vault_buf(buf)
-  local after = memo_stats()
+  local after = assert(memo_stats())
 
   assert_eq(after.misses - before.misses, 1,
     "rename must produce a fresh miss (version changed with the name)")

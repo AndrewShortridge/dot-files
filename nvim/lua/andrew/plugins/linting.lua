@@ -67,6 +67,7 @@ return {
         wanted = wanted or lint.linters_by_ft[vim.bo.filetype] or {}
         local missing = {}
         for _, name in ipairs(wanted) do
+          ---@type lint.Linter|(fun():lint.Linter)|nil
           local l = lint.linters[name]
           if type(l) == "function" then
             local ok, resolved = pcall(l)
@@ -788,6 +789,7 @@ return {
       local linters = lint.linters_by_ft[ft]
       vim.notify("Filetype: " .. ft .. ", Linters: " .. vim.inspect(linters))
       if linters and #linters > 0 then
+        ---@type lint.Linter|(fun():lint.Linter)|nil
         local linter = lint.linters[linters[1]]
         -- The Fortran linter is registered as a function (see the note at its
         -- definition); resolve it the same way nvim-lint's lookup_linter does.
@@ -815,9 +817,6 @@ return {
       update_in_insert = false,
       severity_sort = true,
     }, workspace_ns)
-
-    -- Global table to store workspace diagnostic counts (accessible from lualine)
-    _G.fortran_workspace_diagnostics = { errors = 0, warnings = 0, info = 0 }
 
     -- Lint entire Fortran workspace (all files in code/ directory)
     keymap.set("n", "<leader>Lw", function()
@@ -874,9 +873,8 @@ return {
       vim.notify("Linting " .. #files .. " Fortran files with " .. fortran_config.compiler .. "...")
 
       -- gfortran exits 0 when it only emitted WARNINGS, so on_exit must not
-      -- treat code == 0 as "nothing found": it used to overwrite
-      -- _G.fortran_workspace_diagnostics (the lualine counts) back to zeros and
-      -- print "no issues" right after on_stderr had published the real set.
+      -- treat code == 0 as "nothing found": it used to print "no issues"
+      -- right after on_stderr had published the real set.
       local reported = false
 
       -- Run linter asynchronously
@@ -892,7 +890,6 @@ return {
               local diagnostics_by_file = {}
               local error_count = 0
               local warn_count = 0
-              local info_count = 0
 
               local parser_type = compiler_cfg.parser
 
@@ -941,7 +938,6 @@ return {
                     warn_count = warn_count + 1
                   elseif sev_lower == "note" or sev_lower == "remark" or sev_lower == "info" then
                     sev = vim.diagnostic.severity.INFO
-                    info_count = info_count + 1
                   else
                     error_count = error_count + 1
                   end
@@ -966,13 +962,6 @@ return {
               vim.schedule(function()
                 reported = true
 
-                -- Update global diagnostics count
-                _G.fortran_workspace_diagnostics = {
-                  errors = error_count,
-                  warnings = warn_count,
-                  info = info_count,
-                }
-
                 -- Set diagnostics for each file
                 for file, diags in pairs(diagnostics_by_file) do
                   -- Get or create buffer for file
@@ -992,7 +981,6 @@ return {
               end)
             else
               vim.schedule(function()
-                _G.fortran_workspace_diagnostics = { errors = 0, warnings = 0, info = 0 }
                 vim.notify("No issues found in workspace", vim.log.levels.INFO)
               end)
             end
@@ -1002,7 +990,6 @@ return {
           if code == 0 then
             vim.schedule(function()
               if not reported then
-                _G.fortran_workspace_diagnostics = { errors = 0, warnings = 0, info = 0 }
                 vim.notify("Workspace lint complete - no issues", vim.log.levels.INFO)
               end
             end)
@@ -1017,7 +1004,6 @@ return {
       for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
         vim.diagnostic.reset(workspace_ns, bufnr)
       end
-      _G.fortran_workspace_diagnostics = { errors = 0, warnings = 0, info = 0 }
       vim.fn.setqflist({})
       vim.notify("Workspace diagnostics cleared", vim.log.levels.INFO)
     end, { desc = "Lint: Clear workspace diagnostics" })

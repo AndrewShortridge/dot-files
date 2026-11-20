@@ -111,9 +111,8 @@ end
 
 --- Collect backlinks using the vault index (O(1) lookup).
 --- Returns empty when the index is not yet ready (non-blocking).
----@param note_name string
 ---@return {name: string, path: string}[] link entries with display name and absolute path
-function M.collect_backlinks(note_name)
+function M.collect_backlinks()
   local current_path = vim.api.nvim_buf_get_name(0)
 
   -- Try vault index first

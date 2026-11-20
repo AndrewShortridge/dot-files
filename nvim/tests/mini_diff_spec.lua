@@ -55,11 +55,20 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/mini_diff_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
 local cfg = vim.fn.stdpath("config")
-local md = dofile(cfg .. "/lua/andrew/plugins/mini-diff.lua")
+--- The parts of lua/andrew/plugins/mini-diff.lua's lazy spec these tests read.
+---@class MiniDiffSpecPluginSpec
+---@field [1] string
+---@field version string|boolean
+---@field enabled? boolean|(fun(): boolean)
+---@field opts { view: { style: string, priority: integer }, mappings: table<string, string> }
+---@field config fun(plugin: LazyPlugin?, opts: table)  called with nil for the plugin below
+
+local md = dofile(cfg .. "/lua/andrew/plugins/mini-diff.lua") ---@type MiniDiffSpecPluginSpec
 
 test("spec points at mini.diff and pins no version", function()
   assert_eq(md[1], "echasnovski/mini.diff", "spec must point at echasnovski/mini.diff")
@@ -73,6 +82,8 @@ test("mini.diff does not disable gitsigns", function()
   --   { "lewis6991/gitsigns.nvim", enabled = false }
   -- Adopting it would silently delete the whole <leader>gh group, ]g/[g/]H/[H
   -- and the ih textobject.
+  ---@param t any  any value of the spec tree
+  ---@param depth integer
   local function scan(t, depth)
     if type(t) ~= "table" or depth > 4 then
       return
@@ -108,45 +119,89 @@ end)
 -- Run the REAL config against a stubbed mini.diff, on an UNATTACHED buffer
 -- ---------------------------------------------------------------------------
 
-local maps, commands, notifies = {}, {}, {}
-local autocmds, toggles = {}, {}
+--- A vim.keymap.set call the stub recorded, keyed "<mode>:<lhs>".
+---@class MiniDiffSpecKeymap
+---@field rhs string|function
+---@field opts vim.keymap.set.Opts
+
+--- A vim.api.nvim_create_user_command call the stub recorded, keyed by name.
+---@class MiniDiffSpecUserCommand
+---@field fn string|fun(args: vim.api.keyset.create_user_command.command_args)
+---@field desc? string
+
+--- A vim.api.nvim_create_autocmd call the stub recorded.
+---@class MiniDiffSpecAutocmd
+---@field event vim.api.keyset.events|vim.api.keyset.events[]
+---@field opts vim.api.keyset.create_autocmd
+
+--- What the fake MiniDiff.get_buf_data returns for an attached buffer.
+---@class MiniDiffSpecBufData
+---@field hunks table[]
+---@field overlay boolean
+
+local maps = {} ---@type table<string, MiniDiffSpecKeymap>
+local commands = {} ---@type table<string, MiniDiffSpecUserCommand>
+local notifies = {} ---@type string[]
+local autocmds = {} ---@type MiniDiffSpecAutocmd[]
+-- Buffers the fake toggle_overlay was called for.
+local toggles = {} ---@type integer[]
 local stub_attached, stub_overlay = false, false
 
 do
   package.loaded["mini.diff"] = {
     setup = function() end,
     -- The whole point: an unattached buffer returns nil here.
+    ---@return MiniDiffSpecBufData|nil
     get_buf_data = function()
       return stub_attached and { hunks = {}, overlay = stub_overlay } or nil
     end,
     enable = function() end,
     toggle = function() end,
+    ---@param b integer
     toggle_overlay = function(b)
       toggles[#toggles + 1] = b
       stub_overlay = not stub_overlay
     end,
+    ---@return vim.quickfix.entry[]
     export = function() return {} end,
+    ---@return string
     operator = function() return "g@" end,
     textobject = function() end,
   }
 
   local real_set, real_cmd, real_notify = vim.keymap.set, vim.api.nvim_create_user_command, vim.notify
   local real_au = vim.api.nvim_create_autocmd
+  -- Stubbed on purpose for this test; restored after md.config ran, below.
+  ---@param event vim.api.keyset.events|vim.api.keyset.events[]
+  ---@param opts? vim.api.keyset.create_autocmd
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.api.nvim_create_autocmd = function(event, opts)
     autocmds[#autocmds + 1] = { event = event, opts = opts or {} }
   end
+  -- Stubbed on purpose for this test; restored after md.config ran, below.
+  ---@param mode string|string[]
+  ---@param lhs string  0.13 also accepts string[]; the config passes one lhs per call
+  ---@param rhs string|function
+  ---@param opts? vim.keymap.set.Opts
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.keymap.set = function(mode, lhs, rhs, opts)
-    local modes = type(mode) == "string" and { mode } or mode
+    -- A single mode becomes a one-element list.
+    local modes = (type(mode) == "string" and { mode } or mode) --[[@as string[] ]]
     for _, m in ipairs(modes) do
       maps[m .. ":" .. lhs] = { rhs = rhs, opts = opts or {} }
     end
   end
+  -- Stubbed on purpose for this test; restored after md.config ran, below.
+  ---@param name string
+  ---@param fn string|fun(args: vim.api.keyset.create_user_command.command_args)
+  ---@param opts? vim.api.keyset.user_command
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.api.nvim_create_user_command = function(name, fn, opts)
     commands[name] = { fn = fn, desc = (opts or {}).desc }
   end
+  -- Stubbed on purpose for this test; restored after md.config ran, below.
+  -- Fake of vim.notify(msg: string, level?: integer, opts?: table); only msg is recorded.
+  ---@param msg string
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.notify = function(msg)
     notifies[#notifies + 1] = tostring(msg)
@@ -186,8 +241,13 @@ end)
 --- Run `fn` with vim.notify intercepted into `notifies`.
 --- Required because the guard resolves vim.notify at CALL time, so stubbing it
 --- only while `config` ran would miss every message.
+---@param fn fun(): any
+---@return boolean ok
+---@return any result  fn's return value, or the error it raised
 local function with_notify(fn)
   local real = vim.notify
+  -- Stubbed on purpose while fn runs; restored right after the pcall below.
+  ---@param msg string
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.notify = function(msg)
     notifies[#notifies + 1] = tostring(msg)
@@ -230,7 +290,8 @@ test(":MiniDiffOverlay is guarded too, not just the keymap", function()
   -- The user's traceback came through the keymap, but the command reaches the
   -- identical upstream call.
   notifies = {}
-  local ok, err = with_notify(function() return commands["MiniDiffOverlay"].fn() end)
+  -- The config's MiniDiffOverlay handler (its toggle_overlay) takes no arguments.
+  local ok, err = with_notify(function() return (commands["MiniDiffOverlay"].fn --[[@as fun()]])() end)
   assert_true(ok, ":MiniDiffOverlay must not raise on an unattached buffer: " .. tostring(err))
   assert_true(#notifies > 0, ":MiniDiffOverlay must explain why nothing happened")
 end)
@@ -263,14 +324,23 @@ vim.api.nvim_buf_delete(scratch, { force = true })
 -- registers `on_detach -> disable`, and nvim fires on_detach on ANY reload --
 -- upstream's comment says "including `:edit`". So the choice was silently lost.
 
-local restore_au
+--- The MiniDiffUpdated hook as these tests drive it: its callback reads only `ev.buf`.
+---@class MiniDiffSpecRestoreHook
+---@field event vim.api.keyset.events|vim.api.keyset.events[]
+---@field opts { pattern?: string|string[], callback: fun(ev: { buf: integer }) }
+
+-- Set by the first test below; the later tests index it unguarded and fail
+-- (crash) if that test found no hook.
+local restore_au ---@type MiniDiffSpecRestoreHook?
 test("config registers a MiniDiffUpdated restore hook", function()
   for _, a in ipairs(autocmds) do
     if a.event == "User" and a.opts.pattern == "MiniDiffUpdated" then
-      restore_au = a
+      -- The callback's type (a function, asserted below) is what the cast narrows.
+      restore_au = a --[[@as MiniDiffSpecRestoreHook]]
     end
   end
   assert_true(restore_au ~= nil, "a User MiniDiffUpdated autocmd must be created to restore the overlay")
+  ---@cast restore_au -nil
   assert_true(type(restore_au.opts.callback) == "function", "the hook must have a callback")
 end)
 
@@ -280,6 +350,7 @@ local prev2 = vim.api.nvim_get_current_buf()
 vim.api.nvim_set_current_buf(named)
 
 test("the overlay choice is re-applied after a reload", function()
+  ---@cast restore_au -nil
   stub_attached, stub_overlay = true, false
 
   -- 1. the user turns the overlay on
@@ -297,6 +368,7 @@ test("the overlay choice is re-applied after a reload", function()
 end)
 
 test("the hook does not loop once the overlay is restored", function()
+  ---@cast restore_au -nil
   -- toggle_overlay schedules another update, which fires the hook again.
   toggles = {}
   restore_au.opts.callback({ buf = named })
@@ -304,6 +376,7 @@ test("the hook does not loop once the overlay is restored", function()
 end)
 
 test("turning the overlay off is remembered too", function()
+  ---@cast restore_au -nil
   -- Guard against over-correcting into "always force the overlay on".
   stub_attached, stub_overlay = true, true
   with_notify(function() return maps["n:<leader>go"].rhs() end)
@@ -315,6 +388,7 @@ test("turning the overlay off is remembered too", function()
 end)
 
 test("a buffer the user never touched is left alone", function()
+  ---@cast restore_au -nil
   local other = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(other, "/tmp/andrew-minidiff-spec-other.txt")
   stub_attached, stub_overlay = true, false
@@ -332,35 +406,68 @@ stub_attached, stub_overlay = false, false
 -- Cross-plugin collision check against gitsigns' REAL map set
 -- ---------------------------------------------------------------------------
 
+--- The part of gitsigns' resolved opts these tests call.
+---@class MiniDiffSpecGitsignsOpts
+---@field on_attach fun(bufnr: integer)
+
+--- Stands in for the snacks.toggle.Class that Snacks.toggle() returns; only
+--- `:map()` is reached, and it does nothing.
+---@class MiniDiffSpecNoopToggle
+---@field map fun(self: MiniDiffSpecNoopToggle): MiniDiffSpecNoopToggle
+
 --- gitsigns' `opts` is a function: it registers the <leader>uG "Git Signs"
 --- Snacks.toggle and then returns the options table. Resolve it behind a
 --- stubbed Snacks so these specs keep reaching on_attach.
+---@param spec LazyPluginSpec
+---@return MiniDiffSpecGitsignsOpts
 local function gitsigns_opts(spec)
   if type(spec.opts) ~= "function" then
-    return spec.opts
+    return spec.opts --[[@as MiniDiffSpecGitsignsOpts]]
   end
   local prev = _G.Snacks
-  local noop_toggle = {}
-  noop_toggle.map = function(self) return self end
-  -- the spec calls Snacks.toggle({...}):map(...), so `toggle` is the callable
-  _G.Snacks = { toggle = setmetatable({}, { __call = function() return noop_toggle end }) }
-  local ok, res = pcall(spec.opts)
+  ---@type MiniDiffSpecNoopToggle
+  local noop_toggle = {
+    ---@param self MiniDiffSpecNoopToggle
+    ---@return MiniDiffSpecNoopToggle
+    map = function(self) return self end,
+  }
+  -- The spec calls Snacks.toggle({...}):map(...), so `toggle` is the callable.
+  -- A partial Snacks on purpose: gitsigns' opts() reaches nothing but Snacks.toggle.
+  local fake_snacks = {
+    toggle = setmetatable({}, {
+      ---@return MiniDiffSpecNoopToggle
+      __call = function() return noop_toggle end,
+    }),
+  }
+  _G.Snacks = fake_snacks --[[@as Snacks]]
+  -- A function here: the table case returned above.
+  local ok, res = pcall(spec.opts --[[@as fun(): MiniDiffSpecGitsignsOpts]])
   _G.Snacks = prev
   assert(ok, "gitsigns opts() failed: " .. tostring(res))
-  return res
+  return res --[[@as MiniDiffSpecGitsignsOpts]]
 end
 
-local gitsigns_maps = {}
+-- Mapping desc (or true for one without) per "<mode>:<lhs>" gitsigns binds.
+local gitsigns_maps = {} ---@type table<string, string|true>
 do
-  local gs_spec = dofile(cfg .. "/lua/andrew/plugins/gitsigns.lua")
+  local gs_spec = dofile(cfg .. "/lua/andrew/plugins/gitsigns.lua") ---@type LazyPluginSpec
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].filetype = "lua"
   local noop = function() end
-  package.loaded.gitsigns = setmetatable({}, { __index = function() return noop end })
+  package.loaded.gitsigns = setmetatable({}, {
+    ---@return fun()
+    __index = function() return noop end,
+  })
   local real_set = vim.keymap.set
+  -- Stubbed on purpose to record gitsigns' maps; restored right after on_attach ran.
+  ---@param mode string|string[]
+  ---@param lhs string  0.13 also accepts string[]; on_attach passes one lhs per call
+  ---@param _ string|function
+  ---@param opts? vim.keymap.set.Opts
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.keymap.set = function(mode, lhs, _, opts)
-    local modes = type(mode) == "string" and { mode } or mode
+    -- A single mode becomes a one-element list.
+    local modes = (type(mode) == "string" and { mode } or mode) --[[@as string[] ]]
     for _, m in ipairs(modes) do
       gitsigns_maps[m .. ":" .. lhs] = (opts or {}).desc or true
     end

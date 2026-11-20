@@ -360,7 +360,7 @@ Per-language type checking via terminal split (30% height):
 | `<leader>t` | Tabs/Terminal | `to` new, `tx` close, `tn` next, `tp` prev, `tf` buffer to tab, `tt` floating terminal |
 | `<leader>g` | Git | `gg` lazygit, `gl` log, `gf` file history, `gb` blame line, `gs` status, `gS` stash, `gd`/`gD` diff, `gB`/`gY` browse, `gv` CodeDiff review tab, `gt`/`gT` CodeDiff file/repo history |
 | `gh` / `gH` | mini.diff | Apply / reset a hunk range (operators); `gh` is also the hunk text object. `<leader>go` toggles the overlay |
-| `<leader>gh` | Hunks | `ghs` stage, `ghr` reset, `ghS` stage buffer, `ghR` reset buffer, `ghb` blame, `ghB` blame buffer, `ghd` diff, `ght` toggle inline blame |
+| `<leader>gh` | Hunks | `ghs` stage, `ghu` unstage (the hunk under the cursor), `ghr` reset, `ghS` stage buffer, `ghR` reset buffer, `ghb` blame, `ghB` blame buffer, `ghd` diff, `ght` toggle inline blame |
 | `<leader>c` | Code Actions | `ca` code action |
 | `<leader>c` | Code | `ca` action, `cA` source, `co` organize imports, `cc`/`cC` codelens, `cr`/`cR` rename, `cd` diagnostics, `cf`/`cF` format, `cs`/`cS` Trouble, `cl` info, `cm` Mason |
 | `<leader>d` | Debug | `db` breakpoint, `dc` continue, `do`/`di`/`dO` step, `dt` terminate (no longer shadowed by a diagnostic float) |
@@ -478,8 +478,57 @@ An Obsidian-like note template system for creating structured notes:
 - Use **local aliases** for frequently used modules:
   ```lua
   local keymap = vim.keymap
-  local opt = vim.opt
   ```
+- Assign a plain GLOBAL option value (boolean, number, string) through
+  `vim.o`, not `vim.opt`. Neovim 0.13 types every `vim.opt` field as
+  `vim.Option`, so lua_ls flags a plain value assigned to one
+  (`assign-type-mismatch`); `vim.o` fields carry the option's real type, and
+  both set the option as `:set` does. Keep `vim.opt` for a list given as a
+  table and for `:append()` / `:prepend()` / `:remove()`. `core/options.lua`
+  follows this. For `:setlocal`, in place of `vim.opt_local`, use `vim.bo` for
+  a buffer option and `vim.wo[0][0]` for a window option, as `ftplugin/tex.lua`
+  does: plain `vim.wo[win].x` writes the window's global value too.
+  `ftplugin/markdown.lua`, `plugins/lualine.lua` and `init.lua` still assign
+  through `vim.opt` / `vim.opt_local` (lua_ls does not flag those lines).
+- Call a function Neovim 0.13 deprecated through
+  `lua/andrew/utils/nvim_compat.lua` (`uri_to_buffer`, `uri_from_buffer`,
+  `uri_from_file_name`, `uri_to_file_name`, `set_window_width`,
+  `highlight_yanked_text`), never by
+  either name directly: 0.12 has only the old name and 0.13 warns on it. Once
+  0.12.5 is no longer the fallback, call the 0.13 functions and delete the
+  module.
+- The config's own Lua (everything outside `tests/` and `temp/`) is kept free
+  of lua_ls diagnostics. Fix the annotation or the code rather than hide the
+  message; a `---@diagnostic disable-next-line: <code>` is for a wrong
+  annotation in a plugin or the runtime only, with a comment above it naming
+  it. The deliberate replacements of plugin and Neovim functions (md-render
+  adapters, `lsp_float.lua`, `ts_directive_compat.lua`) carry
+  `duplicate-set-field` for that reason.
+- The test files are held to a stricter bar: no lua_ls diagnostics even with
+  its off-by-default `no-unknown` check, and every type written out. Every
+  function with parameters has a `---@param` per parameter (`---@return` when
+  it returns a value), a callback literal with parameters has `---@param`
+  lines above it, and every `local x = {}` carries a `---@type`. Conventions:
+  - Each spec annotates its harness: `---@type SpecHelper` above
+    `local _H = dofile(...)` (`---@type SpecFixtures` for `fixtures.lua`).
+    lua_ls cannot follow `dofile`; both classes live in those two files.
+  - A stub assigned to a global or runtime function (`vim.system`,
+    `vim.uv.fs_open`, `string.find`, ...) is typed with that function's REAL
+    signature and a fake value is cast to the real return type. lua_ls merges
+    whatever is assigned to such a field into its type for the whole
+    workspace, so a fake return type turns into warnings in the config code.
+  - A test that passes a wrong type on purpose keeps the API's annotation
+    strict and marks the call: `-- Invalid on purpose: <what it checks>.` then
+    `---@diagnostic disable-next-line: param-type-mismatch`.
+  - Plugin types (`blink.cmp.*`, `wk.Spec`, ...) come in through a line
+    `---@module "<plugin>"` in a block of its own (blank line after it):
+    lazydev loads that plugin's library for the file. Directly above a
+    statement it would also retype that local as the module, which is right
+    only for `---@module "andrew.plugins.x"` above `local plug = dofile(...)`.
+    `Snacks` and lazy.nvim's `Lazy*` classes load by name (lazydev `words` in
+    `plugins/lsp/lspconfig.lua`).
+  - A cast claims nothing the code has not proved: `---@cast x -nil` only
+    after the `_H.assert_*` call (they raise) or the guard that established it.
 
 ### Clean Code Naming Conventions
 
@@ -617,12 +666,11 @@ conform.setup({...})
 ```lua
 -- Good: Core contains only fundamental settings
 -- lua/andrew/core/options.lua
-local opt = vim.opt
-opt.number = true
-opt.relativenumber = true
-opt.tabstop = 2
-opt.shiftwidth = 2
-opt.expandtab = true
+vim.o.number = true
+vim.o.relativenumber = true
+vim.o.tabstop = 2
+vim.o.shiftwidth = 2
+vim.o.expandtab = true
 
 -- lua/andrew/core/keymaps.lua
 local keymap = vim.keymap
@@ -1146,6 +1194,26 @@ onedark's colours instead of his solarized-osaka ones. bufferline.nvim is gone.
   `<leader>/` and grep pickers use; the two can differ.
 - The file name's highlights are built with lualine's `create_hl`, which fills
   in the section's own colours; keep it that way rather than a bare `%#Group#`.
+
+**The statusline shows two diagnostics counts** (`lua/andrew/plugins/lualine.lua`):
+the workspace's behind a folder icon, then the current file's. Each hides
+while it is zero.
+
+- "Workspace" is every buffer Neovim holds diagnostics for, shown or not: the
+  entries `<leader>xw` lists, as the file count is what `<leader>xd` lists.
+  lua_ls reports on files nobody opened, so for Lua it is the project; a
+  server that reports on open files only contributes the files opened so
+  far. lua_ls fills its share in over the first half minute, and opening a
+  file can still add to it (`core/options.lua` added 28; cause not looked
+  into).
+- Fortran's `<leader>Lw` results are in that count (they are ordinary
+  diagnostics in their own namespace); the Fortran-only counter the
+  statusline had was removed for it. A diagnostic the per-file linter also
+  reports is counted twice, as `<leader>xw` lists it twice.
+- `/temp/` is in `.gitignore` FOR this count: lua_ls honours `.gitignore`, and
+  the md-render.nvim clone there was 278 of the workspace's 326 warnings. A
+  `.luarc.json` is not the way to exclude a directory -- lazydev.nvim warns
+  on every start when it finds one.
 
 **The markdown renderer is switchable** (`lua/andrew/utils/markdown_renderer.lua`,
 set up from `init.lua`, pinned by `tests/markdown_renderer_switch_spec.lua`), the

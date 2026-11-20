@@ -29,6 +29,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/embed_has_token_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -42,12 +43,15 @@ local engine = require("andrew.vault.engine")
 print("\n=== Embed has_token Gate Perf Tests ===\n")
 
 -- A trivial code-exclusion predicate: nothing is inside a code span/block.
+---@return boolean
 local function no_code_excl() return false end
 
 -- Create a scratch buffer named inside a temp "vault" so engine.is_vault_buf
 -- returns true, seed it with `lines`, and warm the REAL pipeline parse cache
 -- for it via line_parse_cache.update (the same store lpc.has_token /
 -- lpc.pipeline_token_iter read through pipeline.get_parse_cache()).
+---@param lines string[]
+---@return integer buf
 local function make_warm_vault_buf(lines)
   local vault = vim.fn.tempname()
   vim.fn.mkdir(vault, "p")
@@ -70,6 +74,9 @@ end
 -- The render's operation_fn runs synchronously (request_coalescer pcalls it
 -- inline), so the counts are observed after the call returns. All spies are
 -- restored in every path.
+---@param buf integer
+---@return integer iter_calls
+---@return integer sort_calls_in_iter
 local function render_and_count(buf)
   -- Bypass the upstream state.has_embeds() regex prefilter so execution always
   -- reaches build_descriptors: mark the buffer's embed state visible. This is
@@ -87,12 +94,18 @@ local function render_and_count(buf)
   -- observes the sorted-line-number build inside iter_tokens (the work the fix
   -- elides) and ignores unrelated sorts elsewhere in the render path.
   local in_iter = false
-  table.sort = function(...)
+  ---@param list table
+  ---@param comp? fun(a: any, b: any): boolean
+  local function spy_sort(list, comp)
     if in_iter then sort_calls_in_iter = sort_calls_in_iter + 1 end
-    return orig_sort(...)
+    orig_sort(list, comp)
   end
+  table.sort = spy_sort
 
-  lpc.iter_tokens = function(b, ttype)
+  ---@param b number
+  ---@param ttype string
+  ---@return fun(): number?, LineToken? iterator yielding (line_nr, token)
+  local function spy_iter_tokens(b, ttype)
     if b == buf and ttype == "embed" then
       iter_calls = iter_calls + 1
     end
@@ -102,6 +115,7 @@ local function render_and_count(buf)
     if not ok_i then error(r1) end
     return r1
   end
+  lpc.iter_tokens = spy_iter_tokens
 
   local ok, err = pcall(embed.render_embeds, { force = true })
 

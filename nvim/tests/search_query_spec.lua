@@ -4,6 +4,7 @@
 --   match_has, match_task} and search_filter.match_entry integration.
 -- Run with: nvim --headless -u NONE -l tests/search_query_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_deep_eq, assert_true, assert_false, assert_nil, assert_match =
   _H.test, _H.assert_eq, _H.assert_deep_eq, _H.assert_true, _H.assert_false, _H.assert_nil, _H.assert_match
@@ -29,11 +30,56 @@ local config = require("andrew.vault.config")
 -- Fixtures (fixed, deterministic dates)
 -- ============================================================================
 
+---@param y integer
+---@param m integer
+---@param d integer
+---@param h? integer
+---@param mi? integer
+---@param s? integer
+---@return integer
 local function ts(y, m, d, h, mi, s)
   return os.time({ year = y, month = m, day = d, hour = h or 0, min = mi or 0, sec = s or 0 })
 end
 
+-- The matcher fixture is a partial VaultIndexEntry (no stat/heading/derived
+-- set fields), so it gets its own class with exactly the fields it carries.
+---@class SearchQuerySpecTask
+---@field text string
+---@field text_lower string
+---@field status string
+---@field completed boolean
+---@field priority? integer
+---@field due? string
+---@field scheduled? string
+---@field completion? string
+---@field repeat_rule? string
+---@field repeat_rule_lower? string
+---@field tags_lower table<string, boolean>
+
+---@class SearchQuerySpecOutlink
+---@field path string
+---@field _name_lower string
+
+---@class SearchQuerySpecEntry
+---@field rel_path string
+---@field rel_stem string
+---@field rel_stem_lower string
+---@field basename string
+---@field basename_lower string
+---@field folder string
+---@field day string
+---@field day_ts integer
+---@field created_ts integer
+---@field modified_ts integer
+---@field tags string[]
+---@field aliases string[]
+---@field frontmatter table<string, string|integer>
+---@field inline_fields table<string, string>
+---@field outlinks SearchQuerySpecOutlink[]
+---@field tasks SearchQuerySpecTask[]
+
 --- Build a fresh VaultIndexEntry-shaped fixture for matcher tests.
+---@return SearchQuerySpecEntry
 local function make_entry()
   return {
     rel_path = "Projects/Alpha Note.md",
@@ -85,10 +131,13 @@ local function make_entry()
 end
 
 --- Parse a query and return its AST, asserting success.
+---@param q string
+---@return table
 local function parse_ok(q)
   local ast, err = sq.parse_query(q)
   assert_nil(err, "parse_query('" .. q .. "') unexpected error")
   assert_true(ast ~= nil, "parse_query('" .. q .. "') returned nil ast")
+  ---@cast ast -nil
   return ast
 end
 
@@ -256,9 +305,13 @@ test("parse: empty / whitespace / non-string queries error 'empty query'", funct
   ast, err = sq.parse_query("   ")
   assert_nil(ast)
   assert_eq(err, "empty query")
+  -- Invalid on purpose: a nil query must be rejected as "empty query".
+  ---@diagnostic disable-next-line: param-type-mismatch
   ast, err = sq.parse_query(nil)
   assert_nil(ast)
   assert_eq(err, "empty query")
+  -- Invalid on purpose: a non-string query must be rejected as "empty query".
+  ---@diagnostic disable-next-line: param-type-mismatch
   ast, err = sq.parse_query(42)
   assert_nil(ast)
   assert_eq(err, "empty query")
@@ -365,7 +418,7 @@ end)
 
 test("classify: memoizes into provided cache", function()
   local ast = parse_ok("status:active hello")
-  local cache = {}
+  local cache = {} ---@type table<table, string>
   assert_eq(classify_mod.classify(ast, cache), "mixed")
   assert_eq(cache[ast], "mixed")
   -- second call served from cache, same answer
@@ -493,7 +546,7 @@ test("get_generic_field: frontmatter wins over inline_fields", function()
 end)
 
 test("get_generic_field: config field_aliases path resolution", function()
-  local saved = config.search.field_aliases
+  local saved = config.search.field_aliases ---@type table<string, string>
   config.search.field_aliases = { area2 = "frontmatter.area" }
   local ok, err = pcall(function()
     local entry = make_entry()
@@ -806,6 +859,8 @@ test("date_utils: is_relative_duration", function()
   assert_true(date_utils.is_relative_duration("7D"))
   assert_false(date_utils.is_relative_duration("7"))
   assert_false(date_utils.is_relative_duration("2026-01-01"))
+  -- Invalid on purpose: a nil value is not a relative duration.
+  ---@diagnostic disable-next-line: param-type-mismatch
   assert_false(date_utils.is_relative_duration(nil))
 end)
 
@@ -854,7 +909,10 @@ test("filter_utils: parse_tag_filter include/exclude lists", function()
 end)
 
 test("filter_utils: matches_include_exclude semantics", function()
+  ---@param target string
+  ---@return fun(item: any): boolean
   local function eq(target)
+    ---@param item any
     return function(item) return item == target end
   end
   assert_true(filter_utils.matches_include_exclude({ "a" }, { "b" }, eq("a")), "include matches")
@@ -893,6 +951,8 @@ test("filter_utils: get_entry_timestamp fast paths and fallbacks", function()
   local fs2 = { mtime = 12345 }
   assert_eq(filter_utils.get_entry_timestamp(fs2, "created"), 12345, "ctime falls back to mtime")
 
+  -- Invalid on purpose: a nil entry has no timestamp.
+  ---@diagnostic disable-next-line: param-type-mismatch
   assert_nil(filter_utils.get_entry_timestamp(nil, "created"))
   assert_nil(filter_utils.get_entry_timestamp({}, "day"))
 end)
@@ -970,6 +1030,8 @@ end)
 
 test("match_entry: nil AST matches, nil entry does not", function()
   assert_true(search_filter.match_entry(nil, make_entry(), nil))
+  -- Invalid on purpose: a nil entry never matches.
+  ---@diagnostic disable-next-line: param-type-mismatch
   assert_false(search_filter.match_entry(parse_ok("type:note"), nil, nil))
 end)
 

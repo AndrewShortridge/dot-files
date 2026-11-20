@@ -47,6 +47,7 @@ local M = {}
 
 local scan = require("andrew.fortran.scan")
 local IH = require("andrew.fortran.lsp_inlayhint")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 --- The `source` field of every diagnostic here, matching the server name.
 M.SOURCE = "fortran-extras"
@@ -556,7 +557,7 @@ function M.on_change(params, publish)
   if not uri or type(publish) ~= "function" then
     return
   end
-  local bufnr = vim.uri_to_bufnr(uri)
+  local bufnr = nvim_compat.uri_to_buffer(uri)
   if not vim.api.nvim_buf_is_loaded(bufnr) then
     return
   end

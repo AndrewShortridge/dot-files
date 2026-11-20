@@ -25,6 +25,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/readable_width_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_match = _H.test, _H.assert_eq, _H.assert_true, _H.assert_match
 
@@ -33,6 +34,7 @@ package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.pa
 
 local config = require("andrew.vault.config")
 local rw = require("andrew.vault.readable_width")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 local TARGET = 30
 config.readable_width.columns = TARGET
@@ -48,6 +50,7 @@ local function reset()
   rw.enable()
 end
 
+---@return integer buf
 local function md_buf()
   local buf = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# T", "- [ ] task", "body" })
@@ -55,19 +58,24 @@ local function md_buf()
   return buf
 end
 
+---@param win integer
+---@return boolean
 local function is_pad(win)
   local ok, v = pcall(vim.api.nvim_win_get_var, win, "vault_readable_pad")
   return ok and v == true
 end
 
+---@return integer
 local function pads()
-  local n = 0
+  local n = 0 ---@type integer
   for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     if is_pad(w) then n = n + 1 end
   end
   return n
 end
 
+---@param win integer
+---@return integer
 local function text_width(win)
   local info = vim.fn.getwininfo(win)[1]
   return vim.api.nvim_win_get_width(win) - info.textoff
@@ -114,7 +122,7 @@ test("survives a winfixwidth neighbour (the vault sidebar)", function()
   vim.cmd("botright vsplit")
   local sb = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(sb, vim.api.nvim_create_buf(false, true))
-  vim.api.nvim_win_set_width(sb, 12)
+  nvim_compat.set_window_width(sb, 12)
   vim.wo[sb].winfixwidth = true
   vim.api.nvim_set_current_win(content)
 
@@ -140,7 +148,7 @@ test("a window too narrow to pad keeps all its columns", function()
   reset()
   vim.api.nvim_set_current_buf(md_buf())
   local content = vim.api.nvim_get_current_win()
-  local saved = config.readable_width.columns
+  local saved = config.readable_width.columns ---@type integer
   -- Target wider than the window can afford alongside min_pad_width on both sides.
   config.readable_width.columns = vim.o.columns - 4
 
@@ -171,7 +179,7 @@ test("pad windows are scratch, fixed-width and unlisted", function()
   reset()
   vim.api.nvim_set_current_buf(md_buf())
   rw.apply()
-  local seen = 0
+  local seen = 0 ---@type integer
   for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     if is_pad(w) then
       seen = seen + 1
@@ -193,8 +201,8 @@ test("never leaves the text NARROWER than the target it was asked for", function
   -- that happens it over-pads, the corrective iteration hits the min_pad floor
   -- and declines, and without the verify-and-give-up guard the text ends up
   -- narrower than requested. Drop that guard and this fails.
-  local saved = config.readable_width.columns
-  local checked, applied = 0, 0
+  local saved = config.readable_width.columns ---@type integer
+  local checked, applied = 0, 0 ---@type integer, integer
   for _, target in ipairs({ 20, 25, 30, 36, 44, 55, 70 }) do
     for _, gutter in ipairs({ { false, "0", "no" }, { true, "1", "yes" }, { true, "2", "yes:2" } }) do
       config.readable_width.columns = target

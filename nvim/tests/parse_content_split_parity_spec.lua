@@ -17,6 +17,7 @@
 -- Drives the REAL parser (no mock). Run with:
 --   nvim --headless -u NONE -l tests/parse_content_split_parity_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -25,6 +26,8 @@ local P = require("andrew.vault.vault_index_parser")
 
 print("\n=== parse_content Split Parity Tests ===\n")
 
+---@param content string
+---@return VaultIndexEntry
 local function parse(content)
   return P.parse_content(content, "Note.md", {
     mtime = { sec = 1 }, size = #content, birthtime = { sec = 1 },
@@ -68,7 +71,8 @@ test("frontmatter note: content-relative headings/blocks, body-relative tasks", 
   assert_eq(e.tasks[1].due, "2026-01-01", "task alpha due field")
   assert_true(e.tasks[2].completed, "task beta completed")
   local beta_has_work = false
-  for _, t in ipairs(e.tasks[2].tags or {}) do if t == "work" then beta_has_work = true end end
+  -- VaultIndexEntry.tasks is table[]; extract_tasks() fills each task's `tags` with strings.
+  for _, t in ipairs((e.tasks[2].tags or {}) --[[@as string[] ]]) do if t == "work" then beta_has_work = true end end
   assert_true(beta_has_work, "task beta carries #work tag")
 
   -- Inline fields parsed from body.
@@ -149,7 +153,7 @@ test("fenced body of FM note: tag inside ``` fence is not captured (slice keeps 
   }, "\n")
   local e = parse(content)
 
-  local has = {}
+  local has = {} ---@type table<string, boolean>
   for _, t in ipairs(e.tags or {}) do has[t] = true end
   assert_true(has["realtag"], "real tag captured")
   assert_true(has["aftertag"], "tag after fence captured")

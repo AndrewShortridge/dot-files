@@ -33,7 +33,7 @@ M._cache_registry = {}
 
 --- @class CacheSpec
 --- @field name string           Unique cache identifier
---- @field module string         Module path for display
+--- @field module string|table  Module path for display (a module table is shown as "")
 --- @field invalidate fun()      Full invalidation callback
 --- @field invalidate_file? fun(abs_path: string)  Per-file invalidation (optional)
 --- @field stats? fun(): CacheStats  Status reporting callback (optional)
@@ -46,6 +46,9 @@ M._cache_registry = {}
 --- @field total_bytes number|nil Current byte weight (memory-weighted caches)
 --- @field max_bytes number|nil   Byte budget (memory-weighted caches)
 --- @field utilization number|nil total_bytes / max_bytes (memory-weighted caches)
+--- @field index_generation number|nil Vault index generation the cache was built from
+--- @field items_count number|nil Module-specific item count
+--- @field type string|nil       Module-specific cache kind
 
 --- Register a cache with the central registry.
 --- @param spec CacheSpec
@@ -419,19 +422,21 @@ local function wrap_ui(ui_field)
 end
 
 --- Coroutine-wrapped vim.ui.input. Must be called from within M.run().
----@param opts table {prompt: string}
----@return string|nil value, nil if cancelled
+--- Takes vim.ui.input's opts ({prompt: string}); returns the entered value,
+--- nil if cancelled.
+---@type fun(opts: table): string|nil
 M.input = wrap_ui("input")
 
 --- Coroutine-wrapped vim.ui.select. Must be called from within M.run().
----@param items string[]
----@param opts table {prompt: string, format_item?: function}
----@return string|nil chosen item, nil if cancelled
+--- Takes the items and vim.ui.select's opts ({prompt: string,
+--- format_item?: function}); returns the chosen item, nil if cancelled.
+---@type fun(items: any[], opts: table): any
 M.select = wrap_ui("select")
 
 --- Returns today's date in YYYY-MM-DD format
+---@return string
 function M.today()
-  return os.date("%Y-%m-%d")
+  return os.date("%Y-%m-%d") --[[@as string]]
 end
 
 --- Format a timestamp with unpadded day number.
@@ -471,7 +476,7 @@ end
 function M.date_offset_from(date_str, days)
   local ts = date_utils.parse_iso_datetime(date_str, 12)
   if not ts then return date_str end
-  return os.date("%Y-%m-%d", ts + days * date_utils.SECS_PER_DAY)
+  return os.date("%Y-%m-%d", ts + days * date_utils.SECS_PER_DAY) --[[@as string]]
 end
 
 --- Format a date string as a long weekday string.
@@ -530,9 +535,9 @@ function M.render(template, vars)
 end
 
 -- Filesystem watcher (engine_watcher.lua) — lazy-loaded on first call
-M.start_fs_watcher = function(...) return get_watcher().start_fs_watcher(...) end
-M.stop_fs_watcher = function(...) return get_watcher().stop_fs_watcher(...) end
-M.watcher_status = function(...) return get_watcher().watcher_status(...) end
+M.start_fs_watcher = function() return get_watcher().start_fs_watcher() end
+M.stop_fs_watcher = function() return get_watcher().stop_fs_watcher() end
+M.watcher_status = function() return get_watcher().watcher_status() end
 M.note_self_write = function(...) return get_watcher().note_self_write(...) end
 
 -- =============================================================================
@@ -635,7 +640,8 @@ end
 
 --- Escape special regex/PCRE2 characters for use in ripgrep patterns.
 ---@param str string
----@return string
+---@return string escaped
+---@return integer count number of characters escaped (gsub's second result)
 function M.rg_escape(str)
   return str:gsub("([%.%+%*%?%[%]%^%$%(%)%{%}%|\\])", "\\%1")
 end

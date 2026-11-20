@@ -27,8 +27,8 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/md_render_tab_visibility_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
@@ -36,7 +36,9 @@ vim.opt.runtimepath:append(vim.fn.stdpath("data") .. "/lazy/md-render.nvim")
 vim.cmd("filetype on")
 
 -- Everything md-render sends to the terminal goes through this one function.
-local sent_to_terminal = {}
+local sent_to_terminal = {} ---@type string[]
+-- Stubbed on purpose: a recorder in place of vim.api.nvim_ui_send(content: string); never restored.
+---@param data string
 ---@diagnostic disable-next-line: duplicate-set-field
 vim.api.nvim_ui_send = function(data)
   sent_to_terminal[#sent_to_terminal + 1] = data
@@ -93,6 +95,8 @@ vim.fn.writefile(
 )
 
 --- Let timers and scheduled callbacks run until `condition` holds.
+---@param condition fun(): boolean
+---@return boolean
 local function settle(condition)
   return vim.wait(3000, condition, 20)
 end
@@ -105,6 +109,7 @@ local function let_run(milliseconds)
   end, 20)
 end
 
+---@return boolean
 local function is_view_drawn()
   return count_sent(IMAGE_PLACEMENT) > 0 and count_sent(SCALED_TEXT) > 0
 end

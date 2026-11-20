@@ -19,15 +19,23 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_fortran_lsp_async_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 local lsp = require("andrew.fortran.lsp")
+local compat = require("andrew.utils.nvim_compat")
+
+-- lsp.server() is declared `---@return table`; this is the part of the RPC
+-- object it builds that these tests drive.
+---@class AuditFortranLspAsyncServer
+---@field request fun(method: string, params: table, cb: fun(err: lsp.ResponseError?, result: any), notify_reply_callback?: fun(id: integer)): boolean, integer
 
 --- A buffer of Fortran with one name used several times.
 local uniq = 0
+---@return integer bufnr
 local function fortran_buf()
   uniq = uniq + 1
   local buf = vim.api.nvim_create_buf(false, true)
@@ -47,14 +55,17 @@ end
 
 test("a synchronous handler still replies on a later tick", function()
   local buf = fortran_buf()
-  local server = lsp.server({})
+  local server = lsp.server({}) --[[@as AuditFortranLspAsyncServer]]
 
   local replied_before_return = true
-  local result
+  local result ---@type lsp.DocumentHighlight[]?
   local ok, id = server.request("textDocument/documentHighlight", {
-    textDocument = { uri = vim.uri_from_bufnr(buf) },
+    textDocument = { uri = compat.uri_from_buffer(buf) },
     position = { line = 4, character = 4 },
-  }, function(_, res)
+  },
+  ---@param _ lsp.ResponseError?
+  ---@param res lsp.DocumentHighlight[]?
+  function(_, res)
     result = res
   end)
   assert_true(ok, "request must report success:")
@@ -66,21 +77,24 @@ test("a synchronous handler still replies on a later tick", function()
     return result ~= nil
   end)
   assert_true(result ~= nil, "the reply never arrived:")
+  ---@cast result -nil
   assert_eq(#result, 5, "documentHighlight lost the references for `field`:")
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
 
 test("notify_reply_callback fires after the response callback", function()
   local buf = fortran_buf()
-  local server = lsp.server({})
-  local order = {}
+  local server = lsp.server({}) --[[@as AuditFortranLspAsyncServer]]
+  local order = {} ---@type string[]
   local done = false
   server.request("textDocument/documentHighlight", {
-    textDocument = { uri = vim.uri_from_bufnr(buf) },
+    textDocument = { uri = compat.uri_from_buffer(buf) },
     position = { line = 4, character = 4 },
   }, function()
     order[#order + 1] = "response"
-  end, function(id)
+  end,
+  ---@param id integer
+  function(id)
     order[#order + 1] = "notify:" .. tostring(id)
     done = true
   end)
@@ -93,8 +107,11 @@ test("notify_reply_callback fires after the response callback", function()
 end)
 
 test("an unknown method still answers, on a later tick", function()
-  local server = lsp.server({})
+  local server = lsp.server({}) --[[@as AuditFortranLspAsyncServer]]
+  ---@type boolean, lsp.ResponseError|string|nil, any
   local called, err, res = false, "unset", "unset"
+  ---@param e lsp.ResponseError?
+  ---@param r any
   server.request("textDocument/nonsense", {}, function(e, r)
     called, err, res = true, e, r
   end)

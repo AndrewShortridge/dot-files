@@ -96,6 +96,10 @@ function M.make_item(label, insertText, filterText, kind, opts)
 end
 
 --- Read a completion config value with a default fallback.
+--- @generic T
+--- @param key string
+--- @param default T
+--- @return T
 local function conf(key, default)
   local c = config.completion
   return c and c[key] or default
@@ -169,8 +173,17 @@ do
   })
 end
 
+--- Options of M.create_source().
+--- @class VaultCompletionSourceOpts
+--- @field name? string
+--- @field build? fun(vault_path: string, callback: fun(items: table[]))
+--- @field build_iter? fun(vault_path: string): (fun(): table|nil)|nil
+--- @field build_single? fun(rel_path: string, entry: VaultIndexEntry, idx: VaultIndex): table[]|table|nil  rebuilds one file's items after a per-file invalidation
+--- @field get_completions? fun(self: table, ctx: table, items: table[], callback: fun(response: table))
+--- @field resolve_item? fun(self: table, item: table, callback: fun(item: table))
+
 --- Create a blink-cmp completion source with standard boilerplate.
---- @param opts { build: (fun(vault_path: string, callback: fun(items: table[])))|nil, build_iter: (fun(vault_path: string): (fun(): table|nil)|nil)|nil, get_completions: (fun(self: table, ctx: table, items: table[], callback: fun(response: table)))|nil, resolve_item: (fun(self: table, item: table, callback: fun(item: table)))|nil, name: string|nil }
+--- @param opts VaultCompletionSourceOpts
 --- @return table  blink-cmp source module
 function M.create_source(opts)
   local source = {}
@@ -367,7 +380,7 @@ function M.create_source(opts)
   end
 
   --- Build items using a coroutine that yields every batch_size entries.
-  --- @param callback fun(items: table[])
+  --- @param callback? fun(items: table[])
   --- @return fun() cancel  Cancel function for blink.cmp
   local function build_items_async(callback)
     cancel_active()
@@ -486,6 +499,9 @@ function M.create_source(opts)
             for _, item in ipairs(chunk) do
               items[#items + 1] = item
             end
+            -- False positive: lua_ls lists isyieldable as Lua 5.2+ only, but
+            -- LuaJIT 2.1 (Neovim's Lua) provides it.
+            ---@diagnostic disable-next-line: deprecated
             if coroutine.isyieldable() then
               coroutine.yield()
             end
@@ -672,6 +688,7 @@ function M.new_charbag_filter()
     if cache.items == items and cache.bag
       and char_bag.is_superset(query_bag, cache.bag) then
       base_set = cache.filtered
+      ---@cast base_set -nil  -- bag and filtered are always stored together
     end
     local filtered = {}
     for i = 1, #base_set do
@@ -812,7 +829,7 @@ end
 --- @param separator string  Inserted after field name (": " or ":: ")
 --- @return fun(vault_path: string, callback: fun(items: table))
 function M.build_kv_fields(field_name, separator)
-  return function(vault_path, callback)
+  return function(_, callback)
     local idx = M.get_ready_index()
     if not idx then
       callback({ names = {}, values = {} })
@@ -835,7 +852,7 @@ function M.kv_get_completions(matchers)
   -- effective (a shared cache would simply miss across modes/keys).
   local value_filter = M.new_charbag_filter()
   local name_filter = M.new_charbag_filter()
-  return function(self, ctx, items, callback)
+  return function(_, ctx, items, callback)
     local col = ctx.cursor[2]
     local before = ctx.line:sub(1, col)
     local bufnr = ctx.bufnr or vim.api.nvim_get_current_buf()

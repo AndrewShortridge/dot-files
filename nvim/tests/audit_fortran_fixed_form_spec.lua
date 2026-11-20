@@ -11,6 +11,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_fortran_fixed_form_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
@@ -32,6 +33,9 @@ local FIXED_LINES = {
 
 --- A loaded buffer holding FIXED_LINES under `name`, with the source form set
 --- the way the runtime ftplugin sets it.
+---@param name string|nil  buffer name; nil leaves the scratch buffer unnamed
+---@param opts? { filetype?: string, fixed_source?: integer }
+---@return integer bufnr
 local function fixed_buf(name, opts)
   opts = opts or {}
   local buf = vim.api.nvim_create_buf(false, true)
@@ -103,7 +107,8 @@ test("the capitalization check ignores a column-1 comment", function()
   vim.g.fortran_case_units = false
 
   local buf = fixed_buf("/tmp/audit_fortran/legacy.f", { fixed_source = 1 })
-  local count
+  local count ---@type integer?
+  ---@param n integer
   case.check(buf, function(n)
     count = n
   end)

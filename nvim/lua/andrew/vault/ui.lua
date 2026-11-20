@@ -142,16 +142,17 @@ function M.create_float_display(opts)
     title_pos = "center",
   })
 
-  if type(opts.cursor_line) == "number" then
+  local cursor_line = opts.cursor_line
+  if type(cursor_line) == "number" then
     -- Numeric form: enable 'cursorline' and park the cursor on that row.
     -- Assigning the number straight to the boolean option would throw
     -- ("Invalid value for option 'cursorline': expected boolean, got number").
     vim.wo[win].cursorline = true
     local line_count = math.max(#opts.lines, 1)
-    local row_target = math.min(math.max(math.floor(opts.cursor_line), 1), line_count)
+    local row_target = math.min(math.max(math.floor(cursor_line), 1), line_count)
     pcall(vim.api.nvim_win_set_cursor, win, { row_target, 0 })
-  elseif opts.cursor_line ~= nil then
-    vim.wo[win].cursorline = opts.cursor_line
+  elseif cursor_line ~= nil then
+    vim.wo[win].cursorline = cursor_line
   end
   vim.wo[win].wrap = false
 

@@ -37,20 +37,38 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/flash_keys_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
 local cfg = vim.fn.stdpath("config")
+-- Loads flash.nvim's types (Flash.Config) for this file through lazydev.
+---@module "flash"
+
+-- The part of the plugins/flash.lua spec this test reads.
+---@class FlashKeysPluginSpec
+---@field [1] string
+---@field event string
+---@field keys? LazyKeysSpec[]
+---@field opts Flash.Config
+
+---@type FlashKeysPluginSpec
 local flash = dofile(cfg .. "/lua/andrew/plugins/flash.lua")
 
+---@class FlashKeysEntry
+---@field modes table<string, true>  set of the modes the key is bound in
+---@field desc? string
+---@field n_modes integer
+
 -- Index flash's keys by lhs, normalising `mode` (string or table) to a set.
-local fkeys = {}
+local fkeys = {} ---@type table<string, FlashKeysEntry>
 for _, k in ipairs(flash.keys or {}) do
-  local modes = k.mode or "n"
+  local modes = k.mode or "n" ---@type string|string[]
   if type(modes) == "string" then
     modes = { modes }
   end
-  local set = {}
+  ---@cast modes string[]
+  local set = {} ---@type table<string, true>
   for _, m in ipairs(modes) do
     set[m] = true
   end
@@ -130,7 +148,7 @@ end)
 -- substitute.nvim relocation
 -- ---------------------------------------------------------------------------
 
-local sub_maps = {}
+local sub_maps = {} ---@type table<string, string|true>
 do
   package.loaded["substitute"] = {
     setup = function() end,
@@ -139,11 +157,25 @@ do
     eol = function() end,
     visual = function() end,
   }
+  -- The part of the plugins/substitute.lua lazy.nvim spec this test drives.
+  ---@class FlashKeysSubstituteSpec
+  ---@field config fun(plugin?: table, opts?: table)
+  ---@field opts? table
+
+  ---@type FlashKeysSubstituteSpec
   local plug = dofile(cfg .. "/lua/andrew/plugins/substitute.lua")
   local real_set = vim.keymap.set
+  ---@param mode string|string[]
+  ---@param lhs string|string[]
+  ---@param _ string|function
+  ---@param opts? vim.keymap.set.Opts
   ---@diagnostic disable-next-line: duplicate-set-field
-  vim.keymap.set = function(mode, lhs, rhs, opts)
+  vim.keymap.set = function(mode, lhs, _, opts)
+    -- substitute.lua maps one lhs per call.
+    ---@cast lhs string
     local modes = type(mode) == "string" and { mode } or mode
+    -- A single mode string was wrapped into a list just above.
+    ---@cast modes string[]
     for _, m in ipairs(modes) do
       sub_maps[m .. ":" .. lhs] = (opts or {}).desc or true
     end

@@ -14,8 +14,12 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_vault_a_tier1_keymaps_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
+
+-- lazydev loads fzf-lua's annotations into lua_ls from this line.
+---@module "fzf-lua"
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. vim.fn.stdpath("config") .. "/lua/?/init.lua;" .. package.path
 
@@ -29,6 +33,8 @@ vim.g.vault_path = tmp_vault
 
 require("andrew.vault") -- Tier 1 only
 
+---@param lhs string
+---@return vim.api.keyset.get_keymap?
 local function get_map(lhs)
   for _, m in ipairs(vim.api.nvim_get_keymap("n")) do
     if m.lhs == lhs then return m end
@@ -44,6 +50,7 @@ test("global 'from anywhere' vault maps exist at Tier 1", function()
   }) do
     local m = get_map(lhs)
     assert_true(m ~= nil, "Tier 1 must register <leader>" .. lhs:sub(2))
+    ---@cast m -nil
     assert_true(type(m.callback) == "function", lhs .. " must have a Lua callback")
     assert_true(
       (m.desc or ""):lower():find(want_desc, 1, true) ~= nil,
@@ -57,6 +64,7 @@ test("all template maps exist at Tier 1", function()
     local lhs = " vt" .. suffix
     local m = get_map(lhs)
     assert_true(m ~= nil, "Tier 1 must register <leader>vt" .. suffix)
+    ---@cast m -nil
     assert_true(type(m.callback) == "function", lhs .. " must have a Lua callback")
   end
 end)
@@ -75,12 +83,15 @@ test("<leader>v? replays the queued palette registrations and shows entries", fu
   local palette = require("andrew.vault.command_palette")
   assert_eq(#palette._registry, 0, "registrations should still be queued before <leader>v? fires")
 
-  local shown
+  local shown ---@type fzf-lua.content?
+  ---@return { fzf_exec: fun(contents: fzf-lua.content) }  the part of fzf-lua the palette calls
   package.preload["fzf-lua"] = function()
+    ---@param lines fzf-lua.content
     return { fzf_exec = function(lines) shown = lines end }
   end
 
-  get_map(" v?").callback()
+  -- Indexing/calling would raise on a missing map or callback anyway; assert names the cause.
+  assert(assert(get_map(" v?")).callback)()
 
   assert_true(#palette._registry > 0, "firing <leader>v? must replay the queued registrations")
   assert_true(shown ~= nil and #shown > 0, "the palette must hand fzf a non-empty entry list")

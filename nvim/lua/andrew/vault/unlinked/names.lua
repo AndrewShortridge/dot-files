@@ -21,6 +21,7 @@ function M.current_note_names()
   local entry = idx and idx:get_entry_by_abs(bufname)
   local aliases = entry and entry.aliases
   if aliases then
+    ---@cast entry -nil
     for _, alias in ipairs(aliases) do
       if #alias > 0 and alias ~= entry.basename_lower then
         names[#names + 1] = alias

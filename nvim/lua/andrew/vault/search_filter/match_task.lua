@@ -55,7 +55,7 @@ local function resolve_task_date(value, forward_looking)
   if forward_looking then
     local n = value:lower():match("^(%d+)d$")
     if n then
-      local t = os.date("*t")
+      local t = os.date("*t") --[[@as osdate]]
       t.day = t.day + tonumber(n)
       return date_utils.start_of_day(t)
     end

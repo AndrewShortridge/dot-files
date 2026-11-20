@@ -26,7 +26,7 @@ local M = {}
 --- Returns matching entries where the basename matches but the full path differs.
 ---@param broken_name string the broken link target (e.g., "OldProject")
 ---@param index table VaultIndex instance
----@return { rel_path: string, basename: string, dist: number }[]
+---@return { rel_path: string, basename: string, basename_lower: string, dist: number, moved: boolean }[]
 local function check_moved_file(broken_name, index)
   local lower = broken_name:lower()
   local basename_lower = link_utils.get_basename(lower)
@@ -76,7 +76,7 @@ end
 
 --- Merge edit-distance candidates with moved-file candidates, deduplicating.
 ---@param name_candidates { name: string, dist: number }[]
----@param moved_candidates { rel_path: string, basename: string, dist: number, moved: boolean }[]
+---@param moved_candidates { rel_path: string, basename: string, basename_lower?: string, dist: number, moved: boolean }[]
 ---@return { name: string, dist: number, moved: boolean }[]
 local function merge_candidates(name_candidates, moved_candidates)
   local seen = {}
@@ -147,6 +147,9 @@ local function compute_repair_candidates(target, link_type, heading, filepath, c
     local auto = auto_fix_candidate(merged, threshold)
     return { candidates = merged, auto_fix = auto, type = "note" }
   else
+    -- Both callers pass heading and filepath with "broken_heading"
+    ---@cast heading -nil
+    ---@cast filepath -nil
     local heading_candidates = linkdiag.find_closest_headings(
       link_utils.heading_to_slug(heading), filepath, max_candidates
     )
@@ -173,16 +176,18 @@ local function collect_buffer_repairs(bufnr)
   local cfg = config.link_repair or {}
   local ctx = { all_names = all_names, idx = idx, cfg = cfg }
 
-  local diags = vim.diagnostic.get(bufnr, { namespace = linkdiag.ns })
+  local diags = vim.diagnostic.get(bufnr, { namespace = linkdiag.ns }) --[[@as VaultLinkDiagnostic[] ]]
   local repairs = {}
 
+  -- broken_note and broken_heading diagnostics always carry _target
+  -- (see VaultLinkDiagnostic)
   for _, d in ipairs(diags) do
     if d._type == "broken_note" then
-      local info = compute_repair_candidates(d._target, "broken_note", nil, nil, ctx)
+      local info = compute_repair_candidates(d._target --[[@as string]], "broken_note", nil, nil, ctx)
       info.diag = d
       repairs[#repairs + 1] = info
     elseif d._type == "broken_heading" then
-      local info = compute_repair_candidates(d._target, "broken_heading", d._heading, d._filepath, ctx)
+      local info = compute_repair_candidates(d._target --[[@as string]], "broken_heading", d._heading, d._filepath, ctx)
       info.diag = d
       repairs[#repairs + 1] = info
     end
@@ -317,7 +322,7 @@ function M.repair_buffer(opts)
   local bufnr = vim.api.nvim_get_current_buf()
   linkdiag.validate(bufnr)
 
-  local diags = vim.diagnostic.get(bufnr, { namespace = linkdiag.ns })
+  local diags = vim.diagnostic.get(bufnr, { namespace = linkdiag.ns }) --[[@as VaultLinkDiagnostic[] ]]
   -- Filter to only link diagnostics (not URL diagnostics)
   local link_diags = {}
   for _, d in ipairs(diags) do
@@ -368,7 +373,7 @@ local function scan_vault_broken_links(on_results)
     return
   end
 
-  linkcheck.scan_broken_links(function(broken_links, _total)
+  linkcheck.scan_broken_links(function(broken_links)
     local all_names = linkdiag.get_all_names()
     local cfg = config.link_repair or {}
     local ctx = { all_names = all_names, idx = idx, cfg = cfg }

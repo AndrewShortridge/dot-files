@@ -15,6 +15,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/footnote_cache_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq = _H.test, _H.assert_eq
 
@@ -26,6 +27,8 @@ print("\n=== Footnote Cache Tests ===\n")
 -- Run M.orphans() against a fresh scratch buffer seeded with `lines` and return
 -- the captured notification text (the orphan report, or the "no footnotes" /
 -- "all linked" message). vim.notify is stubbed only for the duration of the call.
+---@param lines string[]
+---@return integer buf
 local function orphans_for(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_set_current_buf(buf)
@@ -33,9 +36,11 @@ local function orphans_for(lines)
   return buf
 end
 
+---@return string report
 local function capture_orphans()
-  local captured = {}
+  local captured = {} ---@type string[]
   local orig = vim.notify
+  ---@param msg string
   vim.notify = function(msg) captured[#captured + 1] = msg end
   local ok, err = pcall(footnotes.orphans)
   vim.notify = orig

@@ -121,7 +121,9 @@ M._find_word = find_word
 --- column, so callers can slice the raw line for the source-cased spelling.
 ---@param masked string
 ---@param from integer
----@return string|nil lname, integer|nil col 1-based start column, integer|nil stop
+---@return string|nil lname nil, together with col and stop, when no identifier starts there
+---@return integer|nil col 1-based start column
+---@return integer|nil stop
 local function ident_at(masked, from)
   local s, e, name = masked:find("^%s*([%a_][%w_]*)", from)
   if not s then
@@ -200,7 +202,7 @@ local function scan_definitions(masked, raw, lnum, out)
       -- A `function` result clause (`result(x)`) is not a definition, and
       -- neither is the word inside `end function`. Both are covered above.
       if not skip and name then
-        emit(out, raw, name, col, kw, lnum)
+        emit(out, raw, name, col --[[@as integer]], kw, lnum)
       end
       ks, ke = find_word(masked, kw, ke + 1)
     end
@@ -229,7 +231,7 @@ local function scan_definitions(masked, raw, lnum, out)
   if is and not preceded_by_end(masked, is) then
     local name, col = ident_at(masked, ie + 1)
     if name then
-      emit(out, raw, name, col, "interface", lnum)
+      emit(out, raw, name, col --[[@as integer]], "interface", lnum)
     end
   end
 end
@@ -348,7 +350,7 @@ local function walk_entities(masked, raw, lnum, from, out, kind, st, stop_slash)
           emit(out, raw, word, i, kind, lnum)
           st.expect = false
         end
-        i = e
+        i = e --[[@as integer]]
       end
     end
     i = i + 1
@@ -561,7 +563,7 @@ local function scan_call_statements(masked, raw, lnum, out)
   while ks do
     local name, col = ident_at(masked, ke + 1)
     if name then
-      emit(out, raw, name, col, "call", lnum)
+      emit(out, raw, name, col --[[@as integer]], "call", lnum)
     end
     ks, ke = find_word(masked, "call", ke + 1)
   end
@@ -586,7 +588,7 @@ local function scan_paren_names(masked, raw, lnum, out)
     if not is_word_byte(masked:sub(s - 1, s - 1)) then
       emit(out, raw, name, s, "ref", lnum)
     end
-    init = e
+    init = e --[[@as integer]]
   end
 end
 
@@ -736,7 +738,7 @@ function M.scan_lines(lines, opts)
       end
       local name, col = ident_at(masked, from)
       if name then
-        emit(calls, line, name, col, "call", lnum)
+        emit(calls, line, name, col --[[@as integer]], "call", lnum)
       end
       pending_call = false
     end
@@ -803,6 +805,7 @@ end
 ---@return { defs: table[], calls: table[], refs: table[], decls: table[], masked: string[] }
 function M.scan_buffer(bufnr)
   bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
+  ---@cast bufnr integer
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   return M.scan_lines(lines, { fixed = M.is_fixed(bufnr) })
 end
@@ -1067,6 +1070,7 @@ function M.project_calls(root, known, cb)
         end
         local lname, col = ident_at(masked, from)
         if lname then
+          ---@cast col integer
           collected[#collected + 1] = {
             name = raw:sub(col, col + #lname - 1),
             lname = lname,

@@ -30,6 +30,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/link_scan_fence_exclusion_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_true, assert_eq, assert_false = _H.test, _H.assert_true, _H.assert_eq, _H.assert_false
 
@@ -47,6 +48,8 @@ pcall(vim.treesitter.query.add_directive, "set-lang-from-info-string!", function
   { force = true, all = false })
 
 -- Load lines into a scratch markdown buffer and return its bufnr.
+---@param lines string[]
+---@return integer
 local function make_buffer(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -55,10 +58,13 @@ local function make_buffer(lines)
 end
 
 -- Snapshot the full per-(row,col) exclusion bitmap as a comparable string array.
+---@param closure fun(row: number, col: number): boolean  from link_scan.build_code_exclusion
+---@param lines string[]
+---@return string[]
 local function exclusion_snapshot(closure, lines)
-  local out = {}
+  local out = {} ---@type string[]
   for r = 0, #lines - 1 do
-    local cells = {}
+    local cells = {} ---@type string[]
     for c = 0, #(lines[r + 1] or "") do
       cells[c + 1] = closure(r, c) and "1" or "0"
     end
@@ -67,6 +73,9 @@ local function exclusion_snapshot(closure, lines)
   return out
 end
 
+---@param a string[]
+---@param b string[]
+---@return boolean
 local function snapshots_equal(a, b)
   if #a ~= #b then return false end
   for i = 1, #a do
@@ -178,9 +187,12 @@ test("in-fence edit triggers no inline reparse and preserves exclusion set", fun
   local buf = make_buffer(lines)
 
   -- Hook for_each_tree on the markdown parser instance to count inline rescans.
-  local parser = vim.treesitter.get_parser(buf, "markdown")
+  local parser = assert(vim.treesitter.get_parser(buf, "markdown"))
   local span_scans = 0
   local orig_fet = parser.for_each_tree
+  ---@param self vim.treesitter.LanguageTree
+  ---@param fn fun(tree: TSTree, ltree: vim.treesitter.LanguageTree)
+  ---@return nil
   parser.for_each_tree = function(self, fn)
     span_scans = span_scans + 1
     return orig_fet(self, fn)

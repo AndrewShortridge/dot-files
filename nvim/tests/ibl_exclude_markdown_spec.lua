@@ -20,11 +20,19 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/ibl_exclude_markdown_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
+---@class IblExcludeMarkdownPluginSpec: LazyPluginSpec
+---@field opts ibl.config  indent-blankline.lua passes its opts as a plain ibl config table
+
+---@type IblExcludeMarkdownPluginSpec
 local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/indent-blankline.lua")
 
+---@param list string[]|nil
+---@param val string
+---@return boolean
 local function contains(list, val)
   for _, v in ipairs(list or {}) do
     if v == val then return true end

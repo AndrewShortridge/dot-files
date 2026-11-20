@@ -11,6 +11,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_fortran_intrinsics_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -18,6 +19,13 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 local intrinsics = require("andrew.fortran.intrinsics")
 
+---@class AuditFortranIntrinsicsDoc  one entry of snippets/f90-intrinsics.json
+---@field args string
+---@field doc string
+---@field type integer
+
+---@param path string
+---@return table<string, AuditFortranIntrinsicsDoc>  intrinsic name -> its documentation
 local function read_json(path)
   local f = assert(io.open(path, "r"), "cannot open " .. path)
   local content = f:read("*a")
@@ -27,7 +35,7 @@ end
 
 test("every intrinsic the config documents is in the NAMES list", function()
   local data = read_json(vim.fn.stdpath("config") .. "/snippets/f90-intrinsics.json")
-  local missing = {}
+  local missing = {} ---@type string[]
   local count = 0
   for name in pairs(data) do
     count = count + 1

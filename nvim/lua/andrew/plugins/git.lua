@@ -77,7 +77,7 @@ local has_gh = vim.fn.executable("gh") == 1
 --- Call Snacks.gitbrowse, swallowing ONLY its `__ignore__` abort sentinel.
 --- Every other error is re-raised unchanged.
 local function gitbrowse_guarded(opts)
-  local ok, err = pcall(Snacks.gitbrowse, opts)
+  local ok, err = pcall(Snacks.gitbrowse --[[@as function]], opts)
   if ok then
     return
   end

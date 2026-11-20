@@ -43,6 +43,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_unused_tag_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_false, _H.assert_nil
@@ -96,6 +97,8 @@ test("the span covers the whole name", function()
   local first, stop = unused.name_span(GFORTRAN_MSG, SOURCE_LINE, 23)
   assert_eq(first, 17, "start:")
   assert_eq(stop, 24, "stop (exclusive):")
+  ---@cast first -nil
+  ---@cast stop -nil
   assert_eq(SOURCE_LINE:sub(first, stop - 1), "UNUSEDV", "the slice is exactly the name:")
 end)
 
@@ -114,6 +117,7 @@ test("a longer identifier is not a partial match", function()
   local msg = "Unused variable \226\128\152unused\226\128\153 declared at (1) [-Wunused-variable]"
   local first, stop = unused.name_span(msg, line, 1)
   assert_eq(first, 23, "start of the standalone UNUSED:")
+  ---@cast first -nil
   assert_eq(line:sub(first, stop - 1), "UNUSED", "the slice:")
 end)
 

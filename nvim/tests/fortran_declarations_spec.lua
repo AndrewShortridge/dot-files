@@ -57,6 +57,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_declarations_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil, assert_deep_eq = _H.assert_nil, _H.assert_deep_eq
@@ -67,15 +68,41 @@ local scan = require("andrew.fortran.scan")
 
 -- Helpers -------------------------------------------------------------------
 
+-- A declaration record as scan.scan_lines / scan.project_declarations build it
+-- (scan.lua annotates both as bare `table[]`).
+---@class FortranDeclarationsDecl
+---@field name string   as written in the source
+---@field lname string  lowercased
+---@field kind string   "var", "common", ...
+---@field lnum integer  1-based
+---@field col integer   1-based
+---@field path? string  set by project_declarations only
+---@field text? string  set by project_declarations only
+
+-- An occurrence as scan.variable_refs / scan.project_references build it.
+---@class FortranDeclarationsRef
+---@field name string
+---@field lname string
+---@field kind string
+---@field lnum integer
+---@field col integer
+---@field path? string  set by project_references only
+---@field text? string  set by project_references only
+
 --- Declared names on a block of source, as "kind:Name" in source order.
+---@param lines string[]
+---@return string[]
 local function decls(lines)
-  local out = {}
+  local out = {} ---@type string[]
   for _, d in ipairs(scan.scan_lines(lines).decls) do
     out[#out + 1] = d.kind .. ":" .. d.name
   end
   return out
 end
 
+---@param lines string[]
+---@param name string  matched case-insensitively
+---@return FortranDeclarationsDecl?
 local function find(lines, name)
   for _, d in ipairs(scan.scan_lines(lines).decls) do
     if d.lname == name:lower() then
@@ -85,6 +112,7 @@ local function find(lines, name)
   return nil
 end
 
+---@return string root  a fresh directory containing an empty code/
 local function tmp_project()
   local root = vim.fn.tempname()
   vim.fn.mkdir(root .. "/code", "p")
@@ -208,7 +236,7 @@ test("COMMON block continued across lines", function()
   assert_deep_eq(decls(lines), {
     "common:XYZDEP", "var:XED", "var:YED", "var:ZED", "var:Xsh", "var:Ysh", "var:Zsh",
   })
-  local xsh = find(lines, "Xsh")
+  local xsh = assert(find(lines, "Xsh"))
   assert_eq(xsh.lnum, 2, "a continued name keeps its own line number:")
   assert_eq(xsh.col, 7, "and its own column:")
 end)
@@ -221,7 +249,7 @@ test("a continuation with a leading ampersand parses", function()
 end)
 
 test("names keep their source casing", function()
-  local d = find({ "      COMMON/DIFFST/ MixedCase_Name" }, "mixedcase_name")
+  local d = assert(find({ "      COMMON/DIFFST/ MixedCase_Name" }, "mixedcase_name"))
   assert_eq(d.name, "MixedCase_Name")
   assert_eq(d.kind, "var")
 end)
@@ -245,19 +273,22 @@ test("the rg-backed project scan agrees with a whole-file scan", function()
   }
   vim.fn.writefile(source, root .. "/code/decl.f90")
 
-  local want = {}
+  local want = {} ---@type string[]
   for _, d in ipairs(scan.scan_lines(source).decls) do
     want[#want + 1] = ("%d:%d:%s:%s"):format(d.lnum, d.col, d.kind, d.name)
   end
   table.sort(want)
 
-  local got
-  scan.project_declarations(root, function(result)
-    got = result
-  end)
+  local got ---@type FortranDeclarationsDecl[]?
+  scan.project_declarations(root,
+    ---@param result FortranDeclarationsDecl[]
+    function(result)
+      got = result
+    end)
   assert_true(vim.wait(10000, function() return got ~= nil end), "declaration scan timed out")
+  ---@cast got -nil
 
-  local have = {}
+  local have = {} ---@type string[]
   for _, d in ipairs(got) do
     have[#have + 1] = ("%d:%d:%s:%s"):format(d.lnum, d.col, d.kind, d.name)
   end
@@ -274,13 +305,16 @@ test("a line already consumed as a continuation is not rescanned", function()
     "      real, beta",
   }, root .. "/code/dup.f90")
 
-  local got
-  scan.project_declarations(root, function(result)
-    got = result
-  end)
+  local got ---@type FortranDeclarationsDecl[]?
+  scan.project_declarations(root,
+    ---@param result FortranDeclarationsDecl[]
+    function(result)
+      got = result
+    end)
   assert_true(vim.wait(10000, function() return got ~= nil end), "declaration scan timed out")
+  ---@cast got -nil
 
-  local seen = {}
+  local seen = {} ---@type table<string, true>
   for _, d in ipairs(got) do
     local key = ("%d:%d:%s"):format(d.lnum, d.col, d.name)
     assert_nil(seen[key], "duplicate declaration " .. key .. ":")
@@ -296,20 +330,25 @@ test("include files are scanned", function()
   vim.fn.writefile({ "      COMMON/DIFFST/ dift,difx(0:n)" }, root .. "/code/commonTTM.h")
   vim.fn.writefile({ "      INCLUDE 'commonTTM.h'" }, root .. "/code/main.f90")
 
-  local got
-  scan.project_declarations(root, function(result)
-    got = result
-  end)
+  local got ---@type FortranDeclarationsDecl[]?
+  scan.project_declarations(root,
+    ---@param result FortranDeclarationsDecl[]
+    function(result)
+      got = result
+    end)
   assert_true(vim.wait(10000, function() return got ~= nil end), "declaration scan timed out")
+  ---@cast got -nil
 
-  local found
+  local found ---@type FortranDeclarationsDecl?
   for _, d in ipairs(got) do
     if d.lname == "dift" then
       found = d
     end
   end
   assert_true(found ~= nil, "dift is declared in the include file:")
-  assert_true(found.path:match("%.h$") ~= nil, "and is reported from it:")
+  ---@cast found -nil
+  -- project_declarations always sets `path`; a nil here fails the test by crashing.
+  assert_true(assert(found.path):match("%.h$") ~= nil, "and is reported from it:")
   vim.fn.delete(root, "rf")
 end)
 
@@ -323,13 +362,14 @@ test("variable references are the declared names and nothing else", function()
     "      END SUBROUTINE Step",
   }
   local r = scan.scan_lines(lines)
-  local known = {}
+  local known = {} ---@type table<string, boolean>
   for _, d in ipairs(r.decls) do
     known[d.lname] = true
   end
+  ---@type FortranDeclarationsRef[]
   local refs = scan.variable_refs(r.masked, lines, known)
 
-  local at = {}
+  local at = {} ---@type table<string, string>
   for _, ref in ipairs(refs) do
     at[ref.lnum .. ":" .. ref.col] = ref.name
     assert_eq(ref.kind, "varref")
@@ -391,15 +431,19 @@ test("references are found, classified, and skip comments and strings", function
     "      END SUBROUTINE Step",         -- 7
   }, root .. "/code/step.f90")
 
-  local refs
-  scan.project_references(root, "dift", function(result)
-    refs = result
-  end)
+  local refs ---@type FortranDeclarationsRef[]?
+  scan.project_references(root, "dift",
+    ---@param result FortranDeclarationsRef[]
+    function(result)
+      refs = result
+    end)
   assert_true(vim.wait(10000, function() return refs ~= nil end), "reference scan timed out")
+  ---@cast refs -nil
 
-  local at = {}
+  local at = {} ---@type table<string, string>
   for _, r in ipairs(refs) do
-    at[vim.fn.fnamemodify(r.path, ":t") .. ":" .. r.lnum .. ":" .. r.col] = r.kind
+    -- project_references always sets `path`.
+    at[vim.fn.fnamemodify(assert(r.path), ":t") .. ":" .. r.lnum .. ":" .. r.col] = r.kind
   end
 
   assert_eq(at["common.h:1:22"], "var", "the COMMON declaration is labelled, not buried:")
@@ -423,13 +467,16 @@ test("a call statement is labelled among the references", function()
     "      END SUBROUTINE Step",
   }, root .. "/code/p.f90")
 
-  local refs
-  scan.project_references(root, "Heating", function(result)
-    refs = result
-  end)
+  local refs ---@type FortranDeclarationsRef[]?
+  scan.project_references(root, "Heating",
+    ---@param result FortranDeclarationsRef[]
+    function(result)
+      refs = result
+    end)
   assert_true(vim.wait(10000, function() return refs ~= nil end), "reference scan timed out")
+  ---@cast refs -nil
 
-  local at = {}
+  local at = {} ---@type table<string, string>
   for _, r in ipairs(refs) do
     at[r.lnum .. ":" .. r.col] = r.kind
   end
@@ -439,10 +486,12 @@ test("a call statement is labelled among the references", function()
 end)
 
 test("a non-identifier is refused rather than injected into the regex", function()
-  local refs
-  scan.project_references(vim.fn.tempname(), "a|b", function(result)
-    refs = result
-  end)
+  local refs ---@type FortranDeclarationsRef[]?
+  scan.project_references(vim.fn.tempname(), "a|b",
+    ---@param result FortranDeclarationsRef[]
+    function(result)
+      refs = result
+    end)
   assert_true(vim.wait(5000, function() return refs ~= nil end), "call did not return")
   assert_deep_eq(refs, {})
 end)

@@ -17,15 +17,15 @@ M._sticky_project = nil
 
 --- Pick a project from Projects/ that contains a Dashboard.md.
 --- Scans the vault's Projects/ directory for subdirectories containing Dashboard.md.
----@param engine table the engine module
+---@param engine_mod table the engine module
 ---@return string|nil project name, nil if cancelled
-function M.project(engine)
-  local projects_dir = engine.vault_path .. "/" .. config.dirs.projects
+function M.project(engine_mod)
+  local projects_dir = engine_mod.vault_path .. "/" .. config.dirs.projects
   local entries = {}
   local handle = vim.uv.fs_scandir(projects_dir)
   if handle then
     while true do
-      local name, ftype = vim.uv.fs_scandir_next(handle)
+      local name = vim.uv.fs_scandir_next(handle)
       if not name then break end
       entries[#entries + 1] = name
     end
@@ -54,7 +54,7 @@ function M.project(engine)
     end
   end
 
-  local choice = engine.select(projects, { prompt = "Select project" })
+  local choice = engine_mod.select(projects, { prompt = "Select project" })
   if choice == nil then return nil end
 
   -- Strip the " (recent)" marker if present
@@ -65,15 +65,15 @@ end
 
 --- Pick a project or "None (General)".
 --- Returns the project name, or false if "None" was selected, or nil if cancelled.
----@param engine table
+---@param engine_mod table the engine module
 ---@return string|false|nil
-function M.project_or_none(engine)
-  local projects_dir = engine.vault_path .. "/" .. config.dirs.projects
+function M.project_or_none(engine_mod)
+  local projects_dir = engine_mod.vault_path .. "/" .. config.dirs.projects
   local entries = {}
   local handle = vim.uv.fs_scandir(projects_dir)
   if handle then
     while true do
-      local name, ftype = vim.uv.fs_scandir_next(handle)
+      local name = vim.uv.fs_scandir_next(handle)
       if not name then break end
       entries[#entries + 1] = name
     end
@@ -99,7 +99,7 @@ function M.project_or_none(engine)
 
   table.insert(projects, 1, "None (General Meeting)")
 
-  local choice = engine.select(projects, { prompt = "Select project" })
+  local choice = engine_mod.select(projects, { prompt = "Select project" })
   if choice == nil then return nil end
   if choice == "None (General Meeting)" then return false end
 
@@ -110,10 +110,10 @@ function M.project_or_none(engine)
 end
 
 --- Pick an area from Areas/.
----@param engine table
+---@param engine_mod table the engine module
 ---@return string|nil area name
-function M.area(engine)
-  local areas_dir = engine.vault_path .. "/" .. config.dirs.areas
+function M.area(engine_mod)
+  local areas_dir = engine_mod.vault_path .. "/" .. config.dirs.areas
   local areas = {}
   local handle = vim.uv.fs_scandir(areas_dir)
   if handle then
@@ -133,14 +133,14 @@ function M.area(engine)
     return nil
   end
 
-  return engine.select(areas, { prompt = "Select area" })
+  return engine_mod.select(areas, { prompt = "Select area" })
 end
 
 --- Pick a domain from Domains/.
----@param engine table
+---@param engine_mod table the engine module
 ---@return string|nil domain name
-function M.domain(engine)
-  local domains_dir = engine.vault_path .. "/" .. config.dirs.domains
+function M.domain(engine_mod)
+  local domains_dir = engine_mod.vault_path .. "/" .. config.dirs.domains
   local domains = {}
   local handle = vim.uv.fs_scandir(domains_dir)
   if handle then
@@ -160,7 +160,7 @@ function M.domain(engine)
     return nil
   end
 
-  return engine.select(domains, { prompt = "Select domain" })
+  return engine_mod.select(domains, { prompt = "Select domain" })
 end
 
 --- Clear the sticky project.
@@ -181,7 +181,7 @@ function M.pick_project()
   local handle = vim.uv.fs_scandir(projects_dir)
   if handle then
     while true do
-      local name, ftype = vim.uv.fs_scandir_next(handle)
+      local name = vim.uv.fs_scandir_next(handle)
       if not name then break end
       entries[#entries + 1] = name
     end
@@ -249,7 +249,6 @@ function M.setup()
     end
     vim.ui.select({ "Keep", "Pick new", "Clear" }, { prompt = "Sticky project" }, function(choice)
       if choice == "Pick new" then
-        local engine = require("andrew.vault.engine")
         engine.run(function()
           local name = M.project(engine)
           if name then

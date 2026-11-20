@@ -55,6 +55,8 @@ local function draw_images_only_on_current_tabpage()
   local upstream_put_image = image.put_image
   local upstream_clear_placements = image.clear_placements
 
+  -- md-render's `put_image`, wrapped on purpose: see the top of the file.
+  ---@diagnostic disable-next-line: duplicate-set-field
   image.put_image = function(image_id, window, ...)
     window_of_image[image_id] = window
     if is_on_current_tabpage(window) then
@@ -69,6 +71,7 @@ local function draw_images_only_on_current_tabpage()
   --
   -- An image that was never placed has nothing to delete either, so an id not
   -- seen in `put_image` is dropped as well.
+  ---@diagnostic disable-next-line: duplicate-set-field
   image.clear_placements = function(image_id)
     local window = window_of_image[image_id]
     if window and is_on_current_tabpage(window) then
@@ -127,6 +130,9 @@ local function draw_headings_only_on_current_tabpage()
   local upstream_refresh = text_size.refresh
   local upstream_detach = text_size.detach
 
+  -- md-render's `attach`, `refresh` and `detach`, wrapped on purpose: see the
+  -- top of the file.
+  ---@diagnostic disable-next-line: duplicate-set-field
   text_size.attach = function(window, content)
     return track_heading_state(upstream_attach(window, content), window)
   end
@@ -134,11 +140,13 @@ local function draw_headings_only_on_current_tabpage()
   -- `refresh` writes the window back into the state. It runs for a view on
   -- another tab whenever that view is rebuilt: an image arriving late, or its
   -- source being edited in this tab.
+  ---@diagnostic disable-next-line: duplicate-set-field
   text_size.refresh = function(state, window, content)
     return track_heading_state(upstream_refresh(state, window, content), window)
   end
 
   -- `detach` unregisters the state under `state.win`.
+  ---@diagnostic disable-next-line: duplicate-set-field
   text_size.detach = function(state)
     local window = state and window_of_heading_state[state]
     if window then

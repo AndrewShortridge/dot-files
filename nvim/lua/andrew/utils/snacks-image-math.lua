@@ -104,6 +104,7 @@ function M.editing(ctx)
     return false
   end
   local pos = ctx.pos or ctx.src or ctx.content
+  ---@cast pos -nil `ctx.content` is set: checked first
   local ok, range6 = pcall(vim.treesitter.get_range, pos.node, ctx.buf, pos.meta)
   if not ok or not range6 then
     return false

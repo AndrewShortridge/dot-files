@@ -1,6 +1,7 @@
 -- Unit tests for lua/andrew/vault/request_coalescer.lua
 -- Run with: nvim --headless -u NONE -l tests/request_coalescer_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -11,15 +12,24 @@ local test, assert_eq, assert_true, assert_nil =
 
 -- vault_log stub
 local log_stub = { debug = function() end, info = function() end, warn = function() end, error = function() end }
-package.loaded["andrew.vault.vault_log"] = { scope = function() return log_stub end }
+package.loaded["andrew.vault.vault_log"] = {
+  ---@return table
+  scope = function() return log_stub end,
+}
 
 -- resource_cleanup stub
 package.loaded["andrew.vault.resource_cleanup"] = {
+  ---@param timer uv.uv_timer_t|nil
   close_timer = function(timer)
     if timer and timer.stop then pcall(timer.stop, timer) end
     if timer and timer.close then pcall(timer.close, timer) end
   end,
 }
+
+--- One callback delivery recorded by the coalescing test.
+---@class RequestCoalescerSpecDelivery
+---@field result any
+---@field err string|nil
 
 -- ============================================================================
 -- Load module under test
@@ -71,16 +81,20 @@ end)
 test("operation_fn throw resolves with error", function()
   coalescer._reset()
   local pool = coalescer.new({ name = "throw_test", done_linger_ms = 0 })
-  local got_result, got_err
+  local got_result, got_err ---@type any, string|nil
   pool:request("k1", function()
     error("boom")
-  end, function(result, err)
+  end,
+  ---@param result any
+  ---@param err string|nil
+  function(result, err)
     got_result = result
     got_err = err
   end)
   -- pcall catches the error and calls _resolve_entry synchronously
   assert_nil(got_result, "result should be nil on throw")
   assert_true(got_err ~= nil, "err should be set on throw")
+  ---@cast got_err -nil
   assert_true(got_err:find("boom") ~= nil, "err should contain 'boom'")
   local s = pool:stats()
   assert_eq(s.total_operations, 1)
@@ -93,12 +107,15 @@ end)
 test("resolve_now resolves entry and notifies waiters", function()
   coalescer._reset()
   local pool = coalescer.new({ name = "resolve_now_test", done_linger_ms = 0 })
-  local got_result, got_err
-  local captured_resolve
-  pool:request("k1", function(resolve)
-    captured_resolve = resolve
+  local got_result, got_err ---@type any, string|nil
+  pool:request("k1",
+  ---@param _ fun(result: any)
+  function(_)
     -- Don't call resolve yet — we'll use resolve_now instead
-  end, function(result, err)
+  end,
+  ---@param result any
+  ---@param err string|nil
+  function(result, err)
     got_result = result
     got_err = err
   end)
@@ -129,20 +146,28 @@ end)
 test("second request for same key coalesces", function()
   coalescer._reset()
   local pool = coalescer.new({ name = "coalesce_test", done_linger_ms = 0 })
-  local results = {}
+  local results = {} ---@type RequestCoalescerSpecDelivery[]
   local op_count = 0
 
-  pool:request("shared", function(resolve)
+  pool:request("shared",
+  ---@param _ fun(result: any)
+  function(_)
     op_count = op_count + 1
     -- Don't resolve yet
-  end, function(result, err)
+  end,
+  ---@param result any
+  ---@param err string|nil
+  function(result, err)
     results[#results + 1] = { result = result, err = err }
   end)
 
   pool:request("shared", function()
     -- This operation_fn should NOT be called (coalescing)
     op_count = op_count + 1
-  end, function(result, err)
+  end,
+  ---@param result any
+  ---@param err string|nil
+  function(result, err)
     results[#results + 1] = { result = result, err = err }
   end)
 
@@ -167,8 +192,11 @@ end)
 test("cancel notifies waiters with cancelled error", function()
   coalescer._reset()
   local pool = coalescer.new({ name = "cancel_test", done_linger_ms = 0 })
-  local got_err
-  pool:request("k1", function() end, function(_, err)
+  local got_err ---@type string|nil
+  pool:request("k1", function() end,
+  ---@param _ any
+  ---@param err string|nil
+  function(_, err)
     got_err = err
   end)
 
@@ -205,8 +233,11 @@ test("exceeding max_waiters returns error via callback", function()
   pool:request("k1", function() end, function() end) -- waiter 1
   pool:request("k1", function() end, function() end) -- waiter 2
 
-  local got_err
-  pool:request("k1", function() end, function(_, err) -- waiter 3 (overflow)
+  local got_err ---@type string|nil
+  pool:request("k1", function() end,
+  ---@param _ any
+  ---@param err string|nil
+  function(_, err) -- waiter 3 (overflow)
     got_err = err
   end)
   assert_eq(got_err, "max waiters exceeded")
@@ -292,8 +323,11 @@ test("configure applies pool-level settings", function()
   pool:request("k", function() end, function() end) -- 1
   pool:request("k", function() end, function() end) -- 2
   pool:request("k", function() end, function() end) -- 3
-  local got_err
-  pool:request("k", function() end, function(_, err) got_err = err end) -- overflow
+  local got_err ---@type string|nil
+  pool:request("k", function() end,
+  ---@param _ any
+  ---@param err string|nil
+  function(_, err) got_err = err end) -- overflow
   assert_eq(got_err, "max waiters exceeded")
 end)
 
@@ -305,8 +339,11 @@ test("M.configure stores config for late-registered pools", function()
   local pool = coalescer.new({ name = "late_pool" })
   pool:request("k", function() end, function() end) -- 1
   pool:request("k", function() end, function() end) -- 2
-  local got_err
-  pool:request("k", function() end, function(_, err) got_err = err end) -- overflow
+  local got_err ---@type string|nil
+  pool:request("k", function() end,
+  ---@param _ any
+  ---@param err string|nil
+  function(_, err) got_err = err end) -- overflow
   assert_eq(got_err, "max waiters exceeded")
 end)
 
@@ -333,9 +370,15 @@ end)
 test("all coalesced waiters receive error on reject", function()
   coalescer._reset()
   local pool = coalescer.new({ name = "reject_test", done_linger_ms = 0 })
-  local errs = {}
-  pool:request("k", function() end, function(_, err) errs[#errs + 1] = err end)
-  pool:request("k", function() end, function(_, err) errs[#errs + 1] = err end)
+  local errs = {} ---@type (string|nil)[]
+  pool:request("k", function() end,
+  ---@param _ any
+  ---@param err string|nil
+  function(_, err) errs[#errs + 1] = err end)
+  pool:request("k", function() end,
+  ---@param _ any
+  ---@param err string|nil
+  function(_, err) errs[#errs + 1] = err end)
 
   pool:resolve_now("k", nil, "something failed")
   assert_eq(#errs, 2)
@@ -350,9 +393,13 @@ end)
 test("different keys are independent operations", function()
   coalescer._reset()
   local pool = coalescer.new({ name = "indep_test", done_linger_ms = 0 })
-  local results = {}
-  pool:request("a", function() end, function(r) results.a = r end)
-  pool:request("b", function() end, function(r) results.b = r end)
+  local results = {} ---@type table<string, any>
+  pool:request("a", function() end,
+  ---@param r any
+  function(r) results.a = r end)
+  pool:request("b", function() end,
+  ---@param r any
+  function(r) results.b = r end)
 
   pool:resolve_now("a", "alpha", nil)
   assert_eq(results.a, "alpha")
@@ -377,9 +424,13 @@ end)
 test("handle:cancel() prevents callback invocation", function()
   coalescer._reset()
   local pool = coalescer.new({ name = "handle_cancel_test", done_linger_ms = 0 })
-  local results = {}
-  local h1 = pool:request("k", function() end, function(r) results[1] = r end)
-  local _h2 = pool:request("k", function() end, function(r) results[2] = r end)
+  local results = {} ---@type table<integer, any>
+  local h1 = pool:request("k", function() end,
+  ---@param r any
+  function(r) results[1] = r end)
+  pool:request("k", function() end,
+  ---@param r any
+  function(r) results[2] = r end)
 
   -- Cancel first subscriber
   local ok = h1:cancel()
@@ -405,9 +456,8 @@ end)
 test("auto-cancel when last subscriber cancels", function()
   coalescer._reset()
   local pool = coalescer.new({ name = "autocancel_test", done_linger_ms = 0 })
-  local errs = {}
-  local h1 = pool:request("k", function() end, function(_, err) errs[1] = err end)
-  local h2 = pool:request("k", function() end, function(_, err) errs[2] = err end)
+  local h1 = pool:request("k", function() end, function() end)
+  local h2 = pool:request("k", function() end, function() end)
 
   -- Cancel both subscribers — should auto-cancel the operation
   h1:cancel()
@@ -433,10 +483,16 @@ end)
 test("first subscriber can cancel without affecting operation", function()
   coalescer._reset()
   local pool = coalescer.new({ name = "first_cancel_test", done_linger_ms = 0 })
-  local results = {}
-  local h1 = pool:request("k", function() end, function(r) results[1] = r end)
-  pool:request("k", function() end, function(r) results[2] = r end)
-  pool:request("k", function() end, function(r) results[3] = r end)
+  local results = {} ---@type table<integer, any>
+  local h1 = pool:request("k", function() end,
+  ---@param r any
+  function(r) results[1] = r end)
+  pool:request("k", function() end,
+  ---@param r any
+  function(r) results[2] = r end)
+  pool:request("k", function() end,
+  ---@param r any
+  function(r) results[3] = r end)
 
   -- Cancel the initiator — operation should continue for others
   h1:cancel()

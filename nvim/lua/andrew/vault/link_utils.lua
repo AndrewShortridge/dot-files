@@ -156,8 +156,7 @@ end
 --- Convert a markdown heading to a URL-safe slug/anchor.
 --- Matches Obsidian's heading anchor format.
 --- Delegates to slug.lua which maintains its own LRU cache.
---- @param text string  The heading text (without the # prefix)
---- @return string
+--- Takes the heading text (without the # prefix), returns the slug.
 M.heading_to_slug = slug_mod.heading_to_slug
 
 --- Find the 1-based line number of a heading matching the given slug.
@@ -343,7 +342,8 @@ end
 --- For file paths, uses section-level caching (mtime-validated) via file_cache.
 --- @param source string|string[]  Absolute file path or array of lines
 --- @param block_id string  Block ID (without ^ prefix)
---- @return string[]  Paragraph lines, or empty table if not found
+--- @return string[]|nil lines  Paragraph lines, or nil if the block is not found
+--- @return string|nil err  Error message when the block is not found
 function M.read_block_content(source, block_id)
   if type(source) == "table" then
     local result = extract_block_lines(source, block_id)
@@ -468,10 +468,6 @@ function M.replace_link_heading(link_text, new_heading)
   return "[[" .. (before_hash or "") .. "#" .. new_heading .. after_heading .. "]]"
 end
 
---- Pick the closest path to the current buffer by proximity scoring.
---- Uses character-by-character prefix matching against the current buffer's directory.
---- @param paths string[]  Array of absolute file paths
---- @return string  The path with the best proximity score
 --- Pure Lua dirname (avoids vim.fn cross-language call).
 ---@param path string absolute or relative file path
 ---@return string directory portion of the path
@@ -494,6 +490,10 @@ function M.wikilink_display_name(raw)
   return raw
 end
 
+--- Pick the closest path to the current buffer by proximity scoring.
+--- Uses character-by-character prefix matching against the current buffer's directory.
+--- @param paths string[]  Array of absolute file paths
+--- @return string  The path with the best proximity score
 function M.pick_closest(paths)
   if #paths == 1 then
     return paths[1]

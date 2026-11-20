@@ -105,6 +105,9 @@ local function keep_heading_layout_across_rebuild()
   local text_size = require("md-render.text_size")
   local upstream_refresh = text_size.refresh
 
+  -- md-render's `refresh`, replaced on purpose: what this changes is the
+  -- "Here:" list at the top of the file.
+  ---@diagnostic disable-next-line: duplicate-set-field
   text_size.refresh = function(state, window, content)
     local previous_placements = state and state.placements
     local previous_layout = state and state.last_layout
@@ -150,6 +153,9 @@ local function keep_images_across_rebuild()
   local display_utils = require("md-render.display_utils")
   local upstream_update_images = display_utils.update_images
 
+  -- md-render's `update_images`, replaced on purpose: what this changes is
+  -- the "Here:" list at the top of the file.
+  ---@diagnostic disable-next-line: duplicate-set-field
   display_utils.update_images = function(state, window, content)
     if
       not state
@@ -272,6 +278,9 @@ local function repaint_fully_only_for_moved_headings()
   local text_size = require("md-render.text_size")
   local upstream_paint = text_size.paint
 
+  -- md-render's `paint`, replaced on purpose: what this changes is the
+  -- "Here:" list at the top of the file.
+  ---@diagnostic disable-next-line: duplicate-set-field
   text_size.paint = function(state)
     local view = state and view_of(window_of_heading_state[state])
     if state and state.owes_invalidate then
@@ -364,11 +373,15 @@ local function track_heading_states()
     return state
   end
 
+  -- md-render's `attach`, `refresh` and `detach`, wrapped to track its
+  -- heading states; the fields read are named at the top of the file.
+  ---@diagnostic disable-next-line: duplicate-set-field
   text_size.attach = function(window, content)
     return track(upstream_attach(window, content), window)
   end
   -- `refresh` attaches when there was no state, and detaches when the rebuilt
   -- content has no heading left.
+  ---@diagnostic disable-next-line: duplicate-set-field
   text_size.refresh = function(state, window, content)
     local refreshed_state = upstream_refresh(state, window, content)
     if state and refreshed_state ~= state then
@@ -376,6 +389,7 @@ local function track_heading_states()
     end
     return track(refreshed_state, window)
   end
+  ---@diagnostic disable-next-line: duplicate-set-field
   text_size.detach = function(state)
     if state then
       window_of_heading_state[state] = nil

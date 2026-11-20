@@ -25,6 +25,7 @@
 -- Run with:
 --   nvim --headless -u NONE -l tests/completion_wikilink_gate_bytescan_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -39,6 +40,9 @@ print("\n=== Wikilink Completion Gate Byte-Scan Perf Tests ===\n")
 -- ---------------------------------------------------------------------------
 -- Temp vault: one note plus a few sibling notes for a non-trivial candidate set.
 -- ---------------------------------------------------------------------------
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -70,10 +74,17 @@ vim.cmd("edit " .. vim.fn.fnameescape(dir .. "/note.md"))
 local bufnr = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, note_lines)
 
+-- Loads blink.cmp's types for this file (lazydev).
+---@module "blink.cmp"
+
+---@param line string
+---@return blink.cmp.CompletionResponse?
 local function get_items(line)
-  local result = nil
+  local result = nil ---@type blink.cmp.CompletionResponse?
   local ctx = { line = line, cursor = { 1, #line } }
-  completion:get_completions(ctx, function(r) result = r end)
+  completion:get_completions(ctx,
+    ---@param r blink.cmp.CompletionResponse
+    function(r) result = r end)
   vim.wait(2000, function() return result ~= nil end, 10)
   return result
 end
@@ -99,19 +110,31 @@ test("no-trigger prose line: gate uses string.find not string.match", function()
   local match_count = 0
   local find_count = 0
   local saw_bracket_find = false
-  local result = nil
   local ok, err = pcall(function()
-    string.match = function(...)
+    ---@param ... any
+    ---@return any ...
+    local function spy_match(...)
       match_count = match_count + 1
       return orig_match(...)
     end
-    string.find = function(s, patt, init, plain)
+    ---@param s string|number
+    ---@param patt string|number
+    ---@param init? integer
+    ---@param plain? boolean
+    ---@return integer|nil start
+    ---@return integer|nil end_
+    ---@return any ... captures
+    local function spy_find(s, patt, init, plain)
       find_count = find_count + 1
       if patt == "[[" and plain == true then saw_bracket_find = true end
       return orig_find(s, patt, init, plain)
     end
+    string.match = spy_match
+    string.find = spy_find
     local ctx = { line = PROSE, cursor = { 1, #PROSE } }
-    completion:get_completions(ctx, function(r) result = r end)
+    completion:get_completions(ctx,
+      ---@param _ blink.cmp.CompletionResponse
+      function(_) end)
   end)
   string.match = orig_match -- finally: always restore
   string.find = orig_find

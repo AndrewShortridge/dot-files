@@ -76,6 +76,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_lsp_diagnostics_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil, assert_deep_eq = _H.assert_nil, _H.assert_deep_eq
@@ -84,6 +85,21 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 local D = require("andrew.fortran.lsp_diagnostics")
 local lsp = require("andrew.fortran.lsp")
+local nvim_compat = require("andrew.utils.nvim_compat")
+
+--- What lsp_diagnostics.analyse puts in `data` (lsp_diagnostics.lua:446, :498);
+--- each rule fills in only its own fields.
+---@class FortranLspDiagnosticsData
+---@field rule string
+---@field sentinel? string    ompDirectiveWithoutFlag only
+---@field callee? string      mpiArgumentCount only
+---@field missing? string[]   mpiArgumentCount only
+
+--- The diagnostics lsp_diagnostics.analyse builds: the message is always a
+--- plain string.
+---@class FortranLspDiagnosticsDiagnostic: lsp.Diagnostic
+---@field message string
+---@field data FortranLspDiagnosticsData
 
 -- ---------------------------------------------------------------------------
 -- A project on disk with NO build file, so the openmp probe answers "no"
@@ -96,10 +112,11 @@ vim.fn.mkdir(root .. "/code", "p")
 vim.fn.mkdir(root .. "/.git", "p")
 
 --- Only the diagnostics carrying `code`.
----@param list table[]
+---@param list FortranLspDiagnosticsDiagnostic[]
 ---@param code string
+---@return FortranLspDiagnosticsDiagnostic[]
 local function only(list, code)
-  local out = {}
+  local out = {} ---@type FortranLspDiagnosticsDiagnostic[]
   for _, d in ipairs(list) do
     if d.code == code then
       out[#out + 1] = d
@@ -109,11 +126,17 @@ local function only(list, code)
 end
 
 --- The bytes a diagnostic's range covers on a single line.
+---@param lines string[]
+---@param d lsp.Diagnostic
+---@return string
 local function covered(lines, d)
   local line = lines[d.range.start.line + 1]
   return line:sub(d.range.start.character + 1, d.range["end"].character)
 end
 
+---@param name string
+---@param lines string[]
+---@return integer
 local function fortran_buf(name, lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, name)
@@ -150,7 +173,7 @@ end)
 
 test("the href anchors the rule's section in the reference", function()
   local ds = only(D.analyse(OMP, { openmp = false }), "ompDirectiveWithoutFlag")
-  local href = ds[1].codeDescription.href
+  local href = assert(ds[1].codeDescription).href
   assert_true(href:sub(-#"#ompdirectivewithoutflag") == "#ompdirectivewithoutflag", "lowercased anchor: " .. href)
   assert_true(href:match("^file://") ~= nil, "a file URL vim.ui.open can open: " .. href)
   assert_true(href:find("/doc/fortran%-extras%.md#") ~= nil, "points at the rule reference: " .. href)
@@ -272,34 +295,38 @@ test("the omp_lib quickfix's own edit does not reintroduce the warning", functio
     "end program p",
   }
   local buf = fortran_buf(root .. "/code/omplib.f90", lines)
-  local uri = vim.uri_from_bufnr(buf)
+  local uri = nvim_compat.uri_from_buffer(buf)
   local before = #D.analyse(lines, { openmp = false })
 
-  local got = nil
+  local got = nil ---@type lsp.CodeAction[]|nil
   CA.actions({
     textDocument = { uri = uri },
     range = { start = { line = 3, character = 0 }, ["end"] = { line = 3, character = 0 } },
     context = { diagnostics = {} },
+    ---@param _ table|nil
+    ---@param res table[]|nil
   }, function(_, res)
     got = res or {}
   end)
   assert_true(vim.wait(30000, function()
     return got ~= nil
   end, 20), "the provider answered: ")
+  ---@cast got -nil
 
-  local action
+  local action ---@type lsp.CodeAction|nil
   for _, a in ipairs(got) do
     if a.title == CA.TITLE_OMP_LIB then
       action = a
     end
   end
   assert_true(action ~= nil, "the omp_lib quickfix is offered: ")
-  vim.lsp.util.apply_workspace_edit(action.edit, "utf-8")
+  ---@cast action -nil
+  vim.lsp.util.apply_workspace_edit(assert(action.edit), "utf-8")
 
   local after_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local after = D.analyse(after_lines, { openmp = false })
   assert_eq(#after, before, "applying the fix does not add a diagnostic: ")
-  local inserted = nil
+  local inserted = nil ---@type integer|nil
   for lnum, line in ipairs(after_lines) do
     if line:find("use omp_lib", 1, true) then
       inserted = lnum - 1
@@ -369,7 +396,7 @@ end)
 
 test("the href is the routine's own man page", function()
   local d = only(D.analyse(SHORT, { openmp = true }), "mpiArgumentCount")[1]
-  assert_eq(d.codeDescription.href, "https://www.open-mpi.org/doc/current/man3/MPI_Comm_rank.3.php", "man page: ")
+  assert_eq(assert(d.codeDescription).href, "https://www.open-mpi.org/doc/current/man3/MPI_Comm_rank.3.php", "man page: ")
 end)
 
 test("a complete call is clean", function()
@@ -494,9 +521,11 @@ local BOTH = {
 
 test("didOpen publishes through the dispatcher", function()
   local buf = fortran_buf(root .. "/code/push.f90", BOTH)
-  local uri = vim.uri_from_bufnr(buf)
-  local seen = nil
-  local srv = lsp.server({
+  local uri = nvim_compat.uri_from_buffer(buf)
+  local seen = nil ---@type lsp.PublishDiagnosticsParams|nil
+  local srv = lsp.server({ ---@type vim.lsp.rpc.Client
+    ---@param method string
+    ---@param params table
     notification = function(method, params)
       if method == "textDocument/publishDiagnostics" then
         seen = params
@@ -507,9 +536,10 @@ test("didOpen publishes through the dispatcher", function()
   assert_true(vim.wait(30000, function()
     return seen ~= nil
   end, 20), "a publishDiagnostics notification arrived: ")
+  ---@cast seen -nil
 
   assert_eq(seen.uri, uri, "for this document: ")
-  local codes = {}
+  local codes = {} ---@type (string|integer)[]
   for _, d in ipairs(seen.diagnostics) do
     codes[#codes + 1] = d.code
   end
@@ -522,17 +552,20 @@ test("didOpen publishes through the dispatcher", function()
 end)
 
 test("textDocumentSync advertises save, or nvim never sends didSave", function()
-  local sync = lsp.capabilities().textDocumentSync
+  local sync = lsp.capabilities().textDocumentSync ---@type lsp.TextDocumentSyncOptions|nil
   assert_true(sync ~= nil, "document sync is declared: ")
+  ---@cast sync -nil
   assert_true(sync.save ~= nil, "and `save` with it -- the didSave gate: ")
   assert_true(sync.openClose == true, "openClose stays, for didOpen/didClose: ")
 end)
 
 test("didSave recomputes and republishes", function()
   local buf = fortran_buf(root .. "/code/resave.f90", BOTH)
-  local uri = vim.uri_from_bufnr(buf)
-  local seen = nil
-  local srv = lsp.server({
+  local uri = nvim_compat.uri_from_buffer(buf)
+  local seen = nil ---@type lsp.PublishDiagnosticsParams|nil
+  local srv = lsp.server({ ---@type vim.lsp.rpc.Client
+    ---@param method string
+    ---@param params table
     notification = function(method, params)
       if method == "textDocument/publishDiagnostics" then
         seen = params
@@ -543,6 +576,7 @@ test("didSave recomputes and republishes", function()
   assert_true(vim.wait(30000, function()
     return seen ~= nil
   end, 20), "the first publish arrived: ")
+  ---@cast seen -nil
   assert_eq(#seen.diagnostics, 2, "two rules on the way in: ")
 
   -- Repair the call in the buffer and save: the count rule must stand down.
@@ -552,7 +586,9 @@ test("didSave recomputes and republishes", function()
   assert_true(vim.wait(30000, function()
     return seen ~= nil
   end, 20), "a second publish arrived: ")
-  local codes = {}
+  -- `seen` was reset to nil above; the wait just asserted the new publish.
+  ---@cast seen lsp.PublishDiagnosticsParams
+  local codes = {} ---@type (string|integer)[]
   for _, d in ipairs(seen.diagnostics) do
     codes[#codes + 1] = d.code
   end
@@ -561,8 +597,10 @@ test("didSave recomputes and republishes", function()
 end)
 
 test("didClose withdraws them", function()
-  local seen = nil
-  local srv = lsp.server({
+  local seen = nil ---@type lsp.PublishDiagnosticsParams|nil
+  local srv = lsp.server({ ---@type vim.lsp.rpc.Client
+    ---@param method string
+    ---@param params table
     notification = function(method, params)
       if method == "textDocument/publishDiagnostics" then
         seen = params
@@ -573,6 +611,7 @@ test("didClose withdraws them", function()
   assert_true(vim.wait(5000, function()
     return seen ~= nil
   end, 10), "a notification arrived: ")
+  ---@cast seen -nil
   assert_eq(seen.uri, "file:///nowhere/x.f90", "for the closed document: ")
   assert_eq(#seen.diagnostics, 0, "an EMPTY list, not nil: ")
 end)
@@ -588,9 +627,10 @@ test("a real client sees code and codeDescription.href", function()
     "diagnostics reached vim.diagnostic: "
   )
 
-  local by_code = {}
+  local by_code = {} ---@type table<string|integer, vim.Diagnostic>
   for _, d in ipairs(vim.diagnostic.get(buf)) do
-    by_code[d.code] = d
+    -- A diagnostic without a code would already fail here: t[nil] = v raises.
+    by_code[assert(d.code)] = d
   end
   assert_true(by_code.ompDirectiveWithoutFlag ~= nil, "the OpenMP rule is visible client-side: ")
   assert_true(by_code.mpiArgumentCount ~= nil, "the MPI rule is visible client-side: ")

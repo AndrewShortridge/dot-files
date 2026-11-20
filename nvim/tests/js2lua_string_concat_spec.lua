@@ -12,6 +12,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/js2lua_string_concat_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_match = _H.test, _H.assert_eq, _H.assert_match
 
@@ -22,6 +23,9 @@ print("\n=== js2lua String Concatenation Tests ===\n")
 
 -- Mirror of api.lua's sandbox helper so we can run the transpiled chunk in
 -- isolation (no full vault index needed).
+---@param a any
+---@param b any
+---@return string|number
 local function js_add(a, b)
   if type(a) == "string" or type(b) == "string" then
     return tostring(a) .. tostring(b)
@@ -31,6 +35,11 @@ end
 
 -- Transpile `js`, then compile and run it with __js_add (and any extra named
 -- upvalues) in scope. Returns the runtime result of the chunk.
+---@alias Js2luaStringConcatUpvalue [string, any]  { name, value } bound as a local of the chunk
+
+---@param js string
+---@param extra? Js2luaStringConcatUpvalue[]
+---@return any result  whatever the transpiled chunk returns (compared by the tests)
 local function run(js, extra)
   local lua = assert(js2lua.transpile(js), "transpile returned nil")
   local sig = "local __js_add"
@@ -104,7 +113,12 @@ end)
 -- 10. Inner '+' inside a call argument list stays scoped to that argument.
 test("'+' inside call args binds only to that argument", function()
   -- f(1 + 2, 3) -> f(__js_add(1, 2), 3); define f to return its first arg.
-  assert_eq(run([[return f(1 + 2, 3)]], { { "f", function(x) return x end } }), 3)
+  assert_eq(run([[return f(1 + 2, 3)]], { {
+    "f",
+    ---@param x number
+    ---@return number
+    function(x) return x end,
+  } }), 3)
 end)
 
 -- 11-18. Regression guards for the additive rewrite: unary-prefixed RHS must

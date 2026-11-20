@@ -24,6 +24,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/search_advanced_lazy_snapshot_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -36,6 +37,9 @@ local engine = require("andrew.vault.engine")
 
 print("\n=== Advanced Search Lazy Snapshot Perf Tests ===\n")
 
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -47,6 +51,8 @@ end
 
 -- Build a small vault: every note carries #foo so metadata matching has work,
 -- and the body has a distinct text term for the text-only branch.
+---@param n integer
+---@return string dir
 local function make_vault(n)
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -63,6 +69,8 @@ local function make_vault(n)
   return dir
 end
 
+---@param dir string
+---@return VaultIndex
 local function fresh_vi(dir)
   vault_index._instance = nil
   local idx = vault_index.get(dir)
@@ -73,10 +81,15 @@ end
 -- Wrap the instance's snapshot_files with a call counter. Assigning directly on
 -- the instance shadows the metatable method; the wrapper forwards to the real
 -- one so behavior/output is unchanged.
+---@param idx VaultIndex
+---@return { n: integer } counter
 local function instrument(idx)
   local counter = { n = 0 }
-  local real = getmetatable(idx).snapshot_files
-  rawset(idx, "snapshot_files", function(self)
+  local real = getmetatable(idx).snapshot_files ---@type fun(self: VaultIndex): table<string, VaultIndexEntry>
+  rawset(idx, "snapshot_files",
+  ---@param self VaultIndex
+  ---@return table<string, VaultIndexEntry>
+  function(self)
     counter.n = counter.n + 1
     return real(self)
   end)
@@ -89,11 +102,13 @@ test("metadata_only query triggers ZERO snapshot_files copies", function()
   engine.vault_path = dir
   local counter = instrument(idx)
 
-  local ast = search_query.parse_query("tag:foo")
+  -- A fixed, valid query: parse_query returns nil only on a parse error.
+  local ast = assert(search_query.parse_query("tag:foo"))
   local result = advanced.evaluate_advanced_ast(ast, nil, idx, dir, nil, nil)
 
   assert_eq(counter.n, 0, "metadata_only must not snapshot the files table")
   assert_true(result ~= nil, "metadata_only returns a result")
+  ---@cast result -nil
   -- 12 notes all carry #foo, so the metadata branch matched them.
   assert_eq(#result.entries, 12, "metadata_only matched all tagged notes")
 end)
@@ -104,7 +119,7 @@ test("text_only query still snapshots the files table", function()
   engine.vault_path = dir
   local counter = instrument(idx)
 
-  local ast = search_query.parse_query("alpha")
+  local ast = assert(search_query.parse_query("alpha"))
   local result = advanced.evaluate_advanced_ast(ast, nil, idx, dir, nil, nil)
 
   assert_true(counter.n >= 1, "text_only branch needs the full file list (snapshot)")
@@ -119,7 +134,7 @@ test("memoized: a single resolve copies snapshot at most once", function()
   engine.vault_path = dir
   local counter = instrument(idx)
 
-  local ast = search_query.parse_query("alpha OR tag:foo")
+  local ast = assert(search_query.parse_query("alpha OR tag:foo"))
   advanced.evaluate_advanced_ast(ast, nil, idx, dir, nil, nil)
 
   assert_true(counter.n <= 1, "snapshot copied at most once per resolve (memoized)")

@@ -147,9 +147,11 @@ alias neovim='nvim'
 alias vim='nvim'
 alias v='nvim'
 
-# Set default editor to miniconda neovim (0.11.5)
-export EDITOR='/home/andrew/miniconda3/bin/nvim'
-export VISUAL='/home/andrew/miniconda3/bin/nvim'
+# Default editor: the Neovim ~/.local/bin/nvim links to (0.13-dev for now).
+# A full path, not `nvim`: inside Neovim, init.lua puts conda's bin first on
+# PATH, and conda has an older nvim.
+export EDITOR="$HOME/.local/bin/nvim"
+export VISUAL="$HOME/.local/bin/nvim"
 
 
 
@@ -197,6 +199,9 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 export PATH=/home/andrew/.opencode/bin:$PATH
 export PATH="$PATH:/opt/nvim-linux-x86_64/bin"
 export PATH="/opt/nvim-linux-x86_64/bin:$PATH"
+# Same order as ~/.zshrc: ~/.local/bin/nvim is the Neovim that runs (0.13-dev
+# for now); the 0.12.5 in /opt stays behind it as the fallback.
+export PATH="$HOME/.local/bin:$PATH"
 
 
 # fzf

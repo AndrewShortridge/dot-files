@@ -38,8 +38,8 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/md_render_math_tex_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local assert_eq, assert_true = _H.assert_eq, _H.assert_true
 
 --- What a test started that must end even when it fails (child processes,
@@ -68,6 +68,24 @@ package.path = CONFIG_DIRECTORY .. "/lua/?.lua;" .. package.path
 
 local MODULE_NAME = "andrew.utils.md_render_math_tex"
 
+-- The module's own table has no class, so this mirrors its public functions
+-- with their annotations (lua/andrew/utils/md_render_math_tex.lua); it is
+-- loaded with `require(MODULE_NAME)`, which lua_ls cannot follow.
+---@alias MathTexSpecStatus { is_available: boolean, reason: string?, pdftex: string?, mutool: string?, format: string?, cache_directory: string, preamble: string?, standby_off: string?, remembered: { pictures: integer, absent: integer } }
+---@alias MathTexSpecMaintenanceSummary { pictures: integer, bytes: integer, pruned: integer, old_files: integer, stale_directories: integer }
+---@alias MathTexSpecSetupOptions { cache_directory?: string, standby_idle_milliseconds?: integer, disk_budget_bytes?: integer, remembered_picture_limit?: integer, timeout_milliseconds?: integer }
+
+---@class MathTexSpecModule
+---@field setup fun(options?: MathTexSpecSetupOptions)
+---@field is_available fun(): boolean
+---@field lookup fun(equation: MdRenderMathEquation, look: MdRenderMathLook): MdRenderMathPicture|false|nil
+---@field failure_of fun(equation: MdRenderMathEquation, look: MdRenderMathLook): string?
+---@field forget fun(equation: MdRenderMathEquation, look: MdRenderMathLook)
+---@field retry fun()
+---@field status fun(): MathTexSpecStatus
+---@field request fun(equations: MdRenderMathEquation[], look: MdRenderMathLook, on_settled: fun())
+---@field maintain fun(on_done?: fun(summary: MathTexSpecMaintenanceSummary))
+
 if vim.fn.executable("pdftex") == 0 or vim.fn.executable("mutool") == 0 then
   io.stdout:write("  SKIP: pdftex or mutool is not installed\n")
   _H.finish()
@@ -93,25 +111,38 @@ vim.env.TEXMFOUTPUT = scratch_root
 
 -- Every process the module starts goes through vim.system. A standby is a
 -- pdftex started in a directory whose job.tex is a FIFO.
+-- Typed with vim.system's own signature: other specs assign fakes to vim.system,
+-- which lua_ls would otherwise fold into this local's type.
+---@type fun(cmd: string[], opts?: vim.SystemOpts, on_exit?: fun(out: vim.SystemCompleted)): vim.SystemObj
 local original_system = vim.system
----@type { command: string[], is_standby: boolean, pid: integer? }[]
-local spawned = {}
+--- A process started through the vim.system stub below.
+---@class MathTexSpecSpawn
+---@field command string[]
+---@field is_standby boolean
+---@field pid integer?  set once vim.system returned
+
+local spawned = {} ---@type MathTexSpecSpawn[]
 local processes_alive = 0
 local most_processes_alive = 0
 --- When it answers true for a command, starting it fails (as `vim.system`
 --- does for a missing or unrunnable program).
 ---@type (fun(command: string[]): boolean)?
 local refuse_spawn
----@diagnostic disable-next-line: duplicate-set-field
-vim.system = function(command, options, on_exit)
+--- Records every process, then starts it with the real vim.system.
+---@param command string[]
+---@param options? vim.SystemOpts
+---@param on_exit? fun(out: vim.SystemCompleted)
+---@return vim.SystemObj
+local function recording_system(command, options, on_exit)
   if refuse_spawn and refuse_spawn(command) then
     error("ENOENT: refused by the spec: " .. command[1])
   end
   local job_file = options and options.cwd and vim.uv.fs_lstat(options.cwd .. "/job.tex")
-  local record = { command = command, is_standby = job_file and job_file.type == "fifo" or false }
+  local record = { command = command, is_standby = job_file and job_file.type == "fifo" or false } ---@type MathTexSpecSpawn
   spawned[#spawned + 1] = record
   processes_alive = processes_alive + 1
   most_processes_alive = math.max(most_processes_alive, processes_alive)
+  ---@param result vim.SystemCompleted
   local process = original_system(command, options, function(result)
     processes_alive = processes_alive - 1
     if on_exit then
@@ -121,12 +152,15 @@ vim.system = function(command, options, on_exit)
   record.pid = process.pid
   return process
 end
+-- Stubbed on purpose to record every process; restored at the end of the file.
+---@diagnostic disable-next-line: duplicate-set-field
+vim.system = recording_system
 
 --- Processes started that run `name`: TeX runs go through `/bin/sh -c 'ulimit
 --- ...; exec "$@"'` and parallel mutools through a shell given "mutool" as
 --- its argument, so the program is not always the first word.
 ---@param name string
----@param predicate? fun(record: table): boolean
+---@param predicate? fun(record: MathTexSpecSpawn): boolean
 ---@return integer
 local function count_spawned(name, predicate)
   local count = 0
@@ -140,6 +174,7 @@ end
 
 ---@return integer
 local function count_format_builds()
+  ---@param record MathTexSpecSpawn
   return count_spawned("pdftex", function(record)
     return vim.tbl_contains(record.command, "-ini")
   end)
@@ -147,6 +182,7 @@ end
 
 ---@return integer
 local function count_standbys()
+  ---@param record MathTexSpecSpawn
   return count_spawned("pdftex", function(record)
     return record.is_standby
   end)
@@ -155,6 +191,7 @@ end
 --- pdftex runs that were not a standby and not a format build.
 ---@return integer
 local function count_plain_runs()
+  ---@param record MathTexSpecSpawn
   return count_spawned("pdftex", function(record)
     return not record.is_standby and not vim.tbl_contains(record.command, "-ini")
   end)
@@ -163,6 +200,7 @@ end
 --- Shells that started parallel mutools.
 ---@return integer
 local function count_mutool_shells()
+  ---@param record MathTexSpecSpawn
   return count_spawned("/bin/sh", function(record)
     return vim.tbl_contains(record.command, "mutool")
   end)
@@ -212,13 +250,15 @@ end
 --- A module instance with nothing in memory, as in a new session; the one
 --- before ends first.
 ---@param directory string
----@param options? table more `setup` options
+---@param options? MathTexSpecSetupOptions more `setup` options
+---@return MathTexSpecModule
 local function load_fresh_module(directory, options)
   if package.loaded[MODULE_NAME] then
     end_session()
   end
+  ---@type MathTexSpecModule?
   package.loaded[MODULE_NAME] = nil
-  local module = require(MODULE_NAME)
+  local module = require(MODULE_NAME) ---@type MathTexSpecModule
   module.setup(vim.tbl_extend("force", { cache_directory = directory }, options or {}))
   return module
 end
@@ -229,7 +269,7 @@ end
 local function cache_with_formats(name)
   local directory = scratch_root .. "/" .. name
   vim.fn.mkdir(directory, "p")
-  for _, file_name in ipairs(vim.fn.readdir(cache_directory)) do
+  for _, file_name in ipairs(vim.fn.readdir(cache_directory) --[[@as string[] ]]) do
     if file_name:match("%.fmt$") then
       vim.uv.fs_copyfile(cache_directory .. "/" .. file_name, directory .. "/" .. file_name)
     end
@@ -254,15 +294,22 @@ local function big_endian(content, offset)
   return ((byte_1 * 256 + byte_2) * 256 + byte_3) * 256 + byte_4
 end
 
----@class MathTexSpecRequest
+--- A request while it waits: `milliseconds` is set by the first on_settled call.
+---@class MathTexSpecPendingRequest
 ---@field calls integer times on_settled ran
 ---@field was_called_inside_request boolean
+---@field milliseconds? number until it settled
+
+---@class MathTexSpecRequest: MathTexSpecPendingRequest
 ---@field milliseconds number until it settled
 
 --- Request and wait until settled, then a little longer to catch a second call.
+---@param module MathTexSpecModule
+---@param equations MdRenderMathEquation[]
+---@param look MdRenderMathLook
 ---@return MathTexSpecRequest
 local function request_and_wait(module, equations, look)
-  local outcome = { calls = 0, was_called_inside_request = false }
+  local outcome = { calls = 0, was_called_inside_request = false } ---@type MathTexSpecPendingRequest
   local has_returned = false
   local started = vim.uv.hrtime()
   module.request(equations, look, function()
@@ -275,34 +322,46 @@ local function request_and_wait(module, equations, look)
     return outcome.calls > 0
   end, 20000)
   let_run(50)
-  return outcome
+  -- Settled by now (the wait above is for the first on_settled call, which sets
+  -- `milliseconds`); a request that never settles fails its test's assertions.
+  return outcome --[[@as MathTexSpecRequest]]
 end
 
+---@type MdRenderMathLook
 local LOOK = { cell_width = 20, cell_height = 44 }
 
+---@type MdRenderMathEquation
 local T_M = { kind = "inline", tex = "T_m" }
+---@type MdRenderMathEquation
 local TALL_INLINE = { kind = "inline", tex = "R_{eq} = \\left(\\frac{3V}{4\\pi}\\right)^{1/3}" }
+---@type MdRenderMathEquation
 local RHO = { kind = "inline", tex = " \\rho(z) " }
+---@type MdRenderMathEquation
 local ALIGNED = {
   kind = "display",
   tex = "\\begin{aligned}\nE &= mc^2 \\\\\n\np &= \\gamma m v % momentum\n\\end{aligned}",
 }
+---@type MdRenderMathEquation
 local MATRIX = { kind = "display", tex = "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}" }
+---@type MdRenderMathEquation
 local OPEN_FRACTION = { kind = "inline", tex = "\\frac{" }
+---@type MdRenderMathEquation
 local UNDEFINED_COMMAND = { kind = "inline", tex = "\\nosuchcommand x" }
+---@type MdRenderMathEquation
 local UNBALANCED = { kind = "inline", tex = "a}{b" }
+---@type MdRenderMathEquation
 local MISSING_RIGHT = { kind = "display", tex = "\\left( x" }
 
-local GOOD = { T_M, TALL_INLINE, RHO, ALIGNED, MATRIX }
-local BROKEN = { OPEN_FRACTION, UNDEFINED_COMMAND, UNBALANCED, MISSING_RIGHT }
+local GOOD = { T_M, TALL_INLINE, RHO, ALIGNED, MATRIX } ---@type MdRenderMathEquation[]
+local BROKEN = { OPEN_FRACTION, UNDEFINED_COMMAND, UNBALANCED, MISSING_RIGHT } ---@type MdRenderMathEquation[]
 
 local math_tex = load_fresh_module(cache_directory)
 
----@param module table
----@param equations table[]
----@return (table|false|nil)[] what `lookup` answers for each
+---@param module MathTexSpecModule
+---@param equations MdRenderMathEquation[]
+---@return (MdRenderMathPicture|false|nil)[] what `lookup` answers for each
 local function lookup_each(module, equations)
-  local answers = {}
+  local answers = {} ---@type (MdRenderMathPicture|false|nil)[]
   for index, equation in ipairs(equations) do
     answers[index] = module.lookup(equation, LOOK)
   end
@@ -313,8 +372,8 @@ end
 --- of the format, to save building it), and asserts that each is byte for
 --- byte the picture in `pictures`. That session ends before its cache goes (a
 --- live standby's directory): `math_tex` is a new one afterwards.
----@param equations table[]
----@param pictures (table|false|nil)[] what `math_tex` made of them beside others
+---@param equations MdRenderMathEquation[]
+---@param pictures (MdRenderMathPicture|false|nil)[] what `math_tex` made of them beside others
 ---@param cache_name string
 ---@param same_message string
 local function assert_same_as_alone(equations, pictures, cache_name, same_message)
@@ -325,7 +384,8 @@ local function assert_same_as_alone(equations, pictures, cache_name, same_messag
     local alone = reference.lookup(equation, LOOK)
     assert_true(pictures[index] and alone, equation.tex .. " is a picture both ways:")
     assert_true(
-      read_bytes(pictures[index].path) == read_bytes(alone.path),
+      -- Both asserted to be pictures just above.
+      read_bytes(assert(pictures[index]).path) == read_bytes(assert(alone).path),
       equation.tex .. same_message
     )
   end
@@ -339,6 +399,10 @@ end
 local function count_opens(work)
   local original_open = io.open
   local opens = 0
+  -- Stubbed on purpose to count opens while `work` runs; restored right after it.
+  ---@param ... any  io.open's (filename, mode?), passed through
+  ---@return file*?
+  ---@return string? err
   ---@diagnostic disable-next-line: duplicate-set-field
   io.open = function(...)
     opens = opens + 1
@@ -386,6 +450,7 @@ test("every picture is an 8-bit grey mask of exactly its cells, with its record"
   for _, equation in ipairs(GOOD) do
     local picture = math_tex.lookup(equation, LOOK)
     assert_true(picture, equation.tex .. " is a picture:")
+    ---@cast picture MdRenderMathPicture
     local content = read_bytes(picture.path)
     assert_eq(content:sub(13, 16), "IHDR", equation.tex .. " IHDR first:")
     assert_eq(big_endian(content, 17), picture.columns * LOOK.cell_width, equation.tex .. " width:")
@@ -403,8 +468,12 @@ test("every picture is an 8-bit grey mask of exactly its cells, with its record"
 end)
 
 test("sizes are what the coloured pictures had before the masks", function()
+  ---@param equation MdRenderMathEquation
+  ---@return string
   local function shape(equation)
-    local picture = math_tex.lookup(equation, LOOK)
+    -- A nil or false picture would crash the indexing anyway.
+    local picture = assert(math_tex.lookup(equation, LOOK))
+    ---@cast picture MdRenderMathPicture
     return picture.columns .. "x" .. picture.rows .. " " .. picture.scale
   end
   -- Pinned from the pre-mask module at 20x44 cells (same TeX geometry).
@@ -434,6 +503,8 @@ test("broken equations fail with TeX's reason and their batch-mates do not", fun
     assert_true(math_tex.failure_of(equation, LOOK), equation.tex .. " has a reason:")
   end
   local reason = math_tex.failure_of(UNDEFINED_COMMAND, LOOK)
+  -- Asserted to have a reason for every BROKEN equation just above.
+  ---@cast reason string
   assert_true(reason:find("Undefined control sequence", 1, true), "reason: " .. reason)
   assert_true(reason:find("\\nosuchcommand", 1, true), "where: " .. reason)
   assert_eq(math_tex.failure_of(T_M, LOOK), nil, "a picture has no reason:")
@@ -459,7 +530,8 @@ test("a request for what is already settled still calls back once, later", funct
 end)
 
 test("lookup of a known picture does no I/O and is cheap", function()
-  local microseconds
+  -- Set by the work function, which count_opens runs synchronously.
+  local microseconds ---@type number
   local opens = count_opens(function()
     local started = vim.uv.hrtime()
     for _ = 1, 10000 do
@@ -491,7 +563,7 @@ test("overlapping requests are one batch at a time, coalesced, in order", functi
   local look = { cell_width = 10, cell_height = 23 }
   local mutool_runs_before = count_spawned("mutool")
   most_processes_alive = processes_alive
-  local order = {}
+  local order = {} ---@type integer[]
   local calls = { 0, 0, 0 }
   math_tex.request(
     { { kind = "inline", tex = "x_1" }, { kind = "inline", tex = "y_1" } },
@@ -528,9 +600,12 @@ end)
 test("another cell size is another picture", function()
   local other_cell = { cell_width = 10, cell_height = 23 }
   request_and_wait(math_tex, { T_M }, other_cell)
-  local original = math_tex.lookup(T_M, LOOK)
+  -- A nil or false picture would crash the indexing below anyway.
+  local original = assert(math_tex.lookup(T_M, LOOK))
+  ---@cast original MdRenderMathPicture
   local smaller = math_tex.lookup(T_M, other_cell)
   assert_true(smaller, "made:")
+  ---@cast smaller MdRenderMathPicture
   assert_true(smaller.path ~= original.path, "another file:")
   local content = read_bytes(smaller.path)
   assert_eq(
@@ -617,7 +692,7 @@ test("nothing is written outside the cache directory", function()
   assert_eq(#in_cache, 3, "cache entries (" .. table.concat(in_cache, " ") .. "):")
   assert_true(in_cache[1]:match("^format%-v%d+%-%x+%.fmt$"), "the format:")
   assert_eq(in_cache[2] .. " " .. in_cache[3], "masks run", "the two directories:")
-  for _, name in ipairs(vim.fn.readdir(cache_directory .. "/masks")) do
+  for _, name in ipairs(vim.fn.readdir(cache_directory .. "/masks") --[[@as string[] ]]) do
     assert_true(name:match("^%x+%.png$"), "only pictures in masks/: " .. name)
   end
   -- At most the parked standby's directory is left in run/.
@@ -660,7 +735,7 @@ test("a run that dies with nobody to blame is halved until the culprit is alone"
   -- tcrm1000 has metrics but no Type 1 file: pdfTeX finds out only when it
   -- closes the PDF, after every equation ran clean.
   local culprit = { kind = "inline", tex = "\\hbox{\\font\\x=tcrm1000 \\x\\char181}" }
-  local innocents = {}
+  local innocents = {} ---@type MdRenderMathEquation[]
   for index = 1, 5 do
     innocents[index] = { kind = "inline", tex = "h_{" .. index .. "}" }
   end
@@ -701,9 +776,13 @@ test("align, equation, gather and \\tag typeset as display pictures", function()
   end
   assert_true(math_tex.lookup(displays[1], LOOK).rows >= 2, "align rows:")
   -- `\tag` adds the label beside it.
+  -- Asserted to be a picture with the others above.
   local tagged = math_tex.lookup(displays[5], LOOK)
+  ---@cast tagged MdRenderMathPicture
   request_and_wait(math_tex, { { kind = "display", tex = "F = ma" } }, LOOK)
-  local untagged = math_tex.lookup({ kind = "display", tex = "F = ma" }, LOOK)
+  -- A nil or false picture would crash the indexing below anyway.
+  local untagged = assert(math_tex.lookup({ kind = "display", tex = "F = ma" }, LOOK))
+  ---@cast untagged MdRenderMathPicture
   assert_true(tagged.columns > untagged.columns, "tagged is wider:")
 end)
 
@@ -716,7 +795,7 @@ test("Unicode in math typesets, or fails; a glyph is never dropped silently", fu
   local lost = { kind = "inline", tex = "x\\text{\\char200}" }
   -- inputenc makes these text commands; in a math font their slot is another
   -- glyph (`—` was drawn as `|`, `“` as `\`, `ł` as `l`).
-  local text_only = {}
+  local text_only = {} ---@type MdRenderMathEquation[]
   for _, character in ipairs({ "—", "“", "ł", "¿", "℧", "\u{200C}" }) do
     text_only[#text_only + 1] = { kind = "inline", tex = "x " .. character .. " y" }
   end
@@ -748,7 +827,7 @@ test("Unicode in math typesets, or fails; a glyph is never dropped silently", fu
 end)
 
 test("pages drawn by several mutool processes are the same files as by one", function()
-  local equations = {}
+  local equations = {} ---@type MdRenderMathEquation[]
   for index = 1, 40 do
     equations[index] = { kind = "inline", tex = "q_{" .. index .. "} + \\sqrt{" .. index .. "}" }
   end
@@ -769,6 +848,8 @@ test("pages drawn by several mutool processes are the same files as by one", fun
     local in_parallel = parallel_session.lookup(equation, LOOK)
     local alone = serial.lookup(equation, LOOK)
     assert_true(in_parallel and alone, equation.tex .. " made both ways:")
+    ---@cast in_parallel MdRenderMathPicture
+    ---@cast alone MdRenderMathPicture
     assert_true(
       read_bytes(in_parallel.path) == read_bytes(alone.path),
       equation.tex .. " same bytes:"
@@ -806,13 +887,14 @@ test("the standby is used, replaced, stopped when idle and on VimLeavePre", func
     end, 3000),
     "processes alive after the idle stop: " .. processes_alive
   )
-  local standby_pid
+  local standby_pid ---@type integer?
   for _, record in ipairs(spawned) do
     if record.is_standby then
       standby_pid = record.pid
     end
   end
-  assert_true(vim.uv.kill(standby_pid, 0) ~= 0, "the standby's pid is gone:")
+  -- A nil pid would make vim.uv.kill raise anyway.
+  assert_true(vim.uv.kill(assert(standby_pid), 0) ~= 0, "the standby's pid is gone:")
   wait_until(function()
     return #vim.fn.readdir(cache_directory .. "/run") == 0
   end, 2000)
@@ -881,6 +963,8 @@ test("a mutool or its shell that cannot start: nil, unavailable with a reason", 
     {
       label = "mutool",
       count = 1,
+      ---@param command string[]
+      ---@return boolean
       refuse = function(command)
         return command[1] == "mutool"
       end,
@@ -888,6 +972,8 @@ test("a mutool or its shell that cannot start: nil, unavailable with a reason", 
     {
       label = "the shell of the parallel mutools",
       count = 40,
+      ---@param command string[]
+      ---@return boolean
       refuse = function(command)
         return command[1] == "/bin/sh" and vim.tbl_contains(command, "mutool")
       end,
@@ -895,7 +981,7 @@ test("a mutool or its shell that cannot start: nil, unavailable with a reason", 
   }
   for _, case in ipairs(cases) do
     local session = load_fresh_module(cache_directory)
-    local equations = {}
+    local equations = {} ---@type MdRenderMathEquation[]
     for index = 1, case.count do
       equations[index] = { kind = "inline", tex = "n_{" .. index .. "}^{" .. case.count .. "}" }
     end
@@ -963,8 +1049,15 @@ end)
 
 test("a failed format build: nil, warns once, not tried again until retry()", function()
   local remove_fakes = fake_programs({ pdftex = { "echo '! I cannot build anything.'", "exit 1" } })
-  local warnings = {}
+  ---@class MathTexSpecWarning
+  ---@field message string
+  ---@field level? integer
+  local warnings = {} ---@type MathTexSpecWarning[]
   local original_notify = vim.notify
+  -- Stubbed on purpose to record the warnings; restored before the assertions.
+  -- Fake of vim.notify(msg: string, level?: integer, opts?: table); opts is not recorded.
+  ---@param message string
+  ---@param level? integer
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.notify = function(message, level)
     warnings[#warnings + 1] = { message = message, level = level }
@@ -996,7 +1089,8 @@ test("a failed format build: nil, warns once, not tried again until retry()", fu
   assert_eq(broken_session.lookup(equations[1], LOOK), nil, "u_1:")
   assert_eq(broken_session.lookup(equations[2], LOOK), nil, "u_2:")
   assert_eq(broken_session.failure_of(equations[1], LOOK), nil, "no TeX reason for u_1:")
-  assert_true(reason:find("I cannot build anything", 1, true), "reason: " .. tostring(reason))
+  -- A nil reason would crash the :find anyway.
+  assert_true(assert(reason):find("I cannot build anything", 1, true), "reason: " .. tostring(reason))
   assert_eq(#warnings, 2, "warnings (one, and one after retry):")
   assert_eq(warnings[1].level, vim.log.levels.WARN, "warning level:")
   assert_eq(builds_by_first, 1, "format builds tried by the first request:")
@@ -1034,6 +1128,7 @@ end)
 test("forget: the next lookup looks on disk again and it can be made again", function()
   local picture = math_tex.lookup(T_M, LOOK)
   assert_true(picture, "T_m is a picture:")
+  ---@cast picture MdRenderMathPicture
   os.remove(picture.path)
   assert_eq(math_tex.lookup(T_M, LOOK), picture, "still known in memory:")
   math_tex.forget(T_M, LOOK)
@@ -1066,10 +1161,11 @@ test("maintenance prunes old pictures beyond the budget, off the main thread", f
   local orphan_directory = maintenance_cache .. "/run/job-999999998-1"
   vim.fn.mkdir(orphan_directory, "p")
   assert_eq(vim.fn.system({ "mkfifo", orphan_directory .. "/job.tex" }), "", "mkfifo:")
-  local orphan_exit
+  local orphan_exit ---@type integer?
   local orphan = original_system(
     { "sh", "-c", "cat job.tex > /dev/null" },
     { cwd = orphan_directory },
+    ---@param result vim.SystemCompleted
     function(result)
       orphan_exit = result.code
     end
@@ -1109,8 +1205,9 @@ test("maintenance prunes old pictures beyond the budget, off the main thread", f
   let_run(50)
   local session = load_fresh_module(maintenance_cache, { disk_budget_bytes = 6 * 4096 })
   assert_true(session.is_available(), "available (the current format's name is known):")
-  local summary
+  local summary ---@type MathTexSpecMaintenanceSummary?
   local started = vim.uv.hrtime()
+  ---@param result MathTexSpecMaintenanceSummary
   session.maintain(function(result)
     summary = result
   end)
@@ -1125,7 +1222,8 @@ test("maintenance prunes old pictures beyond the budget, off the main thread", f
     end),
     "maintenance finished:"
   )
-  local left = vim.fn.readdir(masks)
+  ---@cast summary -nil
+  local left = vim.fn.readdir(masks) ---@type string[]
   -- 12 pictures in 12 blocks against a budget of 6: old ones go, oldest first,
   -- down to 80 % (4 blocks) -- but never a young one.
   assert_eq(summary.pruned, 8, "pruned:")
@@ -1165,19 +1263,22 @@ test("maintenance touches what this session read, so it is not pruned", function
   local session = load_fresh_module(cache_directory, { disk_budget_bytes = 1 })
   local picture = session.lookup(RHO, LOOK)
   assert_true(picture, "read from disk:")
+  ---@cast picture MdRenderMathPicture
   local three_days_ago = os.time() - 3 * 86400
   -- Everything old; only the one this session read is touched.
-  for _, name in ipairs(vim.fn.readdir(cache_directory .. "/masks")) do
+  for _, name in ipairs(vim.fn.readdir(cache_directory .. "/masks") --[[@as string[] ]]) do
     vim.uv.fs_utime(cache_directory .. "/masks/" .. name, three_days_ago, three_days_ago)
   end
-  local summary
+  local summary ---@type MathTexSpecMaintenanceSummary?
+  ---@param result MathTexSpecMaintenanceSummary
   session.maintain(function(result)
     summary = result
   end)
   wait_until(function()
     return summary ~= nil
   end)
-  assert_true(summary.pruned > 0, "others pruned:")
+  -- A summary that never came would crash the indexing anyway.
+  assert_true(assert(summary).pruned > 0, "others pruned:")
   assert_true(vim.uv.fs_stat(picture.path), "the one read is kept:")
   math_tex = load_fresh_module(cache_directory)
 end)
@@ -1251,7 +1352,7 @@ test("memory stays bounded; a working set within the bound is not read again", f
     session.lookup({ kind = "inline", tex = "miss_{" .. index .. "}" }, LOOK)
   end
   assert_true(session.status().remembered.absent <= 256, "absent entries bounded:")
-  local equations = {}
+  local equations = {} ---@type MdRenderMathEquation[]
   for index = 1, 20 do
     equations[index] = { kind = "inline", tex = "b_{" .. index .. "}" }
   end
@@ -1280,7 +1381,7 @@ end)
 
 test("remembered pictures: two generations, an older one moves back, forget drops both", function()
   -- b_1..b_10 are on disk (the test above made them).
-  local equations, pictures = {}, {}
+  local equations, pictures = {}, {} ---@type MdRenderMathEquation[], (MdRenderMathPicture|false|nil)[]
   local session = load_fresh_module(cache_directory, { remembered_picture_limit = 8 })
   for index = 1, 10 do
     equations[index] = { kind = "inline", tex = "b_{" .. index .. "}" }
@@ -1328,7 +1429,8 @@ test("a standby starts on a miss only, and is kept while misses keep coming", fu
     let_run(100)
     session.lookup(miss, LOOK)
   end
-  assert_eq(vim.uv.kill(standby_pid, 0), 0, "still alive while needed:")
+  -- A nil pid would make vim.uv.kill raise anyway.
+  assert_eq(vim.uv.kill(assert(standby_pid), 0), 0, "still alive while needed:")
   assert_eq(count_standbys() - standbys_before, 1, "the same standby:")
   assert_true(
     wait_until(function()
@@ -1351,7 +1453,9 @@ test("the user preamble: its macros in every equation; a changed one is a new fo
   assert_true(session.lookup(first, LOOK), "\\foo in one equation:")
   assert_true(session.lookup(second, LOOK), "\\foo in another:")
   assert_eq(session.status().preamble, preamble, "status names it:")
+  -- The same picture asserted just above.
   local narrow = session.lookup(first, LOOK)
+  ---@cast narrow MdRenderMathPicture
   -- Edited, and the config sourced again (`setup` once more).
   vim.fn.writefile({ "\\newcommand{\\foo}{BBBBBBBB}" }, preamble)
   session.setup()
@@ -1359,6 +1463,7 @@ test("the user preamble: its macros in every equation; a changed one is a new fo
   request_and_wait(session, { first }, LOOK)
   local wide = session.lookup(first, LOOK)
   assert_true(wide and wide.columns > narrow.columns, "made with the new preamble:")
+  ---@cast wide MdRenderMathPicture
   assert_eq(count_format_builds() - builds_before, 2, "format builds:")
   -- A new session reads the right picture from disk.
   local next_session = load_fresh_module(cache_directory)
@@ -1389,6 +1494,7 @@ test("the user preamble: its macros in every equation; a changed one is a new fo
   )
   local queued_picture = next_session.lookup(queued, LOOK)
   assert_true(queued_picture, "the queued one is made:")
+  ---@cast queued_picture MdRenderMathPicture
   assert_eq(
     queued_picture.columns,
     next_session.lookup(second, LOOK).columns,
@@ -1434,9 +1540,9 @@ test("quitting Neovim mid-batch or while a standby loads exits at once, leaving 
   ---@return integer[] processes whose command line or working directory is
   --- in a child's cache (mutool's arguments are relative to its job's)
   local function left_behind()
-    local pids = {}
+    local pids = {} ---@type integer[]
     local prefix = scratch_root .. "/child-"
-    for _, pid in ipairs(vim.fn.readdir("/proc")) do
+    for _, pid in ipairs(vim.fn.readdir("/proc") --[[@as string[] ]]) do
       local file = pid:match("^%d+$") and io.open("/proc/" .. pid .. "/cmdline", "rb")
       if file then
         local command_line = file:read("*a") or ""
@@ -1570,7 +1676,7 @@ test("a protocol line out of order makes the run untrusted, not its pictures wro
     vim.fn.delete(order_cache, "rf")
   end
   local session = load_fresh_module(order_cache)
-  local equations = {}
+  local equations = {} ---@type MdRenderMathEquation[]
   for index = 1, 4 do
     equations[index] = { kind = "inline", tex = "o_{" .. index .. "} + " .. index }
   end
@@ -1616,9 +1722,15 @@ test("an error inside a callback ends its batch; later requests still settle", f
     vim.notify = original_notify
   end
   --- `target[key]` raises once, for the first call `matches`; returns the undo.
+  ---@param target table<string, any>  a module table (vim.uv, vim.fs)
+  ---@param key string
+  ---@param matches fun(...: any): boolean  given the call's arguments
+  ---@return fun() undo
   local function raise_once(target, key, matches)
     local original = target[key]
     local has_raised = false
+    ---@param ... any  the wrapped function's arguments
+    ---@return any
     target[key] = function(...)
       if not has_raised and matches(...) then
         has_raised = true
@@ -1630,6 +1742,8 @@ test("an error inside a callback ends its batch; later requests still settle", f
       target[key] = original
     end
   end
+  ---@param path any  the first argument of the wrapped call
+  ---@return boolean
   local function is_job_log(path)
     return type(path) == "string" and path:find("/job%.log$") ~= nil
   end
@@ -1638,7 +1752,10 @@ test("an error inside a callback ends its batch; later requests still settle", f
     -- job's log link.
     {
       label = "starting the batch",
+      ---@return fun() undo
       raise = function()
+        ---@param _ string  fs_symlink's path
+        ---@param link string  fs_symlink's new_path
         return raise_once(vim.uv, "fs_symlink", function(_, link)
           return is_job_log(link)
         end)
@@ -1647,12 +1764,14 @@ test("an error inside a callback ends its batch; later requests still settle", f
     },
     {
       label = "pdfTeX's exit",
+      ---@return fun() undo
       raise = function()
         return raise_once(vim.uv, "fs_stat", is_job_log)
       end,
     },
     {
       label = "mutool's exit",
+      ---@return fun() undo
       raise = function()
         return raise_once(vim.fs, "basename", function()
           return true
@@ -1694,7 +1813,12 @@ test("the poll and the time limit of a standby batch end with it", function()
   -- (`write_when_ready`) and the time limit (`run_batch`) must be closed
   -- once their batch has settled, not live on holding its items.
   local original_new_timer = vim.uv.new_timer
-  local made = {}
+  ---@class MathTexSpecTimer
+  ---@field timer uv.uv_timer_t?
+  ---@field maker string?  name of the function that called new_timer
+  local made = {} ---@type MathTexSpecTimer[]
+  -- Stubbed on purpose to record who makes timers; restored by the cleanup below.
+  ---@return uv.uv_timer_t?
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.uv.new_timer = function()
     local timer = original_new_timer()
@@ -1706,7 +1830,7 @@ test("the poll and the time limit of a standby batch end with it", function()
   end
   ---@return string[] makers of batch timers still alive
   local function batch_timers_alive()
-    local makers = {}
+    local makers = {} ---@type string[]
     for _, entry in ipairs(made) do
       if
         (entry.maker == "write_when_ready" or entry.maker == "run_batch")
@@ -1727,7 +1851,7 @@ test("the poll and the time limit of a standby batch end with it", function()
   -- Taken while it loads: the job waits on the 2 ms poll.
   request_and_wait(session, { first }, LOOK)
   assert_true(session.lookup(first, LOOK), "made:")
-  local makers = {}
+  local makers = {} ---@type table<string, boolean>
   for _, entry in ipairs(made) do
     makers[entry.maker or "?"] = true
   end
@@ -1784,6 +1908,7 @@ test("a preamble changed while its format is built: the new one is used", functi
   local as_written = { kind = "inline", tex = "BBBBBBBB + 9" }
   request_and_wait(session, { as_written }, LOOK)
   assert_true(picture, "made:")
+  ---@cast picture MdRenderMathPicture
   assert_eq(picture.columns, session.lookup(as_written, LOOK).columns, "with the new preamble:")
   assert_eq(count_format_builds() - builds_before, 2, "format builds:")
   vim.g.md_render_math_preamble = nil
@@ -1804,7 +1929,8 @@ test("a format file removed under a session is built again, each time", function
     wait_until(function()
       return processes_alive == 0
     end, 2000)
-    os.remove(format_file)
+    -- A nil path would make os.remove raise anyway.
+    os.remove(assert(format_file))
     local equation = { kind = "inline", tex = "g_{" .. round .. "}" }
     request_and_wait(session, { equation }, LOOK)
     assert_true(session.lookup(equation, LOOK), "round " .. round .. ": made:")
@@ -1861,6 +1987,7 @@ end_session()
 vim.system = original_system
 vim.env.HOME = real_home
 vim.env.TEXMFOUTPUT = real_texmfoutput
-vim.fn.chdir(real_home)
+-- Neovim sets $HOME at startup when it is unset, so this is a string.
+vim.fn.chdir(real_home --[[@as string]])
 vim.fn.delete(scratch_root, "rf")
 _H.finish()

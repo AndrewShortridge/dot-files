@@ -144,7 +144,7 @@ end
 --- Wraps the common pattern: get full buffer lines → build code exclusion →
 --- get frontmatter range → scan → collect {row, col} positions.
 ---@param nav_cache table bufnr -> { tick, positions } cache
----@param scan_fn fun(lines: string[], start: number, code_excl: fun, fm_start: number|nil, fm_end: number|nil, callback: fun(...))
+---@param scan_fn fun(lines: string[], start: number, code_excl: function, fm_start: number|nil, fm_end: number|nil, callback: fun(...))
 ---@param pos_from_callback fun(...): number, number extracts (row_1indexed, col_1indexed) from scan callback args
 ---@return fun(direction: 1|-1) jump function
 function M.make_scan_nav(nav_cache, scan_fn, pos_from_callback)
@@ -182,10 +182,11 @@ function M.register_nav_keymaps(ev, jump_fn, forward_key, backward_key, forward_
 end
 
 ---@class HLUpdater
----@field fn fun(bufnr: number, code_excl: fun, opts: table)
+---@field fn fun(bufnr: number, code_excl: function, opts: table)
 ---@field name string
 ---@field priority number
 ---@field enabled fun(): boolean
+---@field supports_prefetch boolean whether fn can render a line range (opts.start_line/end_line)
 
 ---@type HLUpdater[]
 local _updaters = {}
@@ -222,7 +223,7 @@ local _augroup = nil
 --- Register a highlight updater function.
 --- The updater receives shared code_excl and opts (full = bool).
 ---@param name string module name for debugging
----@param fn fun(bufnr: number, code_excl: fun, opts: table) updater function
+---@param fn fun(bufnr: number, code_excl: function, opts: table) updater function
 ---@param enabled fun(): boolean function returning whether module is enabled
 ---@param priority? number execution order (lower = first, default 50)
 ---@param opts? { supports_prefetch?: boolean } optional flags

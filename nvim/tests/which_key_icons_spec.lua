@@ -21,6 +21,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/which_key_icons_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -32,22 +33,47 @@ print("\n=== Which-Key Icon Tests ===\n")
 -- ---------------------------------------------------------------------------
 -- Capture the real plugin spec's setup() opts and add() entries.
 -- ---------------------------------------------------------------------------
-local captured = { opts = nil, entries = {} }
+--- One captured `add()` entry. Real entries are `wk.Spec`; this config's specs
+--- only use string lhs/group/desc and a table or string icon, so the entries are
+--- narrowed to that shape when captured.
+---@class WhichKeyIconsSpecEntry
+---@field [1]? string
+---@field lhs? string
+---@field group? string
+---@field desc? string
+---@field icon? wk.Icon|string
+
+---@class WhichKeyIconsSpecCaptured
+---@field opts? wk.Opts
+---@field entries WhichKeyIconsSpecEntry[]
+
+---@class WhichKeyIconsSpecIconString
+---@field what string  where the icon was declared ("rule:<pattern>" / "group:<name>")
+---@field s? string  the icon glyph(s)
+
+local captured = { opts = nil, entries = {} } ---@type WhichKeyIconsSpecCaptured
 package.loaded["which-key"] = {
+  ---@param o? wk.Opts
   setup = function(o) captured.opts = o end,
+  ---@param specs wk.Spec
   add = function(specs)
-    for _, s in ipairs(specs) do captured.entries[#captured.entries + 1] = s end
+    for _, s in ipairs(specs) do
+      -- Narrowed on purpose: see WhichKeyIconsSpecEntry.
+      captured.entries[#captured.entries + 1] = s --[[@as WhichKeyIconsSpecEntry]]
+    end
   end,
 }
 
+---@module "andrew.plugins.which-key"
 local plugin = dofile(spec_path)
 plugin.config()
 
-local rules = captured.opts and captured.opts.icons and captured.opts.icons.rules or {}
+local rules = captured.opts and captured.opts.icons and captured.opts.icons.rules or {} ---@type wk.IconRule[]
 
 -- Collect every icon string the config declares (rules + explicit group icons).
+---@return WhichKeyIconsSpecIconString[]
 local function icon_strings()
-  local out = {}
+  local out = {} ---@type WhichKeyIconsSpecIconString[]
   for _, r in ipairs(rules) do
     out[#out + 1] = { what = "rule:" .. tostring(r.pattern), s = r.icon }
   end
@@ -60,6 +86,8 @@ local function icon_strings()
 end
 
 -- Index of a rule pattern within the ordered list (nil when absent).
+---@param pattern string
+---@return integer?
 local function rule_pos(pattern)
   for i, r in ipairs(rules) do
     if r.pattern == pattern then return i end
@@ -74,6 +102,7 @@ package.path = package.path .. ";" .. wk_lua .. "/?.lua;" .. wk_lua .. "/?/init.
 local have_wk, Icons = pcall(require, "which-key.icons")
 local WkConfig = have_wk and require("which-key.config") or nil
 if have_wk then
+  ---@cast WkConfig -nil
   WkConfig.icons = WkConfig.icons or {}
   WkConfig.icons.mappings = true
   WkConfig.icons.colors = true
@@ -81,6 +110,9 @@ if have_wk then
 end
 
 -- Mirrors which-key/view.lua:M.icon for a single node (explicit icon wins).
+---@param entry WhichKeyIconsSpecEntry
+---@return string? icon
+---@return string? hl
 local function resolve(entry)
   if entry.icon then return Icons.get(entry.icon) end
   return Icons.get({ desc = entry.group })
@@ -89,7 +121,7 @@ end
 -- Every group must now resolve from literal glyphs alone. Git used to need an
 -- icon PROVIDER (mini.icons / nvim-web-devicons), which is not on the rtp under
 -- `-u NONE`; it is now covered by an explicit rule, so no exemptions remain.
-local provider_backed = {}
+local provider_backed = {} ---@type table<string, boolean>
 
 -- ---------------------------------------------------------------------------
 test("every registered group resolves to an icon", function()
@@ -97,7 +129,7 @@ test("every registered group resolves to an icon", function()
     print("    (skipped: which-key.nvim not installed)")
     return
   end
-  local groups, missing = 0, {}
+  local groups, missing = 0, {} ---@type integer, string[]
   for _, e in ipairs(captured.entries) do
     if e.group then
       groups = groups + 1
@@ -111,7 +143,7 @@ test("every registered group resolves to an icon", function()
 end)
 
 test("no icon is blank or whitespace-only", function()
-  local bad = {}
+  local bad = {} ---@type string[]
   for _, it in ipairs(icon_strings()) do
     if type(it.s) ~= "string" or it.s:gsub("%s", "") == "" then
       bad[#bad + 1] = it.what
@@ -121,7 +153,7 @@ test("no icon is blank or whitespace-only", function()
 end)
 
 test("every glyph is a non-ASCII private-use codepoint", function()
-  local bad = {}
+  local bad = {} ---@type string[]
   for _, it in ipairs(icon_strings()) do
     local cp = vim.fn.char2nr(vim.fn.trim(it.s))
     local pua = (cp >= 0xE000 and cp <= 0xF8FF) or (cp >= 0xF0000 and cp <= 0xFFFFD)
@@ -152,10 +184,14 @@ test("rules are ordered specific-before-generic", function()
   -- which-key scans top-down and takes the FIRST match, so these orderings are
   -- load-bearing: "Template: task" must read as a template, "Check: links" as a
   -- check, and the catch-alls must not swallow anything more specific.
+  ---@param a string
+  ---@param b string
   local function before(a, b)
     local pa, pb = rule_pos(a), rule_pos(b)
     assert_true(pa ~= nil, "missing rule: " .. a)
     assert_true(pb ~= nil, "missing rule: " .. b)
+    ---@cast pa -nil
+    ---@cast pb -nil
     assert_true(pa < pb, string.format("rule %q must precede %q (%d vs %d)", a, b, pa, pb))
   end
   before("template", "task")
@@ -174,19 +210,20 @@ test("rules are ordered specific-before-generic", function()
   -- "Zoom (maximize split)" must keep the zoom glyph, so those precede "split".
   before("zoom", "split")
   before("maximi", "split")
-  local last = math.max(rule_pos("vault"), rule_pos("note"))
+  local last = math.max(assert(rule_pos("vault")), assert(rule_pos("note")))
   for _, p in ipairs({ "template", "task", "query", "meta", "check", "graph", "sidebar" }) do
-    assert_true(rule_pos(p) < last, "generic catch-all must come after " .. p)
+    assert_true(assert(rule_pos(p)) < last, "generic catch-all must come after " .. p)
   end
 end)
 
 test("<leader>m has an explicit icon (built-in 'ui' rule misfires on 'Build')", function()
   if not have_wk then return end
-  local m
+  local m ---@type WhichKeyIconsSpecEntry?
   for _, e in ipairs(captured.entries) do
     if e.lhs == "<leader>m" or e[1] == "<leader>m" then m = e end
   end
   assert_true(m ~= nil, "<leader>m not registered")
+  ---@cast m -nil
   assert_true(type(m.icon) == "table" and m.icon.icon ~= nil, "<leader>m must carry an explicit icon")
 
   -- Prove the misfire is real: with only the description, "Make/Build" resolves
@@ -199,7 +236,8 @@ test("<leader>m has an explicit icon (built-in 'ui' rule misfires on 'Build')", 
   assert_eq(by_desc, ui, "expected Make/Build to collide with the ui rule by description")
 
   -- The explicit icon must therefore differ from what the rules would pick.
-  local explicit = Icons.get(m.icon)
+  -- Checked to be a table above.
+  local explicit = Icons.get(m.icon --[[@as wk.Icon]])
   assert_true(explicit ~= nil and explicit ~= ui, "explicit icon must override the ui misfire")
 end)
 
@@ -215,7 +253,7 @@ test("this config's vocabulary resolves through the rules", function()
     "Split window below", "Split window right", "Split window vertically",
     "Go to left window", "Close all other windows", "Find files",
   }
-  local missing = {}
+  local missing = {} ---@type string[]
   for _, desc in ipairs(samples) do
     if not Icons.get({ desc = desc }) then missing[#missing + 1] = desc end
   end
@@ -234,6 +272,7 @@ test("git uses LazyVim's glyph (mini.icons filetype 'git')", function()
 
   local icon, hl = Icons.get({ desc = "Git" })
   assert_true(icon ~= nil, "Git has no icon")
+  ---@cast icon -nil
   local cp = vim.fn.char2nr(vim.fn.trim(icon))
   assert_eq(cp, LAZYVIM_GIT, "Git glyph must match LazyVim (mini.icons nf-md-git)")
   assert_true(cp ~= DEVICONS_GIT, "Git must not fall back to the devicons git logo")
@@ -246,6 +285,7 @@ test("git uses LazyVim's glyph (mini.icons filetype 'git')", function()
   }) do
     local i = Icons.get({ desc = desc })
     assert_true(i ~= nil, desc .. " has no icon")
+    ---@cast i -nil
     assert_eq(vim.fn.char2nr(vim.fn.trim(i)), LAZYVIM_GIT, desc .. " must use the git glyph")
   end
 
@@ -263,6 +303,8 @@ test("split / window / search / find-files are visually distinct", function()
   -- Before this change all four collapsed onto two built-in glyphs: U+F002
   -- (magnify) served Search AND Find/Files AND Find files, and U+EB7F served
   -- the Windows group AND every split and resize mapping.
+  ---@param name string
+  ---@return string?
   local function group_icon(name)
     for _, e in ipairs(captured.entries) do
       if e.group == name then return (resolve(e)) end
@@ -276,9 +318,10 @@ test("split / window / search / find-files are visually distinct", function()
     ["split below"] = Icons.get({ desc = "Split window below" }),
     ["split right"] = Icons.get({ desc = "Split window right" }),
   }
-  local seen = {}
+  local seen = {} ---@type table<string, string>
   for what, icon in pairs(probes) do
     assert_true(icon ~= nil and icon ~= "", what .. " has no icon")
+    ---@cast icon -nil
     assert_true(seen[icon] == nil,
       string.format("%s collides with %s (both %q)", what, tostring(seen[icon]), icon))
     seen[icon] = what

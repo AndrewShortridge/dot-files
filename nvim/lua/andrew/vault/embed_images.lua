@@ -202,7 +202,8 @@ end
 --- Results are cached; call invalidate_image_cache() on fs events.
 ---@param image_name string image filename (e.g. "photo.png")
 ---@param bufpath string buffer file path for relative resolution
----@return string|nil
+---@return string|nil path resolved image path, nil when not found
+---@return string|nil err reason, only set on a cache-miss search that found nothing
 function M.resolve_image(image_name, bufpath)
   -- Check if cache needs wholesale invalidation
   if _last_cache_generation ~= _image_cache_generation then

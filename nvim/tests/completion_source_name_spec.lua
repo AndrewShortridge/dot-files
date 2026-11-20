@@ -20,6 +20,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/completion_source_name_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
@@ -35,6 +36,9 @@ print("\n=== Completion source_name Build-Time Tag Perf Tests ===\n")
 -- Temp vault: one note with headings and a block id, plus enough sibling notes
 -- that the note-name candidate list is non-trivial.
 -- ---------------------------------------------------------------------------
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -73,13 +77,30 @@ vim.cmd("edit " .. vim.fn.fnameescape(dir .. "/note.md"))
 local bufnr = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, note_lines)
 
+-- Loads blink.cmp's type library for this file (lazydev), for blink.cmp.CompletionResponse below.
+---@module "blink.cmp"
+
+-- An item the wikilinks source returns (annotated there as a bare `table`), as
+-- far as this spec reads it.
+---@class CompletionSourceNameItem: lsp.CompletionItem
+---@field source_name? string  "Heading" / "Block" on same-file items; unset on note items
+---@field data? { completion_kind?: string }
+
+-- What the wikilinks source hands its get_completions callback.
+---@class CompletionSourceNameResponse: blink.cmp.CompletionResponse
+---@field items CompletionSourceNameItem[]
+
 -- Drive source:get_completions(ctx, cb) and synchronously collect result.items.
 -- The same-file heading/block branches call back synchronously; the note-name
 -- branch may build the item cache via the work scheduler, so pump vim.wait.
+---@param line string
+---@return CompletionSourceNameResponse?
 local function get_items(line)
-  local result = nil
+  local result = nil ---@type CompletionSourceNameResponse?
   local ctx = { line = line, cursor = { 1, #line } }
-  completion:get_completions(ctx, function(r) result = r end)
+  completion:get_completions(ctx,
+    ---@param r CompletionSourceNameResponse?
+    function(r) result = r end)
   vim.wait(2000, function() return result ~= nil end, 10)
   return result
 end
@@ -90,6 +111,7 @@ end
 test("heading items are tagged source_name=Heading at build", function()
   local result = get_items("[[#")
   assert_true(result ~= nil, "get_completions returned a result")
+  ---@cast result -nil
   local items = result.items or {}
   local heading_count = 0
   for _, item in ipairs(items) do
@@ -107,6 +129,7 @@ end)
 test("block items are tagged source_name=Block at build", function()
   local result = get_items("[[^")
   assert_true(result ~= nil, "get_completions returned a result")
+  ---@cast result -nil
   local items = result.items or {}
   local block_count = 0
   for _, item in ipairs(items) do
@@ -126,6 +149,7 @@ end)
 test("note-name items carry no source_name (no per-keystroke scan)", function()
   local result = get_items("[[foo")
   assert_true(result ~= nil, "get_completions returned a result")
+  ---@cast result -nil
   local items = result.items or {}
   assert_true(#items >= 1, "note-name branch produced note items")
   local tagged = 0

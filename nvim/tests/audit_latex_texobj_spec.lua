@@ -31,6 +31,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_latex_texobj_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
@@ -63,6 +64,9 @@ local DOC = {
 }
 
 --- Fresh tex buffer with DOC, the motion maps registered, cursor at (row, col).
+---@param row integer 1-based
+---@param col integer 0-based
+---@return integer bufnr
 local function setup(row, col)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_set_current_buf(buf)
@@ -77,6 +81,10 @@ local function setup(row, col)
 end
 
 --- Run a visual text object and return the selected text.
+---@param row integer 1-based
+---@param col integer 0-based
+---@param keys string visual-mode keys run before `y`
+---@return string
 local function yank(row, col, keys)
   setup(row, col)
   vim.fn.setreg('"', "")
@@ -156,9 +164,11 @@ end)
 -- 4. math autosnippet `;`-alias guard
 -- ---------------------------------------------------------------------------
 
+---@return LuaSnip.Snippet?
 local function sum_autosnippet()
   local _, autosnippets = require("andrew.utils.tex").math_snippets()
-  for _, snip in ipairs(autosnippets) do
+  -- math_snippets() carries no ---@return; its lists hold LuaSnip snippets.
+  for _, snip in ipairs(autosnippets --[[@as LuaSnip.Snippet[] ]]) do
     if snip.trigger == "sum" then
       return snip
     end
@@ -174,7 +184,8 @@ test("`sum` still expands on its own inside math", function()
   vim.api.nvim_buf_set_lines(0, 5, 6, false, { "\t$sum$" })
   vim.treesitter.get_parser(0, "latex"):parse(true)
   vim.api.nvim_win_set_cursor(0, { 6, 5 })
-  assert_true(sum_autosnippet():matches("\t$sum") ~= nil, "`sum` refused inside math:")
+  -- `:matches` would raise on a missing snippet anyway; assert names the cause.
+  assert_true(assert(sum_autosnippet()):matches("\t$sum") ~= nil, "`sum` refused inside math:")
 end)
 
 test("`sum` refuses while a `;`-alias is being typed", function()
@@ -182,13 +193,13 @@ test("`sum` refuses while a `;`-alias is being typed", function()
   vim.api.nvim_buf_set_lines(0, 5, 6, false, { "\t$;latex-sum$" })
   vim.treesitter.get_parser(0, "latex"):parse(true)
   vim.api.nvim_win_set_cursor(0, { 6, 12 })
-  assert_eq(sum_autosnippet():matches("\t$;latex-sum"), nil,
+  assert_eq(assert(sum_autosnippet()):matches("\t$;latex-sum"), nil,
     "`sum` still hijacks `;latex-sum` -- the readable alias cannot be typed")
 end)
 
 test("`sum` refuses outside math", function()
   setup(4, 5)
-  assert_eq(sum_autosnippet():matches("Plain prose with sum"), nil)
+  assert_eq(assert(sum_autosnippet()):matches("Plain prose with sum"), nil)
 end)
 
 -- ---------------------------------------------------------------------------
@@ -207,6 +218,10 @@ local MD = {
   "$$",
 }
 
+---@param row integer 1-based
+---@param col integer 0-based
+---@param keys string visual-mode keys run before `y`
+---@return string
 local function md_yank(row, col, keys)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_set_current_buf(buf)

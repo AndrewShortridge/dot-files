@@ -8,15 +8,21 @@
 -- Assertions are behavioral: they read back real extmark virt_lines from
 -- render.render output, not source introspection.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
-local test, assert_true, assert_false, assert_match, assert_eq =
-  _H.test, _H.assert_true, _H.assert_false, _H.assert_match, _H.assert_eq
+local test, assert_true, assert_false =
+  _H.test, _H.assert_true, _H.assert_false
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
+-- Fake vault_log: scope() hands back a logger whose every method is a no-op.
 package.loaded["andrew.vault.vault_log"] = {
+  ---@return table
   scope = function()
-    return setmetatable({}, { __index = function() return function() end end })
+    return setmetatable({}, {
+      ---@return fun()
+      __index = function() return function() end end,
+    })
   end,
 }
 
@@ -27,14 +33,16 @@ local ns = vim.api.nvim_create_namespace("vault_query")
 
 -- Render results into a scratch buffer (code fence at line index 2) and return
 -- the list of concatenated text strings, one per rendered virt_line.
+---@param results table[]  render items handed to render.render
+---@return string[]
 local function render_lines(results)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "```dataview", "Q", "```", "after" })
   render.render(buf, 2, results)
-  local out = {}
+  local out = {} ---@type string[]
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
     for _, line in ipairs(m[4].virt_lines or {}) do
-      local parts = {}
+      local parts = {} ---@type string[]
       for _, chunk in ipairs(line) do
         parts[#parts + 1] = chunk[1]
       end
@@ -45,6 +53,9 @@ local function render_lines(results)
 end
 
 -- True if any rendered line matches the Lua pattern.
+---@param lines string[]
+---@param pat string
+---@return boolean
 local function any_match(lines, pat)
   for _, l in ipairs(lines) do
     if l:match(pat) then return true end

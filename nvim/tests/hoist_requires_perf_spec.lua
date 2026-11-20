@@ -29,6 +29,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/hoist_requires_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -54,15 +55,21 @@ require("andrew.vault.completion_tags")
 -- Build a temp vault with a single note buffer containing many lines, each with
 -- several wikilinks + a #tag + a ==highlight== so tokenize_line, resolve_wikilink
 -- and apply_diff all do real work across many lines/tokens.
+---@param N integer  number of lines
+---@param M integer  wikilinks per line
+---@return integer buf
+---@return string vault
+---@return integer N
+---@return integer M
 local function make_buffer(N, M)
   local vault = vim.fn.tempname()
   vim.fn.mkdir(vault, "p")
   local buf = vim.api.nvim_create_buf(false, false)
   vim.api.nvim_buf_set_name(buf, vault .. "/note.md")
   vim.bo[buf].filetype = "markdown"
-  local lines = {}
+  local lines = {} ---@type string[]
   for i = 1, N do
-    local parts = {}
+    local parts = {} ---@type string[]
     for j = 1, M do
       parts[#parts + 1] = "[[Target" .. i .. "_" .. j .. "]]"
     end
@@ -75,15 +82,21 @@ local function make_buffer(N, M)
 end
 
 --- Install a require-counter shim watching `names`. Returns (counts, restore).
+---@param names string[]  module names to count
+---@return table<string, integer> counts  module name -> require() calls while installed
+---@return fun() restore
 local function install_shim(names)
-  local counts = {}
-  local watched = {}
+  local counts = {} ---@type table<string, integer>
+  local watched = {} ---@type table<string, boolean>
   for _, n in ipairs(names) do watched[n] = true end
   local real_require = require
-  _G.require = function(name)
+  ---@param name string
+  ---@return any module  whatever the real require returns (opaque, passed through)
+  local function counting_require(name)
     if watched[name] then counts[name] = (counts[name] or 0) + 1 end
     return real_require(name)
   end
+  _G.require = counting_require
   return counts, function() _G.require = real_require end
 end
 
@@ -96,8 +109,9 @@ test("tokenize/resolve/render hot paths do not re-require hoisted modules", func
   assert_true(N > 1, "N lines")
   assert_true(M > 1, "M wikilinks per line")
 
-  local dirty = {}
+  local dirty = {} ---@type integer[]
   for ln = 0, N - 1 do dirty[#dirty + 1] = ln end
+  ---@return boolean
   local function code_excl() return false end
 
   -- Warm semantic_resolution's lazy wikilinks/link_utils upvalues BEFORE the
@@ -124,7 +138,7 @@ test("tokenize/resolve/render hot paths do not re-require hoisted modules", func
     line_parse.update(buf, dirty, code_excl)
 
     -- Confirm tokenization actually produced wikilink/tag/highlight tokens.
-    local wl = 0
+    local wl = 0 ---@type integer
     for _ in line_parse.iter_tokens(buf, "wikilink") do wl = wl + 1 end
     assert_true(wl >= N * M, "tokenized " .. wl .. " wikilinks (>= " .. (N * M) .. ")")
 
@@ -134,12 +148,13 @@ test("tokenize/resolve/render hot paths do not re-require hoisted modules", func
     -- Layer 3: per-frame render diff. Build specs from resolved tokens (mirrors
     -- transform_pipeline: one extmark per token).
     local ns = vim.api.nvim_create_namespace("hoist_requires_perf_spec")
-    local specs = {}
-    local line_set = {}
+    local specs = {} ---@type ExtmarkSpec[]
+    local line_set = {} ---@type table<integer, true>
     for _, ln in ipairs(dirty) do
       line_set[ln] = true
       for _, rt in ipairs(semantic.get_resolved(buf, ln)) do
-        local tok = rt.token
+        -- ResolvedToken.token is the Layer-1 LineToken it was resolved from
+        local tok = rt.token --[[@as LineToken]]
         specs[#specs + 1] = {
           ns = ns, line = ln, col = tok.start_col,
           opts = { end_col = tok.end_col, hl_group = "VaultWikiLinkValid", priority = 200 },
@@ -167,6 +182,7 @@ test("transform_pipeline.run does not re-require vault_index per frame", functio
   vim.api.nvim_buf_set_name(buf, vault .. "/note.md")
   vim.bo[buf].filetype = "markdown"
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "[[A]] #t ==h==" })
+  ---@return boolean
   local function code_excl() return false end
 
   pipeline.attach(buf)
@@ -188,7 +204,8 @@ test("completion kv build does not re-require char_bag", function()
   -- Enable the char_bag prefilter branch so build_kv_single_pass exercises the
   -- (formerly inline) require.
   local pf = config.prefilter
-  local prev_enabled, prev_cb = pf.enabled, pf.completion_char_bag
+  local prev_enabled = pf.enabled ---@type boolean
+  local prev_cb = pf.completion_char_bag ---@type boolean
   pf.enabled = true
   pf.completion_char_bag = true
 

@@ -26,6 +26,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/latex_warm_cache_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -45,7 +46,18 @@ local config = require("andrew.vault.config")
 -- The latex opts the plugin spec is configured with.
 local LATEX_OPTS = { enabled = true, converter = "latex2text" }
 
+--- The part of render-markdown's latex Handler that latex_warm._cache_handle()
+--- exposes and this spec reads (`Handler.cache` is `table<string, string>` upstream).
+---@class LatexWarmHandler
+---@field cache table<string, string>  latex source -> converted text
+
+--- What the vim.system stub returns: only `:wait()`, the one method the code may call.
+---@class LatexWarmFakeSystemObj
+---@field wait fun(): vim.SystemCompleted
+
 -- A scratch markdown buffer with given lines, made current.
+---@param lines string[]
+---@return integer buf
 local function md_buf(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -57,31 +69,53 @@ end
 -- Stub vim.system: record spawns + track peak concurrency. The "process"
 -- completes only when we drain it, so we can observe in-flight peak.
 -- ---------------------------------------------------------------------------
+---@param fn fun(state: LatexWarmStubState)
 local function with_stubbed_system(fn)
   local real_system = vim.system
   local real_exec = vim.fn.executable
   -- Pretend latex2text is installed regardless of host.
-  vim.fn.executable = function(name)
+  ---@param name string
+  ---@return 0|1
+  local function fake_executable(name)
     if name == "latex2text" then return 1 end
     return real_exec(name)
   end
+  vim.fn.executable = fake_executable
 
+  ---@class LatexWarmStubState
+  ---@field spawned (string|string[]|true)[]  stdin of every spawned process, in spawn order
+  ---@field in_flight integer
+  ---@field peak integer
+  ---@field pending fun()[]  on_exit callbacks awaiting drain
+  ---@field drain fun()
   local state = {
     spawned = {},      -- list of stdin keys spawned
     in_flight = 0,
     peak = 0,
     pending = {},      -- list of on_exit callbacks awaiting drain
   }
+  -- Returns vim.system's real type, not a fake class: lua_ls merges what a
+  -- stub assigned to `vim.system` returns into `vim.system` for the WHOLE
+  -- workspace, so a fake return type leaks into the config's own calls.
+  ---@param _ string[]
+  ---@param opts? vim.SystemOpts
+  ---@param on_exit fun(out: vim.SystemCompleted)
+  ---@return vim.SystemObj
   ---@diagnostic disable-next-line: duplicate-set-field
-  vim.system = function(_cmd, opts, on_exit)
+  vim.system = function(_, opts, on_exit)
     state.spawned[#state.spawned + 1] = opts and opts.stdin
     state.in_flight = state.in_flight + 1
     if state.in_flight > state.peak then state.peak = state.in_flight end
     state.pending[#state.pending + 1] = function()
       state.in_flight = state.in_flight - 1
-      on_exit({ code = 0, stdout = "RESULT(" .. tostring(opts and opts.stdin) .. ")" })
+      on_exit({ code = 0, signal = 0, stdout = "RESULT(" .. tostring(opts and opts.stdin) .. ")" })
     end
-    return { wait = function() return { code = 0, stdout = "" } end }
+    -- Only `:wait()`, the one method the code under test may call.
+    local fake_system_obj = {
+      ---@return vim.SystemCompleted
+      wait = function() return { code = 0, signal = 0, stdout = "" } end,
+    }
+    return fake_system_obj --[[@as vim.SystemObj]]
   end
 
   -- Drain all pending completions; runs scheduled callbacks so the pool pumps.
@@ -108,14 +142,15 @@ end
 -- 1. Cache-bridge identity: the resolved handle aliases the plugin's real cache.
 -- ---------------------------------------------------------------------------
 test("cache handle is the plugin's live Handler.cache", function()
-  local handler = latex_warm._cache_handle()
+  local handler = latex_warm._cache_handle() --[[@as LatexWarmHandler?]]
   assert_true(handler ~= nil, "should resolve the plugin Handler:")
+  ---@cast handler -nil
   assert_eq(type(handler.cache), "table", "Handler.cache should be a table:")
 
   -- Write through the handle, then re-resolve and confirm same identity.
   local sentinel = "__warm_identity_probe__"
   handler.cache[sentinel] = "x"
-  local again = latex_warm._cache_handle()
+  local again = assert(latex_warm._cache_handle() --[[@as LatexWarmHandler?]])
   assert_eq(again, handler, "resolution is memoized to the same Handler:")
   assert_eq(again.cache[sentinel], "x", "second resolution sees the same cache:")
   handler.cache[sentinel] = nil
@@ -125,7 +160,7 @@ end)
 -- 2. Key parity: derived keys == plugin input() keys; code-block `$` excluded.
 -- ---------------------------------------------------------------------------
 test("warmed keys match plugin keys and exclude code-block dollars", function()
-  local handler = latex_warm._cache_handle()
+  local handler = assert(latex_warm._cache_handle() --[[@as LatexWarmHandler?]])
   -- Clear any prior cache so all equations are misses.
   for k in pairs(handler.cache) do handler.cache[k] = nil end
 
@@ -137,7 +172,9 @@ test("warmed keys match plugin keys and exclude code-block dollars", function()
     "$$\\frac{a}{b}$$",
   })
 
-  with_stubbed_system(function(state)
+  with_stubbed_system(
+    ---@param state LatexWarmStubState
+    function(state)
     latex_warm.warm(buf, LATEX_OPTS)
     state.drain()
 
@@ -158,7 +195,7 @@ end)
 -- 3. Skip-existing + DISCRIMINATING POWER.
 -- ---------------------------------------------------------------------------
 test("cache misses only — pre-seeded keys are not re-spawned", function()
-  local handler = latex_warm._cache_handle()
+  local handler = assert(latex_warm._cache_handle() --[[@as LatexWarmHandler?]])
   for k in pairs(handler.cache) do handler.cache[k] = nil end
   -- Pre-seed both equations (including an 'error' sentinel, which must be kept).
   handler.cache["x^2"] = "PRESEEDED"
@@ -166,7 +203,9 @@ test("cache misses only — pre-seeded keys are not re-spawned", function()
 
   local buf = md_buf({ "Inline $x^2$.", "", "$$\\frac{a}{b}$$" })
 
-  with_stubbed_system(function(state)
+  with_stubbed_system(
+    ---@param state LatexWarmStubState
+    function(state)
     latex_warm.warm(buf, LATEX_OPTS)
     state.drain()
     assert_eq(#state.spawned, 0, "no spawns when all keys already cached:")
@@ -178,7 +217,9 @@ test("cache misses only — pre-seeded keys are not re-spawned", function()
   -- warm again; now both equations DO spawn. Proves the skip filter is what
   -- suppressed the spawns above.
   for k in pairs(handler.cache) do handler.cache[k] = nil end
-  with_stubbed_system(function(state)
+  with_stubbed_system(
+    ---@param state LatexWarmStubState
+    function(state)
     latex_warm.warm(buf, LATEX_OPTS)
     state.drain()
     assert_eq(#state.spawned, 2, "with cache empty, both equations spawn (filter discriminates):")
@@ -189,20 +230,22 @@ end)
 -- 4. Concurrency cap: peak in-flight <= config.latex_warm.max_concurrent.
 -- ---------------------------------------------------------------------------
 test("bounded concurrency — peak in-flight respects max_concurrent", function()
-  local handler = latex_warm._cache_handle()
+  local handler = assert(latex_warm._cache_handle() --[[@as LatexWarmHandler?]])
   for k in pairs(handler.cache) do handler.cache[k] = nil end
 
   local cap = config.latex_warm.max_concurrent
   local n = cap + 4
 
   -- Build a buffer with N distinct inline equations.
-  local lines = {}
+  local lines = {} ---@type string[]
   for i = 1, n do
     lines[i] = "Eq $a_{" .. i .. "}$ text."
   end
   local buf = md_buf(lines)
 
-  with_stubbed_system(function(state)
+  with_stubbed_system(
+    ---@param state LatexWarmStubState
+    function(state)
     latex_warm.warm(buf, LATEX_OPTS)
     -- Before draining, the pool should have launched exactly `cap` processes.
     assert_eq(state.in_flight, cap, "initial burst equals the concurrency cap:")

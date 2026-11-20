@@ -37,7 +37,7 @@ local function columns_cache_key(columns)
 end
 
 -- Level 2: filtered+sorted buckets cached by (generation, filter, columns).
-local _kanban_cache = task_utils.gen_cache(function(idx, filter_opts, columns)
+local _kanban_cache = task_utils.gen_cache(function(_, filter_opts, columns)
   local all_items = task_utils.get_raw_tasks()
   if not all_items or #all_items == 0 then return {} end
 

@@ -152,8 +152,8 @@ end
 ---@return boolean
 local function is_excluded(url)
   local cfg = config.url_validation
-  for _, pat in ipairs(cfg.exclude_patterns) do
-    if url:match(pat) then return true end
+  for _, exclude_pattern in ipairs(cfg.exclude_patterns) do
+    if url:match(exclude_pattern) then return true end
   end
   local domain = url_domain(url)
   for _, d in ipairs(cfg.exclude_domains) do
@@ -505,7 +505,7 @@ end
 -- ---------------------------------------------------------------------------
 
 --- Get cache stats.
----@return { total: number, valid: number, expired: number, by_class: table }
+---@return { total: number, valid: number, expired: number, by_class: table<string, number>, queue_depth: number, queue_active: number, queue_submitted: number, queue_completed: number, queue_rejected: number, max_queue_size: number }
 function M.cache_stats()
   local total, valid, expired = 0, 0, 0
   local by_class = { ok = 0, redirect = 0, dead = 0, error = 0, excluded = 0 }

@@ -45,6 +45,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/code_exclusion_dirty_range_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
@@ -59,21 +60,35 @@ print("\n=== Code-Exclusion Dirty-Range Tests ===\n")
 -- arguments every build_code_exclusion() pass uses. Records pairs into `calls`.
 -- ---------------------------------------------------------------------------
 local _q = vim.treesitter.query.parse("markdown", "(fenced_code_block) @code")
-local _mt = getmetatable(_q)
+-- Every Query's metatable is the Query class table itself (query.lua: setmetatable({}, Query)).
+local _mt = getmetatable(_q) --[[@as vim.treesitter.Query]]
 local _orig_iter = _mt.iter_captures
-local calls = {}
+
+---@class CodeExclusionDirtyRangeCall
+---@field start? integer  start row iter_captures was given
+---@field stop? integer   stop row iter_captures was given (-1 = whole buffer)
+
+local calls = {} ---@type CodeExclusionDirtyRangeCall[]
 -- Count code_span sweeps separately: the markdown_inline tree root node type is
 -- `inline`, the markdown tree root is `document`. The module's code_span query
 -- is the only query iter_captured against an `inline` root, so this isolates the
 -- expensive injection sweep the backtick precheck gates.
 local inline_sweeps = 0
-_mt.iter_captures = function(self, node, source, start, stop, ...)
+---@param self vim.treesitter.Query
+---@param node TSNode
+---@param source integer|string
+---@param start? integer
+---@param stop? integer
+---@param ... table  iter_captures' `opts`, forwarded untouched
+---@return (fun(end_line: integer|nil, end_col: integer|nil): integer, TSNode, vim.treesitter.query.TSMetadata, TSQueryMatch, TSTree)
+local function recording_iter_captures(self, node, source, start, stop, ...)
   calls[#calls + 1] = { start = start, stop = stop }
   if node and node.type and node:type() == "inline" then
     inline_sweeps = inline_sweeps + 1
   end
   return _orig_iter(self, node, source, start, stop, ...)
 end
+_mt.iter_captures = recording_iter_captures
 
 local function reset_calls()
   calls = {}
@@ -81,10 +96,12 @@ local function reset_calls()
 end
 
 -- Build a scratch markdown buffer and seed the exclusion cache.
+---@param lines string[]
+---@return integer bufnr
 local function fresh_buf(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. "/note.md")
-  vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
+  vim.bo[buf].filetype = "markdown"
   vim.api.nvim_set_current_buf(buf)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   -- Ensure treesitter parsers attach for this buffer.
@@ -94,6 +111,8 @@ local function fresh_buf(lines)
 end
 
 -- Compute a reference closure by clearing the cache and recomputing whole-buffer.
+---@param buf integer
+---@return fun(row: number, col: number): boolean
 local function reference_closure(buf)
   link_scan.clear_cache(buf)
   local f = link_scan.build_code_exclusion(buf)
@@ -103,6 +122,9 @@ local function reference_closure(buf)
 end
 
 -- Assert two closures agree on every row (and representative cols) of the buffer.
+---@param buf integer
+---@param got fun(row: number, col: number): boolean
+---@param want fun(row: number, col: number): boolean
 local function assert_closures_agree(buf, got, want)
   local n = vim.api.nvim_buf_line_count(buf)
   for row = 0, n - 1 do
@@ -122,7 +144,7 @@ end
 -- PERF: an in-place edit far from any code block rebuilds with a bounded range.
 -- ---------------------------------------------------------------------------
 test("far in-place edit: no whole-buffer scan; block parse skipped entirely", function()
-  local lines = {}
+  local lines = {} ---@type string[]
   -- Fenced code block near the top (lines 5..12, 0-indexed 4..11).
   lines[1] = "# Title"
   lines[2] = "intro prose"
@@ -160,7 +182,7 @@ end)
 -- code-fence boundary is touched, the block path must run.
 -- ---------------------------------------------------------------------------
 test("fence-delimiter edit: bounded block rescan, never whole-buffer", function()
-  local lines = {}
+  local lines = {} ---@type string[]
   lines[1] = "# Title"
   lines[2] = "intro prose"
   lines[3] = ""
@@ -196,7 +218,7 @@ end)
 -- CORRECTNESS: far edit -> closure identical to fresh whole-buffer recompute.
 -- ---------------------------------------------------------------------------
 test("far in-place edit: closure matches whole-buffer recompute for every row", function()
-  local lines = {}
+  local lines = {} ---@type string[]
   lines[1] = "before"
   lines[2] = "```python"
   lines[3] = "a = 1  # `inline` inside fence"
@@ -241,7 +263,7 @@ end)
 -- CORRECTNESS: line-count change (insert) that shifts a fence below it.
 -- ---------------------------------------------------------------------------
 test("insert above fence: shifted fence still matches whole-buffer recompute", function()
-  local lines = {}
+  local lines = {} ---@type string[]
   lines[1] = "intro"
   lines[2] = "```lua"
   lines[3] = "local x = 1"
@@ -263,7 +285,7 @@ end)
 -- CORRECTNESS: deleting lines (negative delta) that shifts a fence upward.
 -- ---------------------------------------------------------------------------
 test("delete above fence: shifted fence still matches whole-buffer recompute", function()
-  local lines = {}
+  local lines = {} ---@type string[]
   lines[1] = "filler 1"
   lines[2] = "filler 2"
   lines[3] = "filler 3"
@@ -288,7 +310,7 @@ end)
 -- CORRECTNESS: edit straddling the fence boundary (turns prose into a fence).
 -- ---------------------------------------------------------------------------
 test("edit that opens a new fence: closure matches whole-buffer recompute", function()
-  local lines = {}
+  local lines = {} ---@type string[]
   lines[1] = "prose start"
   for i = 2, 100 do
     lines[i] = "prose line " .. i
@@ -311,7 +333,7 @@ end)
 -- Discriminating: forcing an unconditional inline rescan makes inline_sweeps>0.
 -- ---------------------------------------------------------------------------
 test("far backtick-free edit: markdown_inline (code_span) NOT swept", function()
-  local lines = {}
+  local lines = {} ---@type string[]
   -- A real code span near the top so the cache holds a span range.
   lines[1] = "intro `a code span` here"
   lines[2] = "second prose line"
@@ -346,7 +368,7 @@ end)
 -- The precheck must see the new backtick and trigger an inline rescan.
 -- ---------------------------------------------------------------------------
 test("insert backtick span far from cache: new span detected", function()
-  local lines = {}
+  local lines = {} ---@type string[]
   lines[1] = "intro `seed span` here"
   for i = 2, 300 do
     lines[i] = "plain prose line " .. i .. " no ticks"
@@ -376,7 +398,7 @@ end)
 -- guard forces it. Dropping that guard makes this case fail.
 -- ---------------------------------------------------------------------------
 test("delete the only backtick on a span line: stale span dropped", function()
-  local lines = {}
+  local lines = {} ---@type string[]
   for i = 1, 300 do
     lines[i] = "plain prose line " .. i .. " no ticks"
   end

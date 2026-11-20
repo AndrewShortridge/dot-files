@@ -98,7 +98,7 @@ local body_template = [==[
 ## Notes
 ]==]
 
-function M.run(e, p)
+function M.run(e)
   local title = e.input({ prompt = "Method name (e.g., Voronoi Density Calculation)" })
   if not title then return end
 

@@ -15,6 +15,7 @@
 -- exactly what the vim.b.__md_ftplugin_done guard exists to prevent.
 -- Run with: nvim --headless -u NONE -l tests/audit_markdown_ftplugin_teardown_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
@@ -29,8 +30,10 @@ vim.cmd("filetype plugin on")
 local LEADER = vim.g.mapleader or "\\"
 
 --- lhs set of every buffer-local mapping, keyed "<mode>\0<lhs>".
+---@param buf integer
+---@return table<string, string>  "<mode>\0<lhs>" -> desc ("" when none)
 local function map_set(buf)
-  local seen = {}
+  local seen = {} ---@type table<string, string>
   for _, mode in ipairs({ "n", "i", "v", "x", "s", "o" }) do
     for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, mode)) do
       seen[mode .. "\0" .. m.lhs] = m.desc or ""
@@ -39,6 +42,7 @@ local function map_set(buf)
   return seen
 end
 
+---@return integer bufnr
 local function fresh_markdown_buf()
   local buf = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_set_current_buf(buf)

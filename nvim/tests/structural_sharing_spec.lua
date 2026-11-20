@@ -3,10 +3,15 @@
 -- lazy field safety, intern_array, freeze
 -- Run with: nvim --headless -u NONE -l tests/structural_sharing_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
+---@param got any
+---@param expected number
+---@param tol number
+---@param msg? string
 local function assert_near(got, expected, tol, msg)
   if type(got) ~= "number" or math.abs(got - expected) > tol then
     error((msg or "") .. " expected ~" .. tostring(expected) .. " (tol " .. tostring(tol) .. "), got: " .. vim.inspect(got))
@@ -14,6 +19,9 @@ local function assert_near(got, expected, tol, msg)
 end
 
 -- Deep-equality helper (translation of busted's assert.same) — spec-local.
+---@param a any
+---@param b any
+---@return boolean
 local function deep_equal(a, b)
   if a == b then return true end
   if type(a) ~= "table" or type(b) ~= "table" then return false end
@@ -26,6 +34,9 @@ local function deep_equal(a, b)
   return true
 end
 
+---@param expected any
+---@param got any
+---@param msg? string
 local function assert_same(expected, got, msg)
   if not deep_equal(expected, got) then
     error((msg or "") .. " expected (same): " .. vim.inspect(expected) .. ", got: " .. vim.inspect(got))
@@ -33,6 +44,8 @@ local function assert_same(expected, got, msg)
 end
 
 -- assert.has_error(fn): translation -> the function must raise.
+---@param fn fun()
+---@param msg? string
 local function assert_error(fn, msg)
   if pcall(fn) then
     error((msg or "expected function to raise an error") .. " (no error raised)")
@@ -54,6 +67,29 @@ local ss = require("andrew.vault.structural_sharing")
 -- ---------------------------------------------------------------------------
 -- Helper: build a realistic entry table
 -- ---------------------------------------------------------------------------
+-- The shape make_entry builds (a VaultIndexEntry-like table with `name`
+-- fields instead of the stem/derived ones).
+---@class StructuralSharingSpecEntry
+---@field rel_path string
+---@field name string
+---@field name_lower string
+---@field mtime integer
+---@field size integer
+---@field tags? string[]
+---@field aliases string[]
+---@field frontmatter table<string, string>
+---@field inline_fields table<string, string>
+---@field headings? VaultHeading[]
+---@field block_ids { id: string, text: string, line: integer }[]
+---@field outlinks { path: string, display: string, embed: boolean, _name_lower: string }[]
+---@field tasks { text: string, text_lower: string, status: string, line: integer, due?: string }[]
+
+-- An entry behind test 6's metatable, which computes `tag_set` lazily.
+---@class StructuralSharingSpecLazyEntry: StructuralSharingSpecEntry
+---@field tag_set table<string, boolean>
+
+---@param overrides? table<string, any>
+---@return StructuralSharingSpecEntry
 local function make_entry(overrides)
   local entry = {
     rel_path = "notes/test.md",
@@ -87,9 +123,12 @@ local function make_entry(overrides)
 end
 
 -- Deep-copy a table (for creating independent copies)
+---@generic T
+---@param t T
+---@return T
 local function deep_copy(t)
   if type(t) ~= "table" then return t end
-  local copy = {}
+  local copy = {} ---@type table<any, any>
   for k, v in pairs(t) do copy[k] = deep_copy(v) end
   return copy
 end
@@ -149,6 +188,8 @@ end)
 -- ---------------------------------------------------------------------------
 -- 3. struct_arrays_equal
 -- ---------------------------------------------------------------------------
+---@param h { text: string, level: integer }
+---@return string
 local struct_key = function(h) return h.text .. ":" .. h.level end
 test("struct_arrays_equal returns true for identical structured arrays", function()
   local a = { { text = "A", level = 1 } }
@@ -239,8 +280,11 @@ end)
 -- 5. diff_entry compatibility (spec test #5)
 -- ---------------------------------------------------------------------------
 -- Simulate diff_entry's change detection logic
+---@param old StructuralSharingSpecEntry
+---@param new StructuralSharingSpecEntry
+---@return table<string, boolean>
 local function simple_diff(old, new)
-  local changed = {}
+  local changed = {} ---@type table<string, boolean>
   if not ss.arrays_equal(old.tags, new.tags) then changed.tags = true end
   if not ss.arrays_equal(old.aliases, new.aliases) then changed.aliases = true end
   if not ss.dicts_equal(old.frontmatter, new.frontmatter) then changed.frontmatter = true end
@@ -273,18 +317,22 @@ end)
 test("lazy field safety: sharing does not interfere with metatable-computed fields", function()
   -- Simulate _entry_mt lazy field
   local mt = {
+    ---@param self table
+    ---@param key string
+    ---@return table<string, boolean>?
     __index = function(self, key)
       if key == "tag_set" then
-        local set = {}
-        for _, t in ipairs(rawget(self, "tags") or {}) do set[t] = true end
+        local set = {} ---@type table<string, boolean>
+        for _, t in ipairs(rawget(self, "tags") --[[@as string[]?]] or {}) do set[t] = true end
         rawset(self, "tag_set", set)
         return set
       end
     end,
   }
 
-  local old = setmetatable(make_entry(), mt)
-  local new = setmetatable(deep_copy(old), mt)
+  -- mt adds the lazy `tag_set` field.
+  local old = setmetatable(make_entry(), mt) --[[@as StructuralSharingSpecLazyEntry]]
+  local new = setmetatable(deep_copy(old), mt) ---@type StructuralSharingSpecLazyEntry
 
   -- Share unchanged sub-tables
   ss.share_unchanged(old, new)
@@ -330,7 +378,7 @@ end)
 
 test("intern_array handles empty array", function()
   local store = ss.new_intern_store()
-  local t = {}
+  local t = {} ---@type string[]
   assert_eq(ss.intern_array(store, t), t)
 end)
 
@@ -361,7 +409,7 @@ test("freeze prevents modification when debug_immutability is true", function()
   local cfg = package.loaded["andrew.vault.config"]
   cfg.sharing.debug_immutability = true
   local t = { "a", "b" }
-  local frozen = ss.freeze(t, "test")
+  local frozen = ss.freeze(t, "test") ---@type string[]
   assert_eq(frozen[1], "a")
   assert_eq(frozen[2], "b")
   -- Note: __len is not honored for tables in LuaJIT/Lua 5.1
@@ -375,6 +423,7 @@ end)
 -- ---------------------------------------------------------------------------
 test("share_stats tracks per-field reuse and change counts", function()
   -- Reset stats by reloading (stats are module-level)
+  ---@type table?
   package.loaded["andrew.vault.structural_sharing"] = nil
   local ss2 = require("andrew.vault.structural_sharing")
 
@@ -413,6 +462,8 @@ test("freeze within share_unchanged applies freeze to reused tables when debug_i
   -- Shared (reused) tables should be frozen — modification should error
   assert_error(function() new.tags[1] = "modified" end)
   assert_error(function() new.frontmatter.new_key = "val" end)
+  -- Invalid on purpose: any write into a frozen table must raise.
+  ---@diagnostic disable-next-line: missing-fields
   assert_error(function() new.headings[1] = {} end)
   assert_error(function() new.outlinks[1] = {} end)
   assert_error(function() new.tasks[1] = {} end)
@@ -450,7 +501,7 @@ test("intern_array freezes interned tables when debug_immutability is true", fun
   cfg.sharing.debug_immutability = true
 
   local store = ss.new_intern_store()
-  local result = ss.intern_array(store, { "a", "b" })
+  local result = assert(ss.intern_array(store, { "a", "b" }))
 
   -- Interned table should be frozen
   assert_error(function() result[1] = "modified" end)

@@ -13,6 +13,7 @@
 -- Assertions are behavioral (real module output via public API), not
 -- source-introspection.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -21,8 +22,13 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 -- Stub the logger so requiring real modules doesn't pull full vault infra.
 package.loaded["andrew.vault.vault_log"] = {
+  ---@return table
   scope = function()
-    return setmetatable({}, { __index = function() return function() end end })
+    return setmetatable({}, {
+      -- every logger method is a no-op
+      ---@return fun()
+      __index = function() return function() end end,
+    })
   end,
 }
 
@@ -32,8 +38,11 @@ local render = require("andrew.vault.render_diff")
 local line_tracker = require("andrew.vault.line_tracker")
 
 -- code_excl that never excludes (treat the whole buffer as prose).
+---@return boolean
 local function no_code_excl() return false end
 
+---@param lines string[]
+---@return integer buf
 local function make_buf(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -167,6 +176,7 @@ test("line_tracker.consume returns bounded dirty + shift on insert (not nil)", f
   local dirty, shifts = line_tracker.consume(buf)
   assert_true(dirty ~= nil, "line-count edit no longer forces full reparse (dirty not nil)")
   assert_true(shifts ~= nil and #shifts >= 1, "a shift op was recorded")
+  ---@cast shifts -nil
   -- net delta across shifts must equal +1 (one line added).
   local net = 0
   for _, s in ipairs(shifts) do net = net + s.delta end
@@ -178,7 +188,7 @@ end)
 
 test("line_tracker.consume bounded_dirty=false falls back to full reparse", function()
   local config = require("andrew.vault.config")
-  local prev = config.pipeline.bounded_dirty
+  local prev = config.pipeline.bounded_dirty ---@type boolean
   config.pipeline.bounded_dirty = false
 
   local buf = make_buf({ "a", "b", "c" })
@@ -218,10 +228,12 @@ test("line_tracker multi-edit before single consume keeps dirty in final coords"
   local dirty, shifts = line_tracker.consume(buf)
   assert_true(dirty ~= nil, "multi-edit still incremental (dirty not nil)")
   assert_true(shifts ~= nil and #shifts == 2, "two shift ops recorded")
+  ---@cast dirty -nil
+  ---@cast shifts -nil
 
   -- The inserted content (L7a/L7b) ends up at FINAL rows 5,6 after the -2
   -- delete at row 1. Those rows MUST be in the dirty set.
-  local dset = {}
+  local dset = {} ---@type table<integer, true>
   for _, ln in ipairs(dirty) do dset[ln] = true end
   assert_true(dset[5], "inserted row 5 is dirty (final coords)")
   assert_true(dset[6], "inserted row 6 is dirty (final coords)")

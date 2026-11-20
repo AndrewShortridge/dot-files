@@ -17,7 +17,7 @@ local patterns = {
   {
     type = "task",
     pattern = "^(%s*)([%-%*%+])(%s%[.%]%s)",
-    continue = function(indent, marker, _checkbox)
+    continue = function(indent, marker, _)
       return indent .. marker .. " [ ] "
     end,
     empty = function(indent, marker, checkbox)
@@ -247,6 +247,9 @@ local ap_cache_bufnr, ap_cache_rules, ap_cache_map
 local function active_bracket_pairs()
   -- Never `require` it: if autopairs is not loaded there is nothing to delegate
   -- to, and forcing the plugin to load from the <CR> hot path would be wrong.
+  -- Typed, or lua_ls takes the shape of this entry from the stub a spec
+  -- assigns to it, whose get_buf_rules takes no argument.
+  ---@type { get_buf_rules: fun(bufnr?: integer): table }?
   local ap = package.loaded["nvim-autopairs"]
   if not ap or type(ap.get_buf_rules) ~= "function" then
     return nil

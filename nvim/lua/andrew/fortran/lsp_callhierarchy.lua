@@ -67,6 +67,7 @@
 
 local scan = require("andrew.fortran.scan")
 local flsp = require("andrew.fortran.lsp")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 local M = {}
 
@@ -259,6 +260,8 @@ end
 ---@field names string[]|nil unique lowercase defined names
 ---@field calls table[]|nil deduplicated project call sites
 ---@field calls_by_lname table<string, table[]>|nil
+---@field def_waiters (fun(e: fortran.ch.Project))[]|nil callbacks queued behind an in-flight definition scan
+---@field call_waiters (fun(e: fortran.ch.Project))[]|nil callbacks queued behind an in-flight call scan
 
 ---@type table<string, fortran.ch.Project>
 local cache = {}
@@ -428,7 +431,7 @@ local function item_for_unit(root, path, spans, unit)
     name = unit.name,
     kind = SYMBOL_KIND[unit.kind] or 12,
     detail = unit.kind,
-    uri = vim.uri_from_fname(path),
+    uri = nvim_compat.uri_from_file_name(path),
     range = line_range(spans.lines, unit.lnum, unit.last),
     selectionRange = flsp.name_range(unit.lnum, unit.col, #unit.lname),
     -- `data` round-trips to incoming/outgoing so neither has to re-derive the
@@ -462,7 +465,7 @@ local function item_for_def(e, def)
     name = def.name,
     kind = SYMBOL_KIND[def.kind] or 12,
     detail = def.kind,
-    uri = vim.uri_from_fname(def.path),
+    uri = nvim_compat.uri_from_file_name(def.path),
     range = flsp.name_range(def.lnum, def.col, #def.lname),
     selectionRange = flsp.name_range(def.lnum, def.col, #def.lname),
     data = {
@@ -483,6 +486,7 @@ end
 ---@param lname string
 ---@return table|nil
 local function best_def(e, lname)
+  ---@type table[]|nil
   local bucket = e.by_lname and e.by_lname[lname]
   if not bucket or #bucket == 0 then
     return nil
@@ -508,7 +512,7 @@ local function item_for_external(root, path, site)
     name = site.name,
     kind = 12, -- Function
     detail = "external",
-    uri = vim.uri_from_fname(path),
+    uri = nvim_compat.uri_from_file_name(path),
     range = flsp.name_range(site.lnum, site.col, #site.lname),
     selectionRange = flsp.name_range(site.lnum, site.col, #site.lname),
     data = { lname = site.lname, root = root, path = path, external = true },
@@ -520,9 +524,10 @@ end
 -- ---------------------------------------------------------------------------
 
 --- The record in `records` whose name covers byte column `col` on `lnum`.
+--- A nil position (one `flsp.from_pos` rejected) matches no record.
 ---@param records table[]
----@param lnum integer
----@param col integer
+---@param lnum integer|nil
+---@param col integer|nil nil only together with `lnum`
 ---@return table|nil
 local function token_at(records, lnum, col)
   for _, r in ipairs(records) do
@@ -537,7 +542,7 @@ end
 ---@param uri string
 ---@return string root, string path
 local function root_for_uri(uri)
-  local path = abspath(vim.uri_to_fname(uri))
+  local path = abspath(nvim_compat.uri_to_file_name(uri))
   return scan.project_root(vim.fn.fnamemodify(path, ":h")), path
 end
 
@@ -615,7 +620,7 @@ function M.prepare(params, cb)
     return cb(nil, nil)
   end
 
-  local bufnr = vim.uri_to_bufnr(uri)
+  local bufnr = nvim_compat.uri_to_buffer(uri)
   if not vim.api.nvim_buf_is_loaded(bufnr) then
     vim.fn.bufload(bufnr)
   end
@@ -676,6 +681,7 @@ function M.incoming(params, cb)
   end
 
   ensure_calls(root, function(e)
+    ---@type table[]|nil
     local sites = e.calls_by_lname and e.calls_by_lname[lname]
     if not sites or #sites == 0 then
       return cb(nil, nil)
@@ -701,7 +707,7 @@ function M.incoming(params, cb)
             name = vim.fn.fnamemodify(site.path, ":t"),
             kind = KIND_FILE,
             detail = "file",
-            uri = vim.uri_from_fname(site.path),
+            uri = nvim_compat.uri_from_file_name(site.path),
             range = line_range(spans.lines, site.lnum, site.lnum),
             selectionRange = flsp.name_range(site.lnum, site.col, #site.lname),
             data = { root = root, path = site.path },

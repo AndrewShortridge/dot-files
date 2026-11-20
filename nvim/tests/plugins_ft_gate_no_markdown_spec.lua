@@ -22,32 +22,46 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/plugins_ft_gate_no_markdown_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
 local cfg_dir = vim.fn.stdpath("config") .. "/lua/andrew/plugins/"
 
+--- Each test narrows the returned spec to the exact table the plugin file
+--- returns with `---@module` on its local.
+---@param name string file name under lua/andrew/plugins/
+---@return LazyPluginSpec
 local function load(name)
   return dofile(cfg_dir .. name)
 end
 
+---@param list string[]|nil
+---@return table<string, true>
 local function to_set(list)
-  local s = {}
+  local s = {} ---@type table<string, true>
   for _, v in ipairs(list or {}) do s[v] = true end
   return s
 end
 
+---@param list string[]|nil
+---@param val string
+---@return boolean
 local function contains(list, val)
   for _, v in ipairs(list or {}) do if v == val then return true end end
   return false
 end
 
 -- Helper: assert a spec is ft-gated (not event-gated) and never loads markdown.
+---@param plug LazyPluginSpec
+---@param label string
+---@param required_fts string[]
 local function assert_ft_gated_no_md(plug, label, required_fts)
   assert_true(type(plug) == "table", label .. ": spec must return a table")
   assert_nil(plug.event, label .. ": event gate must be removed (replaced by ft)")
   assert_true(type(plug.ft) == "table", label .. ": ft gate must exist")
-  local fts = to_set(plug.ft)
+  -- ft was just asserted to be a table: the list form of LazyPluginSpec.ft.
+  local fts = to_set(plug.ft --[[@as string[] ]])
   assert_nil(fts["markdown"], label .. ": ft must NOT contain markdown")
   assert_nil(fts["text"], label .. ": ft must NOT contain text")
   for _, ft in ipairs(required_fts) do
@@ -56,10 +70,11 @@ local function assert_ft_gated_no_md(plug, label, required_fts)
 end
 
 -- The shared code-filetype list the three editor plugins gate on.
-local lsp_fts = dofile(vim.fn.stdpath("config") .. "/lua/andrew/lsp_filetypes.lua")
+local lsp_fts = dofile(vim.fn.stdpath("config") .. "/lua/andrew/lsp_filetypes.lua") ---@type string[]
 assert(type(lsp_fts) == "table" and #lsp_fts > 0, "lsp_filetypes must be a non-empty list")
 
 test("indent-blankline: ft-gated to shared code list, markdown excluded, exclude kept", function()
+  ---@module "andrew.plugins.indent-blankline"
   local plug = load("indent-blankline.lua")
   assert_eq(plug[1], "lukas-reineke/indent-blankline.nvim", "spec must point at indent-blankline.nvim")
   assert_ft_gated_no_md(plug, "indent-blankline", { "lua", "python", "c" })
@@ -73,6 +88,7 @@ test("indent-blankline: ft-gated to shared code list, markdown excluded, exclude
 end)
 
 test("comment: ft-gated to shared code list, markdown excluded", function()
+  ---@module "andrew.plugins.comment"
   local plug = load("comment.lua")
   assert_eq(plug[1], "numToStr/Comment.nvim", "spec must point at Comment.nvim")
   assert_ft_gated_no_md(plug, "comment", { "lua", "python", "c" })
@@ -80,6 +96,7 @@ test("comment: ft-gated to shared code list, markdown excluded", function()
 end)
 
 test("todo-comments: ft-gated to shared code list, markdown excluded", function()
+  ---@module "andrew.plugins.todo-comments"
   local plug = load("todo-comments.lua")
   assert_eq(plug[1], "folke/todo-comments.nvim", "spec must point at todo-comments.nvim")
   assert_ft_gated_no_md(plug, "todo-comments", { "lua", "python", "c" })
@@ -87,6 +104,7 @@ test("todo-comments: ft-gated to shared code list, markdown excluded", function(
 end)
 
 test("nvim-lint: ft-gated to filetypes with a real linter; no lua/markdown", function()
+  ---@module "andrew.plugins.linting"
   local plug = load("linting.lua")
   assert_eq(plug[1], "mfussenegger/nvim-lint", "spec must point at nvim-lint")
   -- Must include every linter-having filetype (linters_by_ft + fortran variants).

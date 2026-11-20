@@ -164,6 +164,8 @@ function M:_drain_queue()
     if not best_domain then
       break
     end
+    -- _pick_next sets the domain and its entry together.
+    ---@cast best_entry -nil
 
     -- Remove from queue
     local queue = self._domain_queues[best_domain]

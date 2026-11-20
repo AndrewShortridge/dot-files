@@ -25,6 +25,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/focused_split_cursorline_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq = _H.test, _H.assert_eq
 
@@ -37,6 +38,8 @@ dofile(config_dir .. "/lua/andrew/core/keymaps.lua")
 local scratch_dir = vim.fn.tempname()
 vim.fn.mkdir(scratch_dir, "p")
 
+---@param name string
+---@return string path
 local function scratch_file(name)
   local path = scratch_dir .. "/" .. name
   vim.fn.writefile({ "first", "second", "third" }, path)
@@ -46,6 +49,7 @@ end
 local ONE, TWO, THREE = scratch_file("one.txt"), scratch_file("two.txt"), scratch_file("three.txt")
 
 -- One window on ONE with the cursorline wanted, as after startup.
+---@return integer win
 local function reset_to_single_window()
   vim.cmd("silent! tabonly | silent! only")
   vim.cmd("silent! %bwipeout!")
@@ -56,6 +60,8 @@ end
 
 -- Open `path` in a split. Returns the window that was focused and the new
 -- split, which now has focus.
+---@param path string
+---@return integer original, integer split
 local function split_with(path)
   local original = vim.api.nvim_get_current_win()
   vim.cmd.vsplit(path)
@@ -64,6 +70,8 @@ end
 
 local focus = vim.api.nvim_set_current_win
 
+---@param window integer
+---@return boolean
 local function shows_cursorline(window)
   return vim.wo[window].cursorline
 end

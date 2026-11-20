@@ -9,6 +9,16 @@ local M = {}
 M.enabled = true
 M.ns = vim.api.nvim_create_namespace("vault_linkdiag")
 
+--- A diagnostic in M.ns: a vim.Diagnostic plus the fields the code actions and
+--- link_repair read back. Every broken_note and broken_heading diagnostic has
+--- `_target`; every broken_heading one also has `_heading` and `_filepath`.
+---@class VaultLinkDiagnostic : vim.Diagnostic
+---@field _type "broken_note"|"broken_heading"|"dead_url"
+---@field _target? string name of the linked note
+---@field _heading? string heading text of the link
+---@field _filepath? string absolute path of the linked note
+---@field _url? string the URL of a dead_url diagnostic
+
 --- Return the list of all cached lowercase basenames (for fuzzy matching).
 ---@return string[]
 function M.get_all_names()
@@ -202,14 +212,14 @@ local function run_url_validation(bufnr, diags)
   end
 
   local any_cached = false
-  url_validate.validate_batch(uncached, function(entry, _result)
+  url_validate.validate_batch(uncached, function(entry)
     -- Only refresh when the result actually landed in the cache; otherwise the
     -- refresh would find the same URL uncached and queue the batch again.
     if url_validate.get_cached(entry.url) then
       any_cached = true
       queue_refresh()
     end
-  end, function(_all_results)
+  end, function()
     _url_batch_active[bufnr] = nil
     -- Nothing was cached (every request was rejected or excluded): refreshing
     -- would re-queue the same batch on every tick, so stop here.
@@ -615,6 +625,7 @@ function M.setup()
   local group = vim.api.nvim_create_augroup("VaultLinkDiag", { clear = true })
 
   vim.api.nvim_create_autocmd("User", {
+    group = group,
     pattern = "VaultCacheInvalidate",
     callback = function(ev)
       if not M.enabled then return end

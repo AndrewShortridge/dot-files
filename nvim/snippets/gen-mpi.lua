@@ -211,7 +211,7 @@ local function parse_mod(text)
   local recs, order = {}, {}
   local i = 1
   while syms and i <= #syms do
-    local id = tonumber(syms[i])
+    local id = assert(tonumber(syms[i]))
     i = i + 1
     local strs = {}
     while type(syms[i]) == "table" and syms[i].str ~= nil do
@@ -667,6 +667,7 @@ local text = zcat(MOD_MPI)
 if not text then
   die("cannot read " .. MOD_MPI .. " (is Open MPI installed?)")
 end
+---@cast text -nil die() exits
 local header = text:sub(1, (text:find("\n") or 1) - 1)
 if not header:find(EXPECTED_HEADER, 1, true) then
   die(("%s is %q, expected %q -- refusing to parse a different module format")

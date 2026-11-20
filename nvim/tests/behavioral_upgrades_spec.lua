@@ -7,11 +7,15 @@
 --   andrew.vault.block_patterns        (match_id, extract_*, id_set_*)
 -- Run with: nvim --headless -u NONE -l tests/behavioral_upgrades_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_false, _H.assert_nil
 
 --- Deep structural equality for plain tables / scalars (spec-local variant).
+---@param a any
+---@param b any
+---@return boolean
 local function deep_equal(a, b)
   if type(a) ~= type(b) then return false end
   if type(a) ~= "table" then return a == b end
@@ -24,6 +28,9 @@ local function deep_equal(a, b)
   return true
 end
 
+---@param got any
+---@param expected any
+---@param msg? string
 local function assert_deep_eq(got, expected, msg)
   if not deep_equal(got, expected) then
     error((msg or "") .. " expected: " .. vim.inspect(expected) .. ", got: " .. vim.inspect(got))
@@ -41,6 +48,27 @@ local inf = require("andrew.vault.inline_fields")
 local callout = require("andrew.vault.callout_utils")
 local bp = require("andrew.vault.block_patterns")
 
+-- `andrew.vault.query.types` annotates its constructors as returning a bare
+-- `table`; these describe the objects they build, as far as this spec reads them.
+
+---@class BehavioralUpgradesDuration
+---@field years number
+---@field months number
+---@field weeks number
+---@field days number
+---@field hours number
+---@field minutes number
+---@field seconds number
+---@field to_seconds fun(self: BehavioralUpgradesDuration): number
+
+---@class BehavioralUpgradesDate
+---@field year number
+---@field month number
+---@field day number
+---@field hour number
+---@field min number
+---@field sec number
+
 print("\n=== Behavioral Upgrade Tests ===\n")
 
 -- ============================================================================
@@ -51,6 +79,7 @@ print("--- types.Duration ---")
 test("Duration.parse simple '7 days'", function()
   local d = types.Duration.parse("7 days")
   assert_true(d ~= nil, "should parse")
+  ---@cast d BehavioralUpgradesDuration
   assert_eq(d.days, 7)
   assert_eq(d.weeks, 0)
   assert_eq(d.years, 0)
@@ -60,15 +89,16 @@ end)
 test("Duration.parse multi-unit '1 year, 3 months'", function()
   local d = types.Duration.parse("1 year, 3 months")
   assert_true(d ~= nil, "should parse")
+  ---@cast d BehavioralUpgradesDuration
   assert_eq(d.years, 1)
   assert_eq(d.months, 3)
   assert_eq(d.days, 0)
 end)
 
 test("Duration.parse abbreviations '2 wks' and '30 mins'", function()
-  local w = types.Duration.parse("2 wks")
+  local w = assert(types.Duration.parse("2 wks")) ---@type BehavioralUpgradesDuration
   assert_eq(w.weeks, 2)
-  local m = types.Duration.parse("30 mins")
+  local m = assert(types.Duration.parse("30 mins")) ---@type BehavioralUpgradesDuration
   assert_eq(m.minutes, 30)
 end)
 
@@ -102,7 +132,7 @@ test("Duration tostring empty -> '0 seconds'", function()
 end)
 
 test("Duration __add sums fields", function()
-  local d = types.Duration.new({ days = 1 }) + types.Duration.new({ hours = 2, days = 1 })
+  local d = types.Duration.new({ days = 1 }) + types.Duration.new({ hours = 2, days = 1 }) ---@type BehavioralUpgradesDuration
   assert_eq(d.days, 2)
   assert_eq(d.hours, 2)
 end)
@@ -127,6 +157,7 @@ end)
 test("Date.parse ISO datetime keeps time components", function()
   local d = types.Date.parse("2026-02-18T10:30:00")
   assert_true(d ~= nil, "should parse")
+  ---@cast d BehavioralUpgradesDate
   assert_eq(d.hour, 10)
   assert_eq(d.min, 30)
   assert_eq(d.sec, 0)
@@ -145,27 +176,27 @@ test("Date.parse garbage returns nil", function()
 end)
 
 test("Date plus 1 month clamps Jan 31 to Feb 28", function()
-  local d = types.Date.new(2026, 1, 31):plus(types.Duration.new({ months = 1 }))
+  local d = types.Date.new(2026, 1, 31):plus(types.Duration.new({ months = 1 })) ---@type BehavioralUpgradesDate
   assert_eq(tostring(d), "2026-02-28")
 end)
 
 test("Date plus accepts plain {days=7} table", function()
-  local d = types.Date.new(2026, 1, 1):plus({ days = 7 })
+  local d = types.Date.new(2026, 1, 1):plus({ days = 7 }) ---@type BehavioralUpgradesDate
   assert_eq(tostring(d), "2026-01-08")
 end)
 
 test("Date plus months normalizes year rollover", function()
-  local d = types.Date.new(2026, 11, 15):plus(types.Duration.new({ months = 3 }))
+  local d = types.Date.new(2026, 11, 15):plus(types.Duration.new({ months = 3 })) ---@type BehavioralUpgradesDate
   assert_eq(tostring(d), "2027-02-15")
 end)
 
 test("Date minus Duration returns earlier Date", function()
-  local d = types.Date.new(2026, 3, 1):minus({ days = 1 })
+  local d = types.Date.new(2026, 3, 1):minus({ days = 1 }) ---@type BehavioralUpgradesDate
   assert_eq(tostring(d), "2026-02-28")
 end)
 
 test("Date minus Date returns Duration of 604800 seconds for one week", function()
-  local dur = types.Date.new(2026, 1, 8):minus(types.Date.new(2026, 1, 1))
+  local dur = types.Date.new(2026, 1, 8):minus(types.Date.new(2026, 1, 1)) ---@type BehavioralUpgradesDuration
   assert_eq(dur:to_seconds(), 604800)
 end)
 
@@ -312,8 +343,44 @@ end)
 -- ============================================================================
 print("\n--- executor.execute ---")
 
+---@class BehavioralUpgradesMockFile
+---@field name string
+---@field path string
+---@field link table  a `types.Link`
+---@field tags string[]
+
+---@class BehavioralUpgradesMockPage
+---@field file BehavioralUpgradesMockFile
+---@field priority integer
+---@field tags string[]
+
+--- Stands in for a QueryIndex: only the three methods `executor.execute` calls
+--- (its `index` param is a bare `table`, so no cast is needed at the call).
+---@class BehavioralUpgradesMockIndex
+---@field all_pages fun(self: BehavioralUpgradesMockIndex): BehavioralUpgradesMockPage[]
+---@field resolve_source fun(self: BehavioralUpgradesMockIndex, node: table): BehavioralUpgradesMockPage[]
+---@field current_page fun(self: BehavioralUpgradesMockIndex): nil
+
+---@class BehavioralUpgradesFieldExpr
+---@field type "field"
+---@field path string[]
+
+---@class BehavioralUpgradesLiteralExpr
+---@field type "literal"
+---@field value number|string
+
+---@class BehavioralUpgradesBinaryExpr
+---@field type "binary"
+---@field op string
+---@field left BehavioralUpgradesExpr
+---@field right BehavioralUpgradesExpr
+
+---@alias BehavioralUpgradesExpr BehavioralUpgradesFieldExpr|BehavioralUpgradesLiteralExpr|BehavioralUpgradesBinaryExpr
+
 --- Build a mock index with fixed pages (per test_vault_fixes.lua pattern).
+---@return BehavioralUpgradesMockIndex
 local function make_mock_index()
+  ---@return BehavioralUpgradesMockPage[]
   local function build_pages()
     local specs = {
       { name = "alpha", priority = 3, tags = { "project", "urgent" } },
@@ -321,7 +388,7 @@ local function make_mock_index()
       { name = "gamma", priority = 2, tags = { "project" } },
       { name = "delta", priority = 4, tags = {} },
     }
-    local pages = {}
+    local pages = {} ---@type BehavioralUpgradesMockPage[]
     for i, s in ipairs(specs) do
       pages[i] = {
         file = {
@@ -337,31 +404,46 @@ local function make_mock_index()
     return pages
   end
   return {
+    ---@return BehavioralUpgradesMockPage[]
     all_pages = function()
       return build_pages()
     end,
-    resolve_source = function(self, _node)
+    ---@param self BehavioralUpgradesMockIndex
+    ---@param _ table  the query's FROM node, ignored
+    ---@return BehavioralUpgradesMockPage[]
+    resolve_source = function(self, _)
       return self:all_pages()
     end,
+    ---@return nil
     current_page = function()
       return nil
     end,
   }
 end
 
+---@param ... string
+---@return BehavioralUpgradesFieldExpr
 local function field(...)
   return { type = "field", path = { ... } }
 end
 
+---@param v number|string
+---@return BehavioralUpgradesLiteralExpr
 local function lit(v)
   return { type = "literal", value = v }
 end
 
+---@param op string
+---@param l BehavioralUpgradesExpr
+---@param r BehavioralUpgradesExpr
+---@return BehavioralUpgradesBinaryExpr
 local function binop(op, l, r)
   return { type = "binary", op = op, left = l, right = r }
 end
 
 test("execute nil ast returns ({}, 'Invalid query AST: missing type')", function()
+  -- Invalid on purpose: checks execute's guard against a missing AST.
+  ---@diagnostic disable-next-line: param-type-mismatch
   local results, err = executor.execute(nil, make_mock_index(), "")
   assert_eq(#results, 0)
   assert_eq(err, "Invalid query AST: missing type")
@@ -374,6 +456,8 @@ test("execute ast without type returns same error", function()
 end)
 
 test("execute nil index returns ({}, 'No index provided')", function()
+  -- Invalid on purpose: checks execute's guard against a missing index.
+  ---@diagnostic disable-next-line: param-type-mismatch
   local results, err = executor.execute({ type = "LIST" }, nil, "")
   assert_eq(#results, 0)
   assert_eq(err, "No index provided")

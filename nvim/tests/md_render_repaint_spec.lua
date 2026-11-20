@@ -39,8 +39,8 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/md_render_repaint_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
@@ -48,7 +48,9 @@ vim.opt.runtimepath:append(vim.fn.stdpath("data") .. "/lazy/md-render.nvim")
 vim.cmd("filetype on")
 
 -- Everything md-render sends to the terminal goes through this one function.
-local sent_to_terminal = {}
+local sent_to_terminal = {} ---@type string[]
+-- Stubbed on purpose: a recorder in place of vim.api.nvim_ui_send(content: string); never restored.
+---@param data string
 ---@diagnostic disable-next-line: duplicate-set-field
 vim.api.nvim_ui_send = function(data)
   sent_to_terminal[#sent_to_terminal + 1] = data
@@ -119,6 +121,7 @@ end
 
 require("andrew.utils.md_render_repaint").setup()
 
+---@module "md-render.preview"
 local preview = require("md-render").preview
 
 local scratch_dir = vim.fn.tempname()
@@ -269,7 +272,7 @@ test("headings a redraw erased come back at once when one of them is now covered
 
   -- Moved over `Beta`, which no event tells md-render about: this is the
   -- completion menu following the cursor.
-  local beta_line
+  local beta_line ---@type integer?
   for line_number, text in
     ipairs(vim.api.nvim_buf_get_lines(headings_view.view_bufnr, 0, -1, false))
   do
@@ -277,9 +280,14 @@ test("headings a redraw erased come back at once when one of them is now covered
       beta_line = line_number
     end
   end
+  -- headings.md has a `## Beta` line, so the loop found it; a nil here would
+  -- crash the arithmetic below anyway.
+  ---@cast beta_line -nil
   local beta_text_column = vim.api
     .nvim_buf_get_lines(headings_view.view_bufnr, beta_line - 1, beta_line, false)[1]
     :find("Beta", 1, true)
+  -- The line was picked above for containing "Beta".
+  ---@cast beta_text_column -nil
   local beta_position = vim.fn.screenpos(headings_view.window, beta_line, beta_text_column)
   vim.api.nvim_win_set_config(float, {
     relative = "editor",
@@ -340,6 +348,7 @@ test("headings that moved on screen still get a full repaint", function()
 end)
 
 test("a rebuild that moved no heading does not repaint the whole screen", function()
+  ---@param source_bufnr integer
   edit_source_and_let_the_view_settle(headings_view, function(source_bufnr)
     vim.api.nvim_buf_set_lines(source_bufnr, 2, 3, false, { "Body text of the note, edited." })
   end)
@@ -348,6 +357,7 @@ test("a rebuild that moved no heading does not repaint the whole screen", functi
 end)
 
 test("a rebuild that moved a heading still repaints the whole screen", function()
+  ---@param source_bufnr integer
   edit_source_and_let_the_view_settle(headings_view, function(source_bufnr)
     -- Above `## Beta`, which moves down by two lines.
     vim.api.nvim_buf_set_lines(source_bufnr, 3, 3, false, { "", "A paragraph more." })
@@ -356,6 +366,7 @@ test("a rebuild that moved a heading still repaints the whole screen", function(
 end)
 
 test("a rebuild that changed a heading where it stands still repaints the whole screen", function()
+  ---@param source_bufnr integer
   edit_source_and_let_the_view_settle(headings_view, function(source_bufnr)
     vim.api.nvim_buf_set_lines(source_bufnr, 0, 1, false, { "# Alphabet" })
   end)
@@ -431,6 +442,7 @@ test("the picture of the view is placed", function()
 end)
 
 test("a rebuild that moved no image does not place it again", function()
+  ---@param source_bufnr integer
   edit_source_and_let_the_view_settle(image_view, function(source_bufnr)
     vim.api.nvim_buf_set_lines(source_bufnr, 6, 7, false, { "Text below the picture, edited." })
   end)
@@ -438,6 +450,7 @@ test("a rebuild that moved no image does not place it again", function()
 end)
 
 test("a rebuild that moved an image places it again", function()
+  ---@param source_bufnr integer
   edit_source_and_let_the_view_settle(image_view, function(source_bufnr)
     -- Above the picture, which moves down by two lines.
     vim.api.nvim_buf_set_lines(source_bufnr, 3, 3, false, { "", "A paragraph more." })

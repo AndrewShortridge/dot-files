@@ -420,6 +420,7 @@ local src = omp_lib_path()
 if not src then
   die("cannot find omp_lib.f90 via `gfortran -print-file-name=finclude`")
 end
+---@cast src -nil die() exits
 
 local data = {}
 local n_sub, n_fun, n_const, n_type, n_skipped8 = 0, 0, 0, 0, 0

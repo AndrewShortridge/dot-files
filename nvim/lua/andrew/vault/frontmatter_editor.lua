@@ -25,10 +25,11 @@ local resize_float
 ---@class FmEditorState
 ---@field source_buf number    The original markdown buffer being edited
 ---@field float_buf number     The scratch buffer displayed in the float
----@field float_win number     The floating window handle
+---@field float_win number|nil The floating window handle (nil until the window is opened)
 ---@field fields FmEditorField[]
 ---@field cursor_idx number    1-based index into fields
 ---@field source_file string   Absolute path of the source buffer
+---@field _render_cache? { kw: number, disp_values: string[] } Display data of the last render()
 
 ---@type FmEditorState|nil
 local _state = nil
@@ -241,7 +242,7 @@ function M.open()
       })
       if create ~= "Yes" then return end
 
-      local ok, err = pcall(vim.cmd, "undojoin")
+      local ok, err = pcall(vim.cmd --[[@as function]], "undojoin")
       if not ok then log.debug("undojoin before frontmatter create: %s", err) end
       vim.api.nvim_buf_set_lines(source_buf, 0, 0, false, { "---", "---" })
 

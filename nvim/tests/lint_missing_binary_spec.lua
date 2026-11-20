@@ -37,27 +37,50 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/lint_missing_binary_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
+
+-- Puts nvim-lint's annotations (lint.Linter, lint.try_lint.Opts) in scope:
+-- the spec stubs the module instead of requiring it.
+---@module "lint"
 
 -- A binary that certainly exists, and one that certainly does not.
 local PRESENT = vim.fn.executable("sh") == 1 and "sh" or "nvim"
 local ABSENT = "definitely-not-a-real-linter-binary-xyzzy"
 
 -- Stub nvim-lint. Records the (names, opts) of each try_lint call.
-local calls = {}
+---@class LintMissingBinaryTryLintCall
+---@field names? string|string[]
+---@field opts? lint.try_lint.Opts
+
+-- What the tests hand to the captured filter: a stand-in for lint.Linter
+-- carrying only `cmd`, deliberately including malformed values (nil, "", 42).
+---@class LintMissingBinaryLinterProbe
+---@field cmd? string|integer|fun(): string
+
+-- linting.lua's spec: its `config` is a function taking nothing (LazyPluginSpec
+-- also allows `true`, which pcall below could not call).
+---@class LintMissingBinaryPluginSpec: LazyPluginSpec
+---@field config fun()
+
+local calls = {} ---@type LintMissingBinaryTryLintCall[]
 local lint_stub = {
+  ---@type table<string, lint.Linter|fun(): lint.Linter>
   linters = {},
+  ---@type table<string, string[]>
   linters_by_ft = {},
+  ---@param names? string|string[]
+  ---@param opts? lint.try_lint.Opts
   try_lint = function(names, opts)
     calls[#calls + 1] = { names = names, opts = opts }
   end,
 }
 package.loaded["lint"] = lint_stub
 
-local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/linting.lua")
+local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/linting.lua") ---@type LintMissingBinaryPluginSpec
 
 test("plugin spec returns a table for mfussenegger/nvim-lint", function()
   assert_true(type(plug) == "table", "spec must return a table")
@@ -71,7 +94,10 @@ end)
 
 -- Fire the real autocmd the bug reproduced through. That was BufReadPost at
 -- the time; opens are linted from FileType now (see the trigger test below).
-local filter
+-- Cast: the tests below call it with LintMissingBinaryLinterProbe tables
+-- (partial, sometimes malformed linters) on purpose; the assertion after the
+-- assignment checks that it really is a function.
+local filter ---@type fun(linter: LintMissingBinaryLinterProbe): boolean
 test("the on-open lint autocmd supplies a filter", function()
   calls = {}
   vim.api.nvim_exec_autocmds("FileType", { group = "AndrewLinting" })
@@ -79,7 +105,8 @@ test("the on-open lint autocmd supplies a filter", function()
 
   local opts = calls[#calls].opts
   assert_true(type(opts) == "table", "try_lint must be called with an opts table")
-  filter = opts.filter
+  ---@cast opts -nil
+  filter = opts.filter --[[@as fun(linter: LintMissingBinaryLinterProbe): boolean]]
   -- A bare try_lint() -- the shipped bug -- passes no filter at all.
   assert_true(type(filter) == "function", "try_lint must receive an opts.filter function")
 end)
@@ -97,7 +124,9 @@ end)
 test("filter resolves a function cmd", function()
   -- The Fortran linter sets cmd from fortran_config.compiler_path; nvim-lint
   -- itself evals cmd, so a function is legal here and must not crash the filter.
+  ---@return string
   assert_true(filter({ cmd = function() return PRESENT end }), "function cmd resolving to a real binary must run")
+  ---@return string
   assert_false(filter({ cmd = function() return ABSENT end }), "function cmd resolving to a missing binary must be filtered")
   assert_false(filter({ cmd = function() error("boom") end }), "a throwing cmd function must be filtered, not propagated")
 end)
@@ -127,6 +156,9 @@ end)
 --   * A second autocmd (or BufReadPost beside FileType) matching the same
 --     buffer: every open or save then lints twice.
 test("each trigger lints once, and Fortran skips InsertLeave", function()
+  ---@param event string
+  ---@param filetype string
+  ---@return integer
   local function lint_runs(event, filetype)
     vim.bo.filetype = filetype
     calls = {}

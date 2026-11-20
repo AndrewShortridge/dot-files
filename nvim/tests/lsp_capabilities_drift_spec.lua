@@ -12,6 +12,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/lsp_capabilities_drift_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_true, assert_deep_eq = _H.test, _H.assert_true, _H.assert_deep_eq
 

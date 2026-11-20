@@ -18,6 +18,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/diff_entry_closure_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true =
   _H.test, _H.assert_eq, _H.assert_true
@@ -26,7 +27,27 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 local vi = require("andrew.vault.vault_index")
 local diff_entry = vi._diff_entry
 
+---@class DiffEntryClosureEntry  the VaultIndexEntry fields diff_entry compares
+---@field frontmatter table<string, any>
+---@field tags string[]
+---@field headings table[]
+---@field outlinks table[]
+---@field tasks table[]
+---@field aliases string[]
+---@field block_ids table[]
+
+---@class DiffEntryClosureEntryOpts  per-field overrides for entry()
+---@field frontmatter? table<string, any>
+---@field tags? string[]
+---@field headings? table[]
+---@field outlinks? table[]
+---@field tasks? table[]
+---@field aliases? string[]
+---@field block_ids? table[]
+
 --- Build a fully-specified entry; override any field via opts.
+---@param opts? DiffEntryClosureEntryOpts
+---@return DiffEntryClosureEntry
 local function entry(opts)
   opts = opts or {}
   return {

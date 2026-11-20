@@ -25,6 +25,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/render_diff_line_key_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -38,12 +39,14 @@ local NS = vim.api.nvim_create_namespace("render_diff_line_key_perf_spec")
 local NS2 = vim.api.nvim_create_namespace("render_diff_line_key_perf_spec_2")
 
 -- Build a fresh scratch buffer inside a temp vault dir with N lines of content.
+---@param n integer
+---@return integer buf
 local function make_buf(n)
   local vault = vim.fn.tempname()
   vim.fn.mkdir(vault, "p")
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, vault .. "/note.md")
-  local lines = {}
+  local lines = {} ---@type string[]
   for i = 1, n do
     lines[i] = "line " .. i .. " with a [[link]] and a #tag"
   end
@@ -53,8 +56,10 @@ end
 
 -- Build specs: for each line, a Comment highlight; on EVERY line also a second
 -- namespace highlight (link-style) so "total specs" >> "specs on one line".
+---@param n_lines integer
+---@return ExtmarkSpec[]
 local function build_specs(n_lines)
-  local specs = {}
+  local specs = {} ---@type ExtmarkSpec[]
   for line = 0, n_lines - 1 do
     specs[#specs + 1] = { ns = NS, line = line, col = 0, opts = { hl_group = "Comment", end_col = 4 } }
     specs[#specs + 1] = { ns = NS, line = line, col = 6, opts = { hl_group = "Identifier", end_col = 10 } }
@@ -64,8 +69,10 @@ local function build_specs(n_lines)
 end
 
 -- The set of all lines (changed_lines for an initial full apply).
+---@param n_lines integer
+---@return table<number, true>
 local function all_lines(n_lines)
-  local set = {}
+  local set = {} ---@type table<number, true>
   for line = 0, n_lines - 1 do
     set[line] = true
   end
@@ -114,9 +121,12 @@ end)
 -- ---------------------------------------------------------------------------
 
 -- Capture the full extmark set for a namespace as a sorted, comparable list.
+---@param buf integer
+---@param ns integer
+---@return string[]
 local function capture(buf, ns)
   local marks = vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
-  local out = {}
+  local out = {} ---@type string[]
   for _, m in ipairs(marks) do
     local d = m[4] or {}
     out[#out + 1] = string.format(
@@ -128,6 +138,8 @@ local function capture(buf, ns)
   return out
 end
 
+---@param buf integer
+---@return string
 local function capture_both(buf)
   local a = capture(buf, NS)
   local b = capture(buf, NS2)

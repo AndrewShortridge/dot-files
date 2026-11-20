@@ -7,6 +7,7 @@
 -- each spec's "N passed, M failed" summary, prints a per-spec line and
 -- an aggregate total, then exits non-zero if any spec failed or errored.
 
+---@return string dir of this script
 local function script_dir()
   local src = debug.getinfo(1, "S").source
   local path = src:sub(1, 1) == "@" and src:sub(2) or src
@@ -16,8 +17,9 @@ end
 local tests_dir = script_dir()
 
 -- Discover spec files.
-local files = {}
-local seen = {}
+local files = {} ---@type string[]
+local seen = {} ---@type table<string, true>
+---@param path string
 local function add(path)
   if path and path ~= "" and not seen[path] then
     seen[path] = true
@@ -25,7 +27,8 @@ local function add(path)
   end
 end
 
-for _, path in ipairs(vim.fn.glob(tests_dir .. "/*_spec.lua", true, true)) do
+-- glob() with list=true returns a List of paths (its annotation says `any`).
+for _, path in ipairs(vim.fn.glob(tests_dir .. "/*_spec.lua", true, true) --[[@as string[] ]]) do
   add(path)
 end
 local fixes = tests_dir .. "/test_vault_fixes.lua"
@@ -41,9 +44,9 @@ end
 
 local nvim = vim.v.progpath or "nvim"
 
-local total_passed = 0
-local total_failed = 0
-local errored_specs = 0
+local total_passed = 0 ---@type number
+local total_failed = 0 ---@type number
+local errored_specs = 0 ---@type integer
 local any_failure = false
 
 print(string.format("Running %d spec(s)\n", #files))
@@ -55,8 +58,9 @@ for _, file in ipairs(files) do
   local code = vim.v.shell_error
 
   -- Parse the last "N passed, M failed" summary the spec printed.
-  local passed, failed
-  for p, f in tostring(out):gmatch("(%d+)%s+passed,%s+(%d+)%s+failed") do
+  local passed, failed ---@type number?, number?
+  -- The pattern has two captures, so the iterator yields two strings.
+  for p, f in tostring(out):gmatch("(%d+)%s+passed,%s+(%d+)%s+failed") --[[@as fun(): string, string]] do
     passed, failed = tonumber(p), tonumber(f)
   end
 

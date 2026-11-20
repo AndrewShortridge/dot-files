@@ -35,6 +35,7 @@
 local M = {}
 
 local config = require("andrew.vault.config")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 --- Window-variable marking a pad window. Stored on the window (not in a Lua
 --- table) so pads are still identifiable after a config reload drops module
@@ -300,8 +301,8 @@ function M.apply()
   local ok = pcall(function()
     local left = pads.left or create_pad(content, "left")
     local right = pads.right or create_pad(content, "right")
-    if left then vim.api.nvim_win_set_width(left, want_left) end
-    if right then vim.api.nvim_win_set_width(right, want_right) end
+    if left then nvim_compat.set_window_width(left, want_left) end
+    if right then nvim_compat.set_window_width(right, want_right) end
   end)
 
   -- Verify by measuring, and give up cleanly rather than half-applying.
@@ -336,7 +337,7 @@ function M.schedule()
     _timer:close()
     _timer = nil
   end
-  _timer = vim.uv.new_timer()
+  _timer = assert(vim.uv.new_timer())
   _timer:start(config.readable_width.debounce_ms, 0, function()
     if _timer then
       _timer:stop()

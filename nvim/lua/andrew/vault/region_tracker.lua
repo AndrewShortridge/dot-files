@@ -283,7 +283,7 @@ function BufferTracker:_attach()
   if self._attached then return end
 
   local ok = vim.api.nvim_buf_attach(self._bufnr, false, {
-    on_lines = function(_event, _buf, _tick, first_line, last_line, new_last_line)
+    on_lines = function(_, _, _, first_line, last_line, new_last_line)
       -- Propagate edit to ALL scopes
       for _, scope in pairs(self._scopes) do
         scope:_on_lines(first_line, last_line, new_last_line)

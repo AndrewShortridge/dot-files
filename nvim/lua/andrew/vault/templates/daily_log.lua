@@ -419,7 +419,7 @@ end
 -- Template runner
 -- ---------------------------------------------------------------------------
 
-function M.run(e, p)
+function M.run(e)
   local date = e.today()
   local content = M.generate(e, date)
   e.write_note(config.dirs.log .. "/" .. date, content)

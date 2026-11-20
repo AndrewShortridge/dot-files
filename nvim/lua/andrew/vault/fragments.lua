@@ -45,7 +45,7 @@ local fragments = {
   {
     name = "Task Section",
     desc = "Task list with due dates and priorities",
-    build = function(e)
+    build = function()
       return {
         "",
         "## Tasks",

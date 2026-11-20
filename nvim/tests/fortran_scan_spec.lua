@@ -35,6 +35,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_scan_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil, assert_match = _H.assert_nil, _H.assert_match
@@ -45,7 +46,21 @@ local scan = require("andrew.fortran.scan")
 
 -- Helpers -------------------------------------------------------------------
 
+--- One record of a scan list (scan.lua's `emit`; the project scans add the
+--- file's `path` and the line's `text`). scan.lua types these lists `table[]`.
+---@class FortranScanSpecRecord
+---@field name string source-cased spelling
+---@field lname string lowercase name
+---@field kind string
+---@field lnum integer 1-based line
+---@field col integer 1-based byte column
+---@field path? string
+---@field text? string
+
 --- Find the single record naming `name` (case-insensitive) in a scan list.
+---@param list FortranScanSpecRecord[]
+---@param name string
+---@return FortranScanSpecRecord|nil
 local function pick(list, name)
   for _, rec in ipairs(list) do
     if rec.lname == name:lower() then
@@ -55,8 +70,10 @@ local function pick(list, name)
   return nil
 end
 
+---@param list FortranScanSpecRecord[]
+---@return string[]
 local function names(list)
-  local out = {}
+  local out = {} ---@type string[]
   for _, rec in ipairs(list) do
     out[#out + 1] = rec.name
   end
@@ -99,7 +116,7 @@ test("call with arbitrary whitespace: two spaces, eight spaces, one tab", functi
     "  call\tGamma(x)",
     "  CALL Delta(x)",
   })
-  assert_deep_eq = _H.assert_deep_eq
+  local assert_deep_eq = _H.assert_deep_eq
   assert_deep_eq(names(result.calls), { "Alpha", "Beta", "Delta", "Gamma" })
   assert_eq(pick(result.calls, "beta").col, 15, "column points at the callee, not the keyword:")
   assert_eq(pick(result.calls, "gamma").col, 8)
@@ -149,8 +166,8 @@ test("definitions cover every program-unit keyword", function()
     "type, extends(base) :: Derived",
     "interface Generic",
   })
-  local got = {}
-  for _, d in ipairs(result.defs) do
+  local got = {} ---@type table<string, string>
+  for _, d in ipairs(result.defs --[[@as FortranScanSpecRecord[] ]]) do
     got[d.lname] = d.kind
   end
   assert_eq(got.physics, "module")
@@ -203,7 +220,7 @@ end)
 
 test("identifiers tokenizes a line once, skipping literal exponents", function()
   local toks = scan.identifiers(scan.mask("  if (x1 == 1.0e5 .and. y2_z > 3d0) then"))
-  local got = {}
+  local got = {} ---@type string[]
   for _, t in ipairs(toks) do
     got[#got + 1] = t.lname .. "@" .. t.col
   end
@@ -278,13 +295,16 @@ test("project scan finds definitions, calls and continued calls across files", f
     "end subroutine Step",
   }, root .. "/code/solver.f90")
 
-  local defs, calls
-  scan.project_definitions(root, function(result)
+  local defs, calls ---@type FortranScanSpecRecord[]|nil, FortranScanSpecRecord[]|nil
+  scan.project_definitions(root,
+  ---@param result FortranScanSpecRecord[]
+  function(result)
     defs = result
   end)
   assert_true(vim.wait(10000, function() return defs ~= nil end), "definition scan timed out")
+  ---@cast defs -nil
 
-  local unique, seen = {}, {}
+  local unique, seen = {}, {} ---@type string[], table<string, true>
   for _, d in ipairs(defs) do
     if not seen[d.lname] then
       seen[d.lname] = true
@@ -294,12 +314,15 @@ test("project scan finds definitions, calls and continued calls across files", f
   table.sort(unique)
   _H.assert_deep_eq(unique, { "energy", "heating", "physics", "step" })
 
-  scan.project_calls(root, unique, function(result)
+  scan.project_calls(root, unique,
+  ---@param result FortranScanSpecRecord[]
+  function(result)
     calls = result
   end)
   assert_true(vim.wait(10000, function() return calls ~= nil end), "call scan timed out")
+  ---@cast calls -nil
 
-  local by_pos = {}
+  local by_pos = {} ---@type table<string, string>
   for _, c in ipairs(calls) do
     by_pos[vim.fn.fnamemodify(c.path, ":t") .. ":" .. c.lnum .. ":" .. c.kind] = c.name
   end

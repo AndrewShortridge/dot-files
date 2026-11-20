@@ -43,10 +43,15 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/blink_cmdline_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_false, _H.assert_nil
 
+-- Loads blink.cmp's type library for this file (lazydev), for blink.cmp.SourceList below.
+---@module "blink.cmp"
+
+---@module "andrew.plugins.blink-cmp"
 local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/blink-cmp.lua")
 
 test("plugin spec returns a table for saghen/blink.cmp", function()
@@ -58,7 +63,7 @@ test("loads on CmdlineEnter as well as InsertEnter", function()
   -- Without CmdlineEnter the cmdline block below is dead config: blink installs
   -- its 'c'-mode maps at setup(), which never runs if ':' does not load it.
   assert_true(type(plug.event) == "table", "event must be a table (not the bare InsertEnter string)")
-  local ev = {}
+  local ev = {} ---@type table<string, boolean>
   for _, e in ipairs(plug.event) do
     ev[e] = true
   end
@@ -96,10 +101,11 @@ test("auto_show fires on ':' and in cmdwin, but not on '/' or '?'", function()
 
   local real_getcmdtype = vim.fn.getcmdtype
   local cmdtype = ""
-  ---@diagnostic disable-next-line: duplicate-set-field
-  vim.fn.getcmdtype = function()
+  ---@return string
+  local function fake_getcmdtype()
     return cmdtype
   end
+  vim.fn.getcmdtype = fake_getcmdtype
   local ok, err = pcall(function()
     cmdtype = ":"
     assert_true(auto_show({ mode = "cmdline" }), "must auto-show for ':' commands")
@@ -127,7 +133,7 @@ test("cmdline menu drops the insert-mode kind_icon / source_name columns", funct
   local cols = plug.opts.cmdline.completion.menu.draw.columns
   assert_true(type(cols) == "table", "cmdline draw.columns must be a table")
 
-  local seen = {}
+  local seen = {} ---@type table<string, boolean>
   for _, column in ipairs(cols) do
     for _, component in ipairs(column) do
       seen[component] = true
@@ -143,7 +149,7 @@ test("cmdline menu drops the insert-mode kind_icon / source_name columns", funct
 
   -- Guard the insert-mode menu still HAS source_name, i.e. this is a cmdline
   -- override and not an accidental global narrowing.
-  local ins = {}
+  local ins = {} ---@type table<string, boolean>
   for _, column in ipairs(plug.opts.completion.menu.draw.columns) do
     for _, component in ipairs(column) do
       ins[component] = true
@@ -155,12 +161,13 @@ end)
 test("vault providers cannot leak into cmdline sources", function()
   -- Cmdline ignores sources.default/per_filetype, so the only way a vault
   -- source could fire on ':' is an explicit cmdline.sources entry.
-  local srcs = plug.opts.cmdline.sources
+  local srcs = plug.opts.cmdline.sources ---@type blink.cmp.SourceList?
   if srcs == nil then
     -- Unset is correct: blink's default is { "buffer", "cmdline" }.
     return
   end
   assert_true(type(srcs) == "table", "if set, cmdline.sources must be a table")
+  ---@cast srcs string[]
   local banned = {
     wikilinks = true,
     vault_tags = true,

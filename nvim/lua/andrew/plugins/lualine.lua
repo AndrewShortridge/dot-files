@@ -34,6 +34,44 @@ return {
     local my_lualine_theme = onedark.theme
     local statusline_path = require("andrew.utils.statusline_path")
 
+    -- =============================================================================
+    -- Diagnostics Counts
+    -- =============================================================================
+    -- Two counts sit side by side: the workspace's (folder icon) and the
+    -- current file's. They share symbols and colours.
+    local diagnostic_symbols = {
+      error = " ",
+      warn = " ",
+      info = " ",
+      -- Extra space before the hint symbol for proper spacing
+      hint = "  󰠠 ",
+    }
+    local diagnostic_colors = {
+      error = { fg = colors.red },
+      warn = { fg = colors.yellow },
+      info = { fg = colors.cyan },
+      hint = { fg = colors.green },
+    }
+
+    -- "Workspace" is every buffer Neovim holds diagnostics for, shown or not:
+    -- exactly the entries <leader>xw lists. A server that reports on files
+    -- nobody opened (lua_ls) makes that the whole project; one that reports
+    -- on open files only makes it the files opened so far. What <leader>Lw
+    -- finds for Fortran is in it too.
+    --
+    -- One pass over them. lualine's own "nvim_workspace_diagnostic" source
+    -- builds a list of the diagnostics per severity on every redraw.
+    local function count_workspace_diagnostics()
+      local count_of_severity = vim.diagnostic.count(nil)
+      local severity = vim.diagnostic.severity
+      return {
+        error = count_of_severity[severity.ERROR],
+        warn = count_of_severity[severity.WARN],
+        info = count_of_severity[severity.INFO],
+        hint = count_of_severity[severity.HINT],
+      }
+    end
+
     -- Use global status line (single line for all windows)
     vim.opt.laststatus = 3
 
@@ -113,9 +151,14 @@ return {
           -- which resets it. noice loads on VeryLazy, hence the guard.
           {
             function()
+              -- noice.api reaches `status` through noice.util.lazy, whose proxy
+              -- hides that it is a table<string, NoiceStatus> (noice/api/status.lua).
+              ---@diagnostic disable-next-line: undefined-field
               return require("noice").api.status.command.get()
             end,
             cond = function()
+              -- As above: `command` is a NoiceStatus, which has `has`.
+              ---@diagnostic disable-next-line: undefined-field
               return package.loaded["noice"] ~= nil and require("noice").api.status.command.has()
             end,
             color = { fg = colors.purple },
@@ -137,53 +180,23 @@ return {
             color = { fg = colors.yellow },
           },
 
-          -- Workspace diagnostics (from <leader>lw Fortran lint)
-          -- Single component with highlight groups for coloring: folder (purple), errors (red), warnings (yellow)
+          -- Diagnostics (errors, warnings, info, hints) for the workspace
           {
-            function()
-              local ws = _G.fortran_workspace_diagnostics or { errors = 0, warnings = 0 }
-              if ws.errors == 0 and ws.warnings == 0 then
-                return ""
-              end
-
-              -- Create highlight groups if they don't exist
-              vim.api.nvim_set_hl(0, "LualineWsFolder", { fg = "#c678dd" }) -- purple
-              vim.api.nvim_set_hl(0, "LualineWsError", { fg = "#e06c75" }) -- red
-              vim.api.nvim_set_hl(0, "LualineWsWarn", { fg = "#e5c07b" }) -- yellow
-
-              local result = "%#LualineWsFolder#󰉋"
-              if ws.errors > 0 then
-                result = result .. "%#LualineWsError#  " .. ws.errors
-              end
-              if ws.warnings > 0 then
-                result = result .. "%#LualineWsWarn#  " .. ws.warnings
-              end
-              return result .. "%*"
-            end,
-            cond = function()
-              local ws = _G.fortran_workspace_diagnostics or { errors = 0, warnings = 0 }
-              return ws.errors > 0 or ws.warnings > 0
-            end,
+            "diagnostics",
+            sources = { count_workspace_diagnostics },
+            sections = { "error", "warn", "info", "hint" },
+            icon = { "󰉋", color = { fg = colors.purple } },
+            symbols = diagnostic_symbols,
+            diagnostics_color = diagnostic_colors,
           },
-          -- Diagnostics (errors, warnings, hints, info) for current buffer
+          -- Diagnostics (errors, warnings, info, hints) for current buffer
           {
             "diagnostics",
             sources = { "nvim_diagnostic" },
             sections = { "error", "warn", "info", "hint" },
             padding = { left = 0, right = 1 },
-            -- Extra space before warn/info/hint for proper spacing
-            symbols = {
-              error = " ",
-              warn = " ",
-              info = " ",
-              hint = "  󰠠 ",
-            },
-            diagnostics_color = {
-              error = { fg = colors.red },
-              warn = { fg = colors.yellow },
-              info = { fg = colors.cyan },
-              hint = { fg = colors.green },
-            },
+            symbols = diagnostic_symbols,
+            diagnostics_color = diagnostic_colors,
           },
 
           -- File encoding

@@ -49,6 +49,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_lsp_completion_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil, assert_match, assert_deep_eq =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil, _H.assert_match, _H.assert_deep_eq
@@ -57,18 +58,43 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 local C = require("andrew.fortran.lsp_completion")
 local lsp = require("andrew.fortran.lsp")
+local nvim_compat = require("andrew.utils.nvim_compat")
+
+--- The `data` lsp_completion attaches to its items; resolve keys off it.
+---@class FortranLspCompletionItemData
+---@field k string            lowercase registry key
+---@field directive? boolean  the key is in the directive index
+
+--- What lsp_completion.items builds: every item carries a plain TextEdit, a
+--- filterText, a bucketed sortText, labelDetails and resolve data.
+---@class FortranLspCompletionItem: lsp.CompletionItem
+---@field textEdit lsp.TextEdit
+---@field filterText string
+---@field sortText string
+---@field labelDetails lsp.CompletionItemLabelDetails
+---@field data FortranLspCompletionItemData
+
+--- An item after lsp_completion.resolve: the same table, plus markdown
+--- documentation when the key is known.
+---@class FortranLspCompletionResolved: lsp.CompletionItem
+---@field documentation? lsp.MarkupContent
+
+--- The textDocument/completion answer of the server.
+---@class FortranLspCompletionList: lsp.CompletionList
+---@field items FortranLspCompletionItem[]
 
 --- Items for `line` with the cursor at the end of it (or at `col` bytes).
 ---@param line string
 ---@param col integer|nil 0-based byte offset
----@param opts table|nil
+---@param opts { line: integer|nil, trigger_kind: integer|nil, fixed: boolean|nil }|nil
+---@return FortranLspCompletionItem[]
 local function items(line, col, opts)
   return C.items(line, col or #line, opts or {})
 end
 
----@param list table[]
+---@param list FortranLspCompletionItem[]
 ---@param label string
----@return table|nil
+---@return FortranLspCompletionItem|nil
 local function by_label(list, label)
   for _, it in ipairs(list) do
     if it.label == label then
@@ -78,10 +104,10 @@ local function by_label(list, label)
   return nil
 end
 
----@param list table[]
+---@param list FortranLspCompletionItem[]
 ---@return table<string, boolean>
 local function label_set(list)
-  local set = {}
+  local set = {} ---@type table<string, boolean>
   for _, it in ipairs(list) do
     set[it.label] = true
   end
@@ -97,6 +123,7 @@ test("a clause on a directive line inserts PRIVATE(, matches priv, shows PRIVATE
   local got = items(line)
   local it = by_label(got, "PRIVATE(…)")
   assert_true(it ~= nil, "no PRIVATE clause offered on a PARALLEL DO line:")
+  ---@cast it -nil
   assert_eq(it.filterText, "private", "filterText must be the bare word blink matches on:")
   assert_eq(it.textEdit.newText, "PRIVATE($1)", "the A-F2 bug: what gets INSERTED:")
   assert_eq(it.insertTextFormat, 2, "a clause with an argument list must expand as a snippet:")
@@ -109,7 +136,7 @@ end)
 
 test("the textEdit range covers the typed prefix in bytes", function()
   local line = "      !$OMP PARALLEL DO priv"
-  local it = by_label(items(line, #line, { line = 7 }), "PRIVATE(…)")
+  local it = assert(by_label(items(line, #line, { line = 7 }), "PRIVATE(…)"))
   assert_eq(it.textEdit.range.start.line, 7, "start line:")
   assert_eq(it.textEdit.range["end"].line, 7, "end line:")
   assert_eq(it.textEdit.range["end"].character, #line, "the range ends at the cursor:")
@@ -138,7 +165,7 @@ end)
 
 --- `line` with `it`'s textEdit applied, and the byte offset of the `$1` stop.
 ---@param line string
----@param it table
+---@param it FortranLspCompletionItem
 ---@return string
 local function apply(line, it)
   local r = it.textEdit.range
@@ -172,13 +199,14 @@ test("accepting from the sentinel window writes a whole directive line", functio
   for _, before in ipairs({ "!$", "!$O", "!$OM", "!$OMP" }) do
     local it = by_label(items(before, #before, { trigger_kind = 2 }), "OMP PARALLEL DO")
     assert_true(it ~= nil, "OMP PARALLEL DO is not offered on `" .. before .. "`:")
+    ---@cast it -nil
     assert_eq(it.filterText, "omp parallel do", "filterText is what the user is typing:")
     assert_eq(it.textEdit.range.start.character, 2, "the edit starts just past the `$`:")
     assert_eq(it.textEdit.range["end"].character, #before, "and ends at the cursor:")
     assert_eq(apply(before, it), "!$OMP PARALLEL DO", "accepting `" .. before .. "`:")
   end
   -- resolve still reaches the directive index through the same data key.
-  local it = by_label(items("!$", 2, { trigger_kind = 2 }), "OMP PARALLEL DO")
+  local it = assert(by_label(items("!$", 2, { trigger_kind = 2 }), "OMP PARALLEL DO"))
   assert_eq(it.data.k, "parallel_do", "resolve keys off the registry key:")
 end)
 
@@ -197,6 +225,7 @@ test("a partial directive matches on the spelling with the space", function()
   local got = items("      !$omp par")
   local it = by_label(got, "PARALLEL DO")
   assert_true(it ~= nil, "`par` must reach PARALLEL DO:")
+  ---@cast it -nil
   assert_eq(it.filterText, "parallel do", "filterText carries the displayed spelling:")
   assert_eq(it.textEdit.newText, "PARALLEL DO", "directives are inserted upper case:")
   assert_eq(it.sortText, "00.0000.parallel_do", "directives are syntactically required here:")
@@ -204,6 +233,7 @@ test("a partial directive matches on the spelling with the space", function()
   -- The run-together spelling still matches, with a filterText blink can see.
   local flat = by_label(items("      !$omp paralleldo"), "PARALLEL DO")
   assert_true(flat ~= nil, "`paralleldo` must reach PARALLEL DO too:")
+  ---@cast flat -nil
   assert_eq(flat.filterText, "paralleldo", "filterText follows the spelling being typed:")
 end)
 
@@ -214,7 +244,7 @@ test("a clause illegal on this directive is not offered", function()
   assert_nil(by_label(items("      !$OMP PARALLEL DO now"), "NOWAIT"),
     "NOWAIT is illegal on PARALLEL DO:")
   -- A bare clause with no argument list inserts no paren, and no snippet.
-  local nowait = by_label(items("      !$OMP DO now"), "NOWAIT")
+  local nowait = assert(by_label(items("      !$OMP DO now"), "NOWAIT"))
   assert_eq(nowait.textEdit.newText, "NOWAIT")
   assert_eq(nowait.insertTextFormat, 1, "a clause with no argument list is plain text:")
 end)
@@ -244,6 +274,7 @@ test("an MPI procedure in a call carries its dummies and its module", function()
   local got = items("      call MPI_Comm_r")
   local it = by_label(got, "MPI_Comm_rank")
   assert_true(it ~= nil, "MPI_Comm_rank is not offered after `call MPI_Comm_r`:")
+  ---@cast it -nil
   assert_eq(it.kind, 3, "a subroutine is a Function item:")
   assert_eq(it.detail, "subroutine")
   assert_eq(it.labelDetails.detail, "(comm, rank, ierror)", "the dummy list column:")
@@ -281,15 +312,17 @@ test("a name that repeats a snippet prefix is demoted to bucket 12", function()
   assert_true(C.snippet_prefixes()["mpi_init"], "the mpi_init snippet prefix is gone:")
   local it = by_label(items("      call MPI_Ini"), "MPI_Init")
   assert_true(it ~= nil, "MPI_Init is not offered:")
+  ---@cast it -nil
   assert_match(it.sortText, "^12%.", "a snippet-shadowing name must sort in bucket 12:")
   -- A name with no snippet stays in the normal-symbol bucket.
-  assert_match(by_label(items("      call MPI_Comm_r"), "MPI_Comm_rank").sortText, "^09%.",
+  assert_match(assert(by_label(items("      call MPI_Comm_r"), "MPI_Comm_rank")).sortText, "^09%.",
     "a name with no snippet keeps bucket 09:")
 end)
 
 test("a Fortran statement keyword sorts below the library names", function()
   local it = by_label(items("      alloca", 13, { trigger_kind = 1 }), "allocatable")
   assert_true(it ~= nil, "`allocatable` is not offered:")
+  ---@cast it -nil
   assert_eq(it.kind, 14, "a keyword item:")
   assert_match(it.sortText, "^1[02]%.", "keywords sort below MPI/OpenMP names:")
 end)
@@ -326,39 +359,43 @@ end)
 -- ---------------------------------------------------------------------------
 
 --- Synchronously resolve `item`.
----@param item table
----@return table
+---@param item lsp.CompletionItem
+---@return FortranLspCompletionResolved
 local function resolve(item)
-  local out
+  local out ---@type FortranLspCompletionResolved
+  ---@param _ table|nil
+  ---@param res table|nil
   C.resolve(item, function(_, res)
-    out = res
+    -- resolve answers a table item with that same table.
+    out = res --[[@as FortranLspCompletionResolved]]
   end)
   return out
 end
 
 test("resolve adds exactly one field and drops hover's (kind) prefix", function()
-  local it = by_label(items("      call MPI_Comm_r"), "MPI_Comm_rank")
-  local before = {}
-  for k in pairs(it) do
+  local it = assert(by_label(items("      call MPI_Comm_r"), "MPI_Comm_rank"))
+  local before = {} ---@type table<string, boolean>
+  -- The item's field names.
+  for k in pairs(it --[[@as table<string, any>]]) do
     before[k] = true
   end
   local out = resolve(it)
-  local added = {}
-  for k in pairs(out) do
+  local added = {} ---@type string[]
+  for k in pairs(out --[[@as table<string, any>]]) do
     if not before[k] then
       added[#added + 1] = k
     end
   end
   assert_deep_eq(added, { "documentation" }, "resolve must add documentation and nothing else:")
-  assert_eq(out.documentation.kind, "markdown")
+  assert_eq(assert(out.documentation).kind, "markdown")
   assert_eq(out.documentation.value:sub(1, 26), "```fortran\nMPI_Comm_rank(\n",
     "the completion body carries no `(subroutine) ` prefix (design A6):")
 end)
 
 test("resolve answers a clause from the directive index, not the keyword file", function()
-  local it = by_label(items("      !$OMP PARALLEL DO priv"), "PRIVATE(…)")
+  local it = assert(by_label(items("      !$OMP PARALLEL DO priv"), "PRIVATE(…)"))
   local out = resolve(it)
-  assert_match(out.documentation.value, "^```fortran\nPRIVATE%(list%)\n```",
+  assert_match(assert(out.documentation).value, "^```fortran\nPRIVATE%(list%)\n```",
     "the clause body, not the Fortran PRIVATE statement:")
 end)
 
@@ -383,29 +420,35 @@ test("textDocument/completion answers through lsp.dispatch", function()
   })
   vim.bo[buf].filetype = "fortran"
 
-  local result
+  local result ---@type FortranLspCompletionList|nil
   lsp.dispatch("textDocument/completion", {
-    textDocument = { uri = vim.uri_from_bufnr(buf) },
+    textDocument = { uri = nvim_compat.uri_from_buffer(buf) },
     position = { line = 1, character = 28 },
     context = { triggerKind = 2, triggerCharacter = "$" },
+    ---@param _ table|nil
+    ---@param res any
   }, function(_, res)
     result = res
   end)
 
   assert_true(result ~= nil, "the server answered nothing:")
+  ---@cast result -nil
   assert_eq(result.isIncomplete, false, "the list is complete:")
   local it = by_label(result.items, "PRIVATE(…)")
   assert_true(it ~= nil, "PRIVATE is not reachable over the server:")
+  ---@cast it -nil
   assert_eq(it.textEdit.newText, "PRIVATE($1)")
   assert_eq(it.insertTextFormat, 2, "the snippet format survives the server round trip:")
   assert_eq(it.textEdit.range.start.line, 1, "the range is on the requested line:")
 
   -- ...and resolve over the same channel.
-  local resolved
+  local resolved ---@type FortranLspCompletionResolved|nil
+  ---@param _ table|nil
+  ---@param res any
   lsp.dispatch("completionItem/resolve", it, function(_, res)
     resolved = res
   end)
-  assert_true(resolved.documentation ~= nil, "resolve over the server added nothing:")
+  assert_true(assert(resolved).documentation ~= nil, "resolve over the server added nothing:")
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
 
