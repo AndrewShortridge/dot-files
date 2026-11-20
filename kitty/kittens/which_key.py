@@ -388,9 +388,10 @@ def main(args):
 
         # -- input ----------------------------------------------------------
         def on_text(self, text, in_bracketed_paste=False):
-            # Plain printable typed with no modifier kitty surfaces here.
-            # on_key is the primary path (it can resolve shifted/named keys via
-            # resolve_key); this stays as a glyph fallback for plain text.
+            # Every key that produces text arrives here, not in on_key: kitty's
+            # Handler.on_key_event routes any event carrying text to on_text.
+            # So this is the path for letters, digits and symbols alike, and
+            # char_to_key must be able to name every printable spec key.
             self._apply(char_to_key(text))
 
         def on_key(self, key_event):
@@ -399,13 +400,14 @@ def main(args):
             elif key_event.matches("backspace"):
                 self._apply(KEY_BACKSPACE)
             else:
-                # Resolve the live key-event against the key names valid at the
-                # CURRENT node. resolve_key tries key_event.matches(candidate)
-                # first (handles shift+h, slash, shift+slash, plain letters),
-                # then falls back to char_to_key(key_event.text) (| -> bar,
-                # - -> minus). An empty result means nothing resolved — a
-                # function/arrow/modifier key — which _apply treats as
-                # STAY/no-op (popup stays open).
+                # Only text-less events reach this branch (function / arrow /
+                # modifier keys, and synthetic events such as
+                # `kitten @ send-key`). resolve_key tries
+                # key_event.matches(candidate) against the key names valid at
+                # the CURRENT node, then falls back to
+                # char_to_key(key_event.text). An empty result means nothing
+                # resolved, which _apply treats as STAY/no-op (popup stays
+                # open).
                 candidates = self.stack[-1].order
                 resolved = resolve_key(
                     candidates, key_event.matches, key_event.text

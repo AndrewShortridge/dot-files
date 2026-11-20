@@ -184,6 +184,7 @@ class CharToKey(unittest.TestCase):
         cases = [
             ("|", "bar"),
             ("-", "minus"),
+            ("/", "slash"),
             ("a", "a"),
             ("", ""),
             # Shifted glyphs (the on_text / no-keyboard-protocol path): a shifted

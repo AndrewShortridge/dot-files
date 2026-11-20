@@ -135,8 +135,13 @@ and asserts the terminal `Leaf.action` equals the OLD action string exactly
 (the data-level regression guard for "matching today's behavior exactly").
 A dedicated case asserts the `slash` chord stores the **expanded** `kitten …`
 scrollback invocation, NOT the `kitty_scrollback_nvim` action_alias (which
-`kitty @ action` would not expand), and another asserts the migration is FLAT
-(every key a top-level leaf — no synthetic group that would change keystrokes).
+`kitty @ action` would not expand), another asserts the migration is FLAT
+(every key a top-level leaf — no synthetic group that would change keystrokes),
+and a round-trip case asserts `char_to_key(display_key(key)) == key` for every
+spec key: a key that produces text reaches the driver only through `on_text`
+-> `char_to_key`, so a named key missing from that map can never be typed
+(`slash` was dead this way; `resolve_key`'s `matches` path only sees text-less
+events).
 The live rebind, overlay launch, raw-tty key reads, and `kitty @ action`
 dispatch are terminal-interactive / HITL — a human must trigger `ctrl+space`
 and confirm every chord still fires: splits `|`/`-`, close `c`, focus
