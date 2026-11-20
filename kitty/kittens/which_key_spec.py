@@ -42,6 +42,14 @@ _SCROLLBACK_NVIM = (
     "python/kitty_scrollback_nvim.py"
 )
 
+# Copy mode (scripts/copy-mode.sh), the same launch as kitty.conf's
+# ctrl+shift+f3: the window's scrollback + screen go to the script on stdin.
+_COPY_MODE = (
+    "launch --type=overlay --stdin-source=@screen_scrollback "
+    "--stdin-add-formatting --stdin-add-line-wrap-markers "
+    "/home/andrew/.config/kitty/scripts/copy-mode.sh"
+)
+
 _WINDOWS = "Windows"
 _NAVIGATE = "Navigate"
 _TABS = "Tabs"
@@ -138,6 +146,9 @@ SPEC = [
     # -- Tools ---------------------------------------------------------------
     # scrollback in nvim (expanded alias -- see _SCROLLBACK_NVIM)
     {"key": "slash", "action": _SCROLLBACK_NVIM, "desc": "scrollback in nvim",
+     "section": _TOOLS},
+    # copy mode (tmux's prefix+[)
+    {"key": "left_bracket", "action": _COPY_MODE, "desc": "copy mode",
      "section": _TOOLS},
     # command palette (leader+?)
     {"key": "shift+slash", "action": "command_palette",

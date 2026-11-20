@@ -151,39 +151,39 @@ BEL = "\a"
 # --- key <-> display helpers (pure, table-driven) --------------------------
 
 # Map a printable character read from the tty to a trie key name (the spec uses
-# kitty key names like `bar`/`minus`).
+# kitty key names like `bar`/`minus`/`slash`).
 #
-# This map (plus the uppercase-letter rule in char_to_key) is the GLYPH path's
-# only chance to name a shifted key. It matters because a shifted key typed
-# WITHOUT the kitty keyboard protocol arrives as its shifted GLYPH via on_text
-# (e.g. Shift+/ -> '?', Shift+h -> 'H'), NOT as an on_key event that
-# matches("shift+slash"/"shift+h") could resolve. Without these entries '?' and
-# 'H' fall through to themselves, miss the trie ('shift+slash'/'shift+h'), and
-# the chord silently no-ops — every shift chord broken on terminals/sessions
-# where the progressive keyboard protocol isn't active. '?' -> 'shift+slash' is
-# the US-layout shifted form of the 'slash' key; add sibling shifted symbols
-# here if the spec grows them.
+# This map (plus the uppercase-letter rule in char_to_key) is how EVERY key
+# that produces text reaches the trie. kitty's Handler.on_key_event hands any
+# key event that carries text to on_text, with or without the keyboard
+# protocol, so on_key / resolve_key never sees a printable key. A key whose
+# spec name differs from its glyph therefore needs an entry here: without one
+# the glyph passes through as itself, misses the trie and the chord silently
+# no-ops (the `/` chord was dead this way until "/" was added). '?' ->
+# 'shift+slash' is the US-layout shifted form of the 'slash' key.
+# test_cutover.py fails for any spec key this path cannot reach.
 _CHAR_TO_KEY = {
     "|": "bar",
     "-": "minus",
+    "/": "slash",
+    "[": "left_bracket",
     "?": "shift+slash",
 }
 
-# Inverse, for rendering the key column: the glyph the key produces. Built from
-# _CHAR_TO_KEY so the two tables can't drift, plus the named keys that only
-# reach the trie via KeyEvent.matches (never through char_to_key).
+# Inverse, for rendering the key column: the glyph the key produces. Derived
+# from _CHAR_TO_KEY so the two tables can't drift.
 _KEY_TO_DISPLAY = {name: ch for ch, name in _CHAR_TO_KEY.items()}
-_KEY_TO_DISPLAY["slash"] = "/"
 
 
 def char_to_key(ch):
     """Pure: a printable character -> normalized trie key name.
 
-    '|' -> 'bar', '-' -> 'minus', '?' -> 'shift+slash'. A single uppercase
-    ASCII letter is the glyph a shifted letter produces without the keyboard
-    protocol (Shift+h -> 'H'), so it maps to 'shift+<letter>' ('H' ->
-    'shift+h'). Anything else passes through literally. Empty / falsy input ->
-    "" (treated as cancel/no-op by the driver).
+    '|' -> 'bar', '-' -> 'minus', '/' -> 'slash', '[' -> 'left_bracket',
+    '?' -> 'shift+slash'. A single uppercase ASCII letter is the glyph a
+    shifted letter produces (Shift+h -> 'H'), so it maps to
+    'shift+<letter>' ('H' -> 'shift+h').
+    Anything else passes through literally. Empty / falsy input -> ""
+    (treated as cancel/no-op by the driver).
     """
     if not ch:
         return ""
@@ -196,9 +196,10 @@ def char_to_key(ch):
 
 def display_key(key_name):
     """Pure inverse of char_to_key for rendering: the glyph a key produces.
-    'bar' -> '|', 'minus' -> '-', 'slash' -> '/', 'shift+slash' -> '?', and a
-    shifted ASCII letter is its uppercase form ('shift+s' -> 'S'). Anything
-    else (plain letters, unknown chord names) passes through verbatim."""
+    'bar' -> '|', 'minus' -> '-', 'slash' -> '/', 'left_bracket' -> '[',
+    'shift+slash' -> '?', and a shifted ASCII letter is its uppercase form
+    ('shift+s' -> 'S'). Anything else (plain letters, unknown chord names)
+    passes through verbatim."""
     if key_name in _KEY_TO_DISPLAY:
         return _KEY_TO_DISPLAY[key_name]
     if key_name.startswith("shift+"):

@@ -120,6 +120,7 @@ the floor is the kitten's own spawn (~180ms).
 | `ctrl+space > 1` … `9` | Go to tab N (tab titles are prefixed `N:`) |
 | `ctrl+space > 0` | Go to last-visited tab (toggle between two tabs) |
 | `ctrl+space > /` | Scrollback in nvim (kitty-scrollback.nvim) |
+| `ctrl+space > [` | Copy mode: scrollback + screen in nvim, hybrid line numbers (`copy-mode.sh`) |
 | `ctrl+space > ?` (`shift+/`) | Command palette |
 | `ctrl+space > s` | Fuzzy session picker (fzf across all OS windows) |
 | `ctrl+space > S` | Save current OS window as a named session (ksession) |
@@ -225,6 +226,24 @@ Require shell integration (enabled). Clearing the screen is plain `ctrl+l`
 | `ctrl+shift+f2` | Browse last command's output in nvim |
 | `ctrl+shift+right-click` on a prompt | Open that command's output in nvim |
 
+### Copy mode (`scripts/copy-mode.sh`)
+
+tmux-style: the window's scrollback + screen open in nvim on the same rows,
+cursor on the terminal's cursor, hybrid line numbers in the gutter. Your
+whole nvim config applies; the tabline and statusline stay and cover a row
+each. Nothing is sent back to the window.
+
+| Key | Action |
+|---|---|
+| `ctrl+shift+f3` / `ctrl+space > [` | Enter copy mode |
+| `y…` (any yank to the clipboard) | Copy and leave; soft-wrapped rows are joined |
+| `"ay…` (yank to a named register) | Yank and stay |
+| `[[` / `]]` | Previous / next shell prompt |
+| `q` / `Esc` (in Normal mode) | Leave |
+
+The gutter takes columns the window used for text: rows wider than that
+scroll sideways.
+
 ---
 
 ## Helper scripts (invoked by leader bindings)
@@ -248,6 +267,12 @@ and use kitty's remote control socket.
   manifest.json` (newest generation wins), and errors gracefully if the
   window has no saved session or the dump is missing/empty. Needs `jq`;
   fzf not required.
+- **`copy-mode.sh`** + **`copy-mode.lua`** — bound to `ctrl+shift+f3` and
+  `ctrl+space > [`. kitty's `launch --stdin-source=@screen_scrollback
+  --stdin-add-formatting --stdin-add-line-wrap-markers` pipes the window's
+  rows to the script; it moves them to fd 3 and starts nvim, which sources
+  `copy-mode.lua` to render them in a terminal buffer. Needs neither `jq`,
+  `fzf` nor remote control.
 
 ---
 

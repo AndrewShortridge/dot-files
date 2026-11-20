@@ -28,7 +28,9 @@ sys.path.insert(
 )
 
 from kittens.chord_trie import build, navigate, sections, Leaf  # noqa: E402
-from kittens.which_key_nav import resolve_key  # noqa: E402
+from kittens.which_key_nav import (  # noqa: E402
+    char_to_key, display_key, resolve_key,
+)
 from kittens import which_key_spec as spec_mod  # noqa: E402
 
 
@@ -142,6 +144,11 @@ CONF_CHORDS = [
     (["9"], "goto_tab 9"),
     (["0"], "goto_tab -1"),
     (["slash"], _SCROLLBACK),
+    # added post-cutover (copy mode)
+    (["left_bracket"],
+     "launch --type=overlay --stdin-source=@screen_scrollback "
+     "--stdin-add-formatting --stdin-add-line-wrap-markers "
+     "/home/andrew/.config/kitty/scripts/copy-mode.sh"),
     (["shift+slash"], "command_palette"),
     (["s"], "launch --type=overlay --cwd=current "
             "/home/andrew/.config/kitty/scripts/session-picker.sh"),
@@ -164,10 +171,10 @@ class SpecIntegrity(unittest.TestCase):
 
     def test_all_conf_chords_present(self):
         # Guard against silently dropping (or adding) a chord: the 27 migrated
-        # chords plus `w` (pane picker) and `1`-`9`/`0` (numbered tabs), both
-        # added after the cutover.
-        self.assertEqual(len(CONF_CHORDS), 38)
-        self.assertEqual(len(spec_mod.SPEC), 38)
+        # chords plus `w` (pane picker), `1`-`9`/`0` (numbered tabs) and `[`
+        # (copy mode), all added after the cutover.
+        self.assertEqual(len(CONF_CHORDS), 39)
+        self.assertEqual(len(spec_mod.SPEC), 39)
 
     def test_every_conf_chord_dispatches_exact_action(self):
         # Walk the trie per key in each path; the terminal node must be a Leaf
@@ -207,6 +214,23 @@ class SpecIntegrity(unittest.TestCase):
         for key in root.order:
             with self.subTest(key=key):
                 self.assertIsInstance(navigate(root, key), Leaf)
+
+    def test_every_spec_key_is_reachable_by_typing_its_glyph(self):
+        # A real keypress that produces text reaches the driver through
+        # on_text -> char_to_key (kitty's Handler.on_key_event never calls
+        # on_key for it), so the glyph the popup shows for a key must map back
+        # to that key's spec name. A named key with no char_to_key entry
+        # renders fine but can never be typed: `slash` was dead this way.
+        def spec_keys(node):
+            for key in node.order:
+                yield key
+                result = navigate(node, key)
+                if not isinstance(result, Leaf):
+                    yield from spec_keys(result.node)
+
+        for key in spec_keys(build(spec_mod.SPEC)):
+            with self.subTest(key=key):
+                self.assertEqual(char_to_key(display_key(key)), key)
 
     def test_every_chord_has_a_popup_section(self):
         # Every row renders under a header: no unsectioned (None) run, and

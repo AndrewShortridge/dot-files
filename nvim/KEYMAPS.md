@@ -1511,6 +1511,29 @@ When a preview float is showing:
 | `<Esc><Esc>` | Save and close |
 | `<C-s>` | Save (keep open) |
 
+### Kitty Scrollback (Kitty `ctrl+shift+f1` / `f2`)
+
+**Source:** `lua/andrew/plugins/kitty-scrollback.lua` (plugin defaults)
+
+Kitty opens its scrollback in a second nvim, as an overlay on the terminal
+window. These keys exist only there. Everything else (`/`, `?`, motions,
+`v`/`V`/`<C-v>`, flash) works as in any buffer.
+
+| Mode | Key | Description |
+|------|-----|-------------|
+| x | `<leader>y` | Copy the selection to the system clipboard and close. Fires after `timeoutlen`, because `<leader>yf` / `<leader>yp` share the prefix |
+| n | `<leader>yy` / `<leader>Y` | Copy the line / to end of line to the clipboard and close |
+| x | `y` | Copy to the clipboard (`clipboard=unnamedplus`) and open the paste window holding the text; stays open |
+| x | `<S-CR>` | Paste the selection at the shell prompt and close |
+| x | `<C-CR>` | Run the selection in the shell and close |
+| n | `i` / `a` | Open the paste window to write a command; `<S-CR>` pastes it, `<C-CR>` runs it |
+| n | `g?` | Toggle the key hints under the paste window |
+| n | `q` | Close the paste window, or quit when none is open |
+| n, i, t | `<C-c>` | Quit |
+
+`<S-CR>` and `<C-CR>` on a selection also overwrite the system clipboard: the
+plugin yanks the text first and `unnamedplus` sends every yank there.
+
 ### Popup/Input UI
 
 | Key | Description |
