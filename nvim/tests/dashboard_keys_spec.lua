@@ -15,8 +15,8 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/dashboard_keys_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_true = _H.test, _H.assert_true
 
 local config_directory = vim.fn.stdpath("config")
@@ -42,6 +42,8 @@ local normal_mode_mappings = {}
 
 -- core/keymaps.lua, with vim.keymap.set recording instead of mapping.
 local real_keymap_set = vim.keymap.set
+---@param mode string|string[]
+---@param lhs string
 vim.keymap.set = function(mode, lhs)
   if includes_normal_mode(mode) then
     normal_mode_mappings[lhs] = true
@@ -60,7 +62,8 @@ local function record_spec_keys(spec)
     return
   end
   if type(spec.keys) == "table" then
-    for _, key in ipairs(spec.keys) do
+    local keys = spec.keys ---@type (string|LazyKeysSpec)[]
+    for _, key in ipairs(keys) do
       local lhs = type(key) == "table" and key[1] or key
       local mode = type(key) == "table" and key.mode or nil
       if type(lhs) == "string" and includes_normal_mode(mode) then
@@ -68,13 +71,14 @@ local function record_spec_keys(spec)
       end
     end
   end
-  for _, nested_spec in ipairs(spec) do
+  local nested_specs = spec ---@type any[]
+  for _, nested_spec in ipairs(nested_specs) do
     record_spec_keys(nested_spec)
   end
 end
 
 for _, spec_file in
-  ipairs(vim.fn.glob(config_directory .. "/lua/andrew/plugins/**/*.lua", true, true))
+  ipairs(vim.fn.glob(config_directory .. "/lua/andrew/plugins/**/*.lua", true, true) --[[@as string[] ]])
 do
   local did_load, spec = pcall(dofile, spec_file)
   if did_load then
@@ -82,7 +86,13 @@ do
   end
 end
 
-local snacks_spec = dofile(config_directory .. "/lua/andrew/plugins/snacks.lua")
+-- Loads snacks.nvim's types for this file (lazydev).
+---@module "snacks"
+
+---@class DashboardKeysSnacksSpec  the part of plugins/snacks.lua's lazy spec this test reads
+---@field opts { dashboard: { preset: { keys: snacks.dashboard.Item[] } } }
+
+local snacks_spec = dofile(config_directory .. "/lua/andrew/plugins/snacks.lua") ---@type DashboardKeysSnacksSpec
 local dashboard_items = snacks_spec.opts.dashboard.preset.keys
 
 test("core/keymaps.lua loads", function()

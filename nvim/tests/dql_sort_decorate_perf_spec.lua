@@ -23,6 +23,7 @@
 -- output-identical to the old code. Drives the REAL executor against a fake
 -- index (no source introspection).
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -30,8 +31,12 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 -- Stub the logger so requiring real modules doesn't pull full vault infra.
 package.loaded["andrew.vault.vault_log"] = {
+  ---@return table
   scope = function()
-    return setmetatable({}, { __index = function() return function() end end })
+    return setmetatable({}, {
+      ---@return fun()
+      __index = function() return function() end end,
+    })
   end,
 }
 
@@ -40,35 +45,61 @@ package.loaded["andrew.vault.vault_log"] = {
 local builtins = require("andrew.vault.query.executor_builtins")
 local lower_count = 0
 local real_make_fns = builtins.make_fns
-builtins.make_fns = function(deps)
+---@param deps table
+---@return table<string, function>
+local function counting_make_fns(deps)
   local fns = real_make_fns(deps)
   local real_lower = fns.lower
+  ---@param ... any
+  ---@return any ...
   fns.lower = function(...)
     lower_count = lower_count + 1
     return real_lower(...)
   end
   return fns
 end
+builtins.make_fns = counting_make_fns
 
 local executor = require("andrew.vault.query.executor")
 
 print("\n=== DQL SORT Decorate Perf Tests ===\n")
 
+---@class DqlSortDecorateExpr  a DQL expression AST node as this spec builds it
+---@field type string
+---@field path? string[]
+---@field name? string
+---@field args? DqlSortDecorateExpr[]
+
+---@class DqlSortDecorateSortKey  one SORT key of a query AST
+---@field expr DqlSortDecorateExpr
+---@field dir string
+
 -- Fake index exposing exactly what executor.execute needs.
+---@param pages table[]
+---@return table
 local function fake_index(pages)
   return {
+    ---@return table[]
     all_pages = function() return pages end,
-    resolve_source = function(_, _) return pages end,
-    current_page = function(_, _) return nil end,
+    -- Called as index:resolve_source(node) / index:current_page(path); the fake ignores its arguments.
+    ---@return table[]
+    resolve_source = function() return pages end,
+    ---@return table|nil
+    current_page = function() return nil end,
   }
 end
 
+---@param link string
+---@param fields table<string, any>
+---@return table<string, any> page  `fields` with file.link set
 local function page(link, fields)
   fields.file = { link = link }
   return fields
 end
 
 -- TABLE with a File column so row[1] reveals the resolved sort order.
+---@param sort DqlSortDecorateSortKey[]
+---@return table ast
 local function table_ast(sort)
   return {
     type = "TABLE",
@@ -78,19 +109,28 @@ local function table_ast(sort)
   }
 end
 
+---@param name string
+---@return DqlSortDecorateExpr
 local function field(name)
   return { type = "field", path = { name } }
 end
 
+---@param name string
+---@param args DqlSortDecorateExpr[]
+---@return DqlSortDecorateExpr
 local function call(name, args)
   return { type = "call", name = name, args = args }
 end
 
 -- Run a query, return ordered list of file links (the sort order).
+---@param sort DqlSortDecorateSortKey[]
+---@param pages table[]
+---@return string[]
 local function order_of(sort, pages)
   local results = executor.execute(table_ast(sort), fake_index(pages), "/x.md")
-  local out = {}
-  for _, row in ipairs(results[1].rows) do
+  local out = {} ---@type string[]
+  -- Each row is the TABLE's cells; row[1] is the File column's link.
+  for _, row in ipairs(results[1].rows --[[@as string[][] ]]) do
     out[#out + 1] = row[1]
   end
   return out
@@ -102,7 +142,7 @@ end
 -- ===========================================================================
 test("single-key SORT evaluates the sort expr ~N times (decorate), not N*logN", function()
   local N = 64
-  local pages = {}
+  local pages = {} ---@type table<string, any>[]
   for i = 1, N do
     -- distinct, mostly-unique names so the sort actually compares (no all-ties).
     pages[i] = page("P" .. i, { name = string.format("name-%03d", (i * 7) % 100) })
@@ -122,7 +162,7 @@ end)
 -- ===========================================================================
 test("multi-key SORT evaluates each of K keys once per page (K*N)", function()
   local N = 48
-  local pages = {}
+  local pages = {} ---@type table<string, any>[]
   for i = 1, N do
     pages[i] = page("P" .. i, {
       name = string.format("g%d", i % 4),       -- many ties on key1 -> key2 used

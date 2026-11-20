@@ -28,6 +28,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/devicons_font_coverage_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -41,26 +42,46 @@ print("\n=== Devicons Icon Registration Tests ===\n")
 -- without registering them here.
 local DEVICONS_BUILTIN_KEYS = { f90 = true }
 
-local captured = {}
+-- Loads nvim-web-devicons' types for this file (lazydev).
+---@module "nvim-web-devicons"
+
+---@class DeviconsFontCoverageCaptured  what the fake nvim-web-devicons recorded
+---@field setup_opts? table
+---@field icons? table<string, Icon>
+---@field filetypes? table<string, string>
+
+---@class DeviconsFontCoveragePluginSpec  the part of plugins/ui/devicons.lua's lazy spec this test drives
+---@field opts? table
+---@field config fun(self: LazyPlugin?, opts: table)
+
+local captured = {} ---@type DeviconsFontCoverageCaptured
+-- Fake nvim-web-devicons: the three entry points the spec calls, with their real parameter types.
 package.loaded["nvim-web-devicons"] = {
+  ---@param o table
   setup = function(o) captured.setup_opts = o end,
+  ---@param t table<string, Icon>
   set_icon = function(t) captured.icons = t end,
+  ---@param t table<string, string>
   set_icon_by_filetype = function(t) captured.filetypes = t end,
 }
 
-local plugin = dofile(spec_path)
+local plugin = dofile(spec_path) ---@type DeviconsFontCoveragePluginSpec
 plugin.config(nil, plugin.opts or {})
-local icons = captured.icons or {}
-local filetypes = captured.filetypes or {}
+local icons = captured.icons or {} ---@type table<string, Icon>
+local filetypes = captured.filetypes or {} ---@type table<string, string>
 
+---@param t table
+---@return integer
 local function count(t)
   local n = 0
   for _ in pairs(t) do n = n + 1 end
   return n
 end
 
+---@param t table<string, any>
+---@return string[]
 local function sorted_keys(t)
-  local ks = {}
+  local ks = {} ---@type string[]
   for k in pairs(t) do ks[#ks + 1] = k end
   table.sort(ks)
   return ks
@@ -76,7 +97,7 @@ test("the spec registers icons and filetype maps", function()
 end)
 
 test("every filetype maps to a registered icon key", function()
-  local dangling = {}
+  local dangling = {} ---@type string[]
   for _, ft in ipairs(sorted_keys(filetypes)) do
     local key = filetypes[ft]
     assert_true(type(key) == "string" and key ~= "", ft .. " maps to a non-string key")
@@ -91,7 +112,7 @@ test("every filetype maps to a registered icon key", function()
 end)
 
 test("every glyph is a single Plane-15 character", function()
-  local bad = {}
+  local bad = {} ---@type string[]
   for _, key in ipairs(sorted_keys(icons)) do
     local d = icons[key]
     assert_true(type(d.icon) == "string" and d.icon ~= "", key .. " has no glyph")
@@ -110,7 +131,7 @@ test("every glyph is present in the installed font", function()
   assert_true(vim.fn.filereadable(font_path) == 1, "font not found at " .. font_path)
   assert_true(vim.fn.executable("python3") == 1, "python3 is required for the cmap check")
 
-  local wanted = {}
+  local wanted = {} ---@type string[]
   for _, key in ipairs(sorted_keys(icons)) do
     wanted[#wanted + 1] = string.format("%d", vim.fn.char2nr(icons[key].icon))
   end
@@ -142,7 +163,7 @@ test("the filetypes this config actually opens are mapped", function()
     "qf", "man", "lspinfo",
     "vault_sidebar", "vault_fm_editor", "vault-collisions", "vault-profiler",
   }
-  local absent = {}
+  local absent = {} ---@type string[]
   for _, ft in ipairs(required) do
     if not filetypes[ft] then absent[#absent + 1] = ft end
   end

@@ -122,6 +122,7 @@ function M.parse(output)
   for line in (output or ""):gmatch("[^\r\n]+") do
     local path, lnum, col, text = M.split_loc(line)
     if path then
+      ---@cast text string
       if text:match("^%s") then
         local trimmed = vim.trim(text)
         local nth = trimmed:match("^and at position (%d+):$")

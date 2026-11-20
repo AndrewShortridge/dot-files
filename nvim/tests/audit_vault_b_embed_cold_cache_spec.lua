@@ -14,6 +14,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_vault_b_embed_cold_cache_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -32,8 +33,24 @@ local lpc = require("andrew.vault.line_parse_cache")
 local embed = require("andrew.vault.embed")
 local state = require("andrew.vault.embed_state")
 
+-- embed_state.try_get_buf_state() is declared `table|nil`; these are the
+-- fields of its record this spec reads (built by embed.lua).
+---@class AuditVaultBEmbedColdCacheDescriptor
+---@field lnum integer  1-indexed line
+---@field col_s integer  1-indexed start of `!`
+---@field col_e integer  1-indexed inclusive end of `]]`
+---@field inner string?  wikilink body
+---@field is_image boolean
+---@field rendered boolean
+---@field lines_used integer
+
+---@class AuditVaultBEmbedColdCacheBufState
+---@field descriptors { generation: integer, list: AuditVaultBEmbedColdCacheDescriptor[] }?
+
+---@param bufnr integer
+---@return string  every embed virt_lines chunk, space-joined
 local function embed_virt_text(bufnr)
-  local parts = {}
+  local parts = {} ---@type string[]
   for name, ns in pairs(vim.api.nvim_get_namespaces()) do
     if name:match("VaultEmbed") then
       for _, m in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, { details = true })) do
@@ -71,9 +88,11 @@ end)
 
 test("descriptor columns from the cold-cache path match the ![[...]] span", function()
   local bufnr = vim.api.nvim_get_current_buf()
-  local bst = state.try_get_buf_state(bufnr)
+  local bst = state.try_get_buf_state(bufnr) --[[@as AuditVaultBEmbedColdCacheBufState?]]
   assert_true(bst ~= nil and bst.descriptors ~= nil, "render must store descriptors")
-  local list = bst.descriptors.list
+  ---@cast bst -nil
+  -- `.list` would raise on missing descriptors anyway; assert names the cause.
+  local list = assert(bst.descriptors).list
   assert_eq(#list, 1, "host.md has exactly one embed")
   local d = list[1]
   assert_eq(d.lnum, 3, "embed is on line 3 (1-indexed)")

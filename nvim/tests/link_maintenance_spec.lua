@@ -7,12 +7,17 @@
 -- Run with: nvim --headless -u NONE -l tests/link_maintenance_spec.lua
 
 local _SRCDIR = (debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]")
+---@type SpecHelper
 local _H = dofile(_SRCDIR .. "/spec_helper.lua")
+---@type SpecFixtures
 local _F = dofile(_SRCDIR .. "/fixtures.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
 --- Substring containment helper (plain find, no patterns).
+---@param haystack string|nil  anything other than a string fails
+---@param needle string
+---@param msg? string
 local function assert_contains(haystack, needle, msg)
   if type(haystack) ~= "string" or not haystack:find(needle, 1, true) then
     error((msg or "expected substring") .. " " .. vim.inspect(needle) .. " in: " .. vim.inspect(haystack))
@@ -32,6 +37,31 @@ local rename = require("andrew.vault.rename")
 local linkcheck = require("andrew.vault.linkcheck")
 local engine = require("andrew.vault.engine")
 local vault_index = require("andrew.vault.vault_index")
+
+-- Shape of what rename._compute_rename_changes returns (the module annotates it
+-- as a bare `table`; see compute_rename_changes in lua/andrew/vault/rename.lua).
+---@class LinkMaintenanceRenameChange
+---@field filename string
+---@field lnum integer
+---@field old_text string
+---@field new_text string
+
+---@class LinkMaintenanceRenameResult
+---@field changes LinkMaintenanceRenameChange[]
+---@field file_count integer
+---@field link_count integer
+---@field file_writes table<string, string>  file path -> new content
+
+-- One entry of linkcheck.scan_broken_links' callback (documented in
+-- lua/andrew/vault/linkcheck.lua above M.scan_broken_links).
+---@class LinkMaintenanceBrokenLink
+---@field file string
+---@field lnum number
+---@field target string
+---@field heading string|nil
+---@field block_id string|nil
+---@field filepath string|nil
+---@field type "broken_note"|"broken_heading"|"broken_block"
 
 -- ============================================================================
 -- Helpers for temp-vault tests
@@ -81,7 +111,7 @@ test("extract_urls: wikilink http target yields bare+wikilink pair (current beha
   -- the exact CURRENT behavior; if dedup is ever fixed, update the count to 1.
   local urls = url_validate.extract_urls({ "[[https://wiki.link|alias]] tail" })
   assert_eq(#urls, 2, "current behavior: duplicate bare + wikilink entries")
-  local kinds = {}
+  local kinds = {} ---@type table<string, boolean>
   for _, u in ipairs(urls) do
     assert_eq(u.url, "https://wiki.link", "both entries share the url")
     assert_eq(u.lnum, 1, "lnum")
@@ -211,7 +241,7 @@ test("compute_rename_changes: rewrites all OldNote forms, leaves Other untouched
   local doc = tmp .. "/doc.md"
   write_file(doc, "See [[OldNote]] and [[OldNote|alias]]\nAnd [[OldNote#Sec]] plus [[Other]]\n")
 
-  local info = rename._compute_rename_changes({ doc }, "OldNote", "NewNote", tmp .. "/OldNote.md")
+  local info = rename._compute_rename_changes({ doc }, "OldNote", "NewNote", tmp .. "/OldNote.md") --[[@as LinkMaintenanceRenameResult]]
   assert_eq(info.link_count, 3, "link_count")
   assert_eq(info.file_count, 1, "file_count")
   assert_eq(#info.changes, 2, "two changed lines")
@@ -236,7 +266,7 @@ test("compute_rename_changes: case-insensitive name match", function()
   local doc2 = tmp .. "/doc2.md"
   write_file(doc2, "ref [[oldnote]] and [[OLDNOTE#x]]\n")
 
-  local info = rename._compute_rename_changes({ doc2 }, "OldNote", "NewName", tmp .. "/OldNote.md")
+  local info = rename._compute_rename_changes({ doc2 }, "OldNote", "NewName", tmp .. "/OldNote.md") --[[@as LinkMaintenanceRenameResult]]
   assert_eq(info.link_count, 2, "link_count")
   local new_content = info.file_writes[doc2]
   assert_true(new_content ~= nil, "file_writes entry exists")
@@ -250,7 +280,7 @@ test("compute_rename_changes: no matching links yields empty result", function()
   local doc3 = tmp .. "/doc3.md"
   write_file(doc3, "only [[Unrelated]] here\n")
 
-  local info = rename._compute_rename_changes({ doc3 }, "OldNote", "NewName", tmp .. "/OldNote.md")
+  local info = rename._compute_rename_changes({ doc3 }, "OldNote", "NewName", tmp .. "/OldNote.md") --[[@as LinkMaintenanceRenameResult]]
   assert_eq(info.link_count, 0, "link_count")
   assert_eq(info.file_count, 0, "file_count")
   assert_eq(#info.changes, 0, "changes empty")
@@ -264,7 +294,7 @@ end)
 --- Set up a temp vault with the given files, build the index synchronously,
 --- run scan_broken_links, and wait for the async callback.
 ---@param files table<string, string>  relative name -> content
----@return table[] broken, number total
+---@return LinkMaintenanceBrokenLink[] broken, number total
 local function scan_temp_vault(files)
   local tmp = _F.make_temp_vault(files)
   engine.vault_path = tmp
@@ -273,7 +303,10 @@ local function scan_temp_vault(files)
   assert_true(idx:is_ready(), "index should be ready after build_sync")
 
   local done = false
-  local got_broken, got_total
+  local got_broken ---@type LinkMaintenanceBrokenLink[]
+  local got_total ---@type number
+  ---@param broken_links LinkMaintenanceBrokenLink[]
+  ---@param total number
   linkcheck.scan_broken_links(function(broken_links, total)
     got_broken = broken_links
     got_total = total

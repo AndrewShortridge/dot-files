@@ -3,7 +3,7 @@ local config = require("andrew.vault.config")
 local M = {}
 M.name = "Project Dashboard"
 
-function M.run(e, p)
+function M.run(e)
   local title = e.input({ prompt = "Project name" })
   if not title then return end
 

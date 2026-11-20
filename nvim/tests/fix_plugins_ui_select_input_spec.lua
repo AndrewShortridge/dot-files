@@ -36,6 +36,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fix_plugins_ui_select_input_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 local assert_false, assert_match = _H.assert_false, _H.assert_match
@@ -78,6 +79,15 @@ end)
 -- 2. The snacks spec declares both backends
 -- ---------------------------------------------------------------------------
 
+-- The part of the plugins/snacks.lua lazy.nvim spec this test reads and runs.
+---@class FixPluginsUiSelectSnacksSpec
+---@field opts { input: { enabled: boolean }, picker: { enabled: boolean, ui_select: boolean } }
+---@field lazy boolean
+---@field priority integer
+---@field init? fun()
+---@field config fun(self: FixPluginsUiSelectSnacksSpec, opts: table)
+
+---@type FixPluginsUiSelectSnacksSpec
 local spec = dofile(cfg .. "/lua/andrew/plugins/snacks.lua")
 
 test("snacks opts enable `input` and `picker.ui_select`", function()
@@ -129,10 +139,14 @@ end)
 -- ---------------------------------------------------------------------------
 
 test("vim.ui.input prefills `default`, opens a 1-line float and confirms", function()
+  ---@type string?, boolean
   local got, called = nil, false
-  local win = vim.ui.input({ prompt = "Pick a name: ", default = "alpha" }, function(v)
-    got, called = v, true
-  end)
+  -- vim.ui.input is Snacks.input here (asserted above), which returns its window.
+  local win = vim.ui.input({ prompt = "Pick a name: ", default = "alpha" },
+    ---@param v string?
+    function(v)
+      got, called = v, true
+    end) --[[@as snacks.win]]
   assert_eq(vim.bo[win.buf].filetype, "snacks_input", "input buffer filetype")
   assert_eq(vim.api.nvim_buf_get_lines(win.buf, 0, -1, false)[1], "alpha", "default not prefilled")
   assert_eq(vim.api.nvim_win_get_height(win.win), 1, "input float height")
@@ -146,18 +160,23 @@ test("vim.ui.input prefills `default`, opens a 1-line float and confirms", funct
 end)
 
 test("insert-mode <Esc> cancels vim.ui.input and the callback gets nil", function()
+  ---@type string?, boolean
   local got, called = "sentinel", false
-  local win = vim.ui.input({ prompt = "Cancel me: " }, function(v)
-    got, called = v, true
-  end)
+  -- vim.ui.input is Snacks.input here (asserted above), which returns its window.
+  local win = vim.ui.input({ prompt = "Cancel me: " },
+    ---@param v string?
+    function(v)
+      got, called = v, true
+    end) --[[@as snacks.win]]
 
   -- The mapping itself must resolve to `cancel`, not snacks' default
   -- `stopinsert` (which would need a second <Esc>).
-  local esc
+  local esc ---@type vim.api.keyset.get_keymap?
   for _, m in ipairs(vim.api.nvim_buf_get_keymap(win.buf, "i")) do
     if m.lhs == "<Esc>" then esc = m end
   end
   assert_true(esc ~= nil, "no insert-mode <Esc> mapping in the input float")
+  ---@cast esc -nil
   assert_match(esc.desc or "", "cancel", "insert-mode <Esc> should cancel")
 
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "xt", false)
@@ -170,22 +189,29 @@ end)
 -- 5. vim.ui.select round-trip
 -- ---------------------------------------------------------------------------
 
-local items = { "one", "two", "three" }
+local items = { "one", "two", "three" } ---@type string[]
 
 test("vim.ui.select renders format_item and confirms item + index", function()
+  ---@type string?, integer?, boolean
   local got, idx, called = nil, nil, false
+  -- vim.ui.select is Snacks.picker.select here (asserted above), which returns the picker.
   local picker = vim.ui.select(items, {
     prompt = "Pick one:",
+    ---@param it string
+    ---@return string
     format_item = function(it) return "<<" .. it .. ">>" end,
-  }, function(item, i)
-    got, idx, called = item, i, true
-  end)
+  },
+    ---@param item string?
+    ---@param i integer?
+    function(item, i)
+      got, idx, called = item, i, true
+    end) --[[@as snacks.Picker]]
 
   assert_eq(picker.title, "Pick one", "picker title (prompt, stripped)")
   assert_true(vim.wait(3000, function() return picker:count() >= #items end), "items never loaded")
   assert_eq(vim.bo[picker.input.win.buf].filetype, "snacks_picker_input", "picker input filetype")
 
-  local texts = {}
+  local texts = {} ---@type string[]
   for _, it in ipairs(picker:items()) do
     texts[#texts + 1] = it.text
   end
@@ -200,18 +226,23 @@ test("vim.ui.select renders format_item and confirms item + index", function()
 end)
 
 test("one <Esc> cancels vim.ui.select and the callback gets nil", function()
+  ---@type string?, boolean
   local got, called = "sentinel", false
-  local picker = vim.ui.select(items, { prompt = "Cancel me:" }, function(item)
-    got, called = item, true
-  end)
+  -- vim.ui.select is Snacks.picker.select here (asserted above), which returns the picker.
+  local picker = vim.ui.select(items, { prompt = "Cancel me:" },
+    ---@param item string?
+    function(item)
+      got, called = item, true
+    end) --[[@as snacks.Picker]]
   assert_true(vim.wait(3000, function() return picker:count() >= #items end), "items never loaded")
 
   -- Insert mode is where the picker starts, so <Esc> must cancel there too.
-  local esc
+  local esc ---@type vim.api.keyset.get_keymap?
   for _, m in ipairs(vim.api.nvim_buf_get_keymap(picker.input.win.buf, "i")) do
     if m.lhs == "<Esc>" then esc = m end
   end
   assert_true(esc ~= nil, "no insert-mode <Esc> mapping in the select picker")
+  ---@cast esc -nil
   assert_match(esc.desc or "", "cancel", "insert-mode <Esc> should cancel")
 
   picker:action("cancel")
@@ -228,6 +259,14 @@ end)
 -- `post_action_cb` -- i.e. when an action is applied. Aborting the picker used
 -- to leave fzf-lua registered for the rest of the session.
 
+-- The three entry points of fzf-lua.providers.ui_select this test calls (the
+-- module carries no annotations).
+---@class FixPluginsUiSelectFzfUiSelect
+---@field register fun(opts: table, silent?: boolean, opts_once?: table)
+---@field deregister fun(_: table, silent?: boolean, noclear?: boolean)
+---@field is_registered fun(): boolean
+
+---@type boolean, FixPluginsUiSelectFzfUiSelect?
 local fzf_ok, fzf_ui_select = false, nil
 if vim.fn.isdirectory(lazy_root .. "/fzf-lua") == 1 then
   vim.opt.runtimepath:append(lazy_root .. "/fzf-lua")
@@ -248,6 +287,8 @@ end
 if not fzf_ok then
   print("  SKIP: fzf-lua not installed (ui_select handover guard)")
 else
+  -- pcall(require) succeeded, so fzf_ui_select is the module.
+  ---@cast fzf_ui_select -nil
   test("snacks reclaims vim.ui.select when an fzf-lua window closes", function()
     fzf_ui_select.register({}, true)
     assert_true(fzf_ui_select.is_registered(), "fzf-lua did not take vim.ui.select")

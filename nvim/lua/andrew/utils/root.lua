@@ -14,6 +14,8 @@
 -- Override the order globally with `vim.g.root_spec`; skip specific LSP client
 -- names with `vim.g.root_lsp_ignore`.
 
+local nvim_compat = require("andrew.utils.nvim_compat")
+
 local M = {}
 
 -- Detector order. Each entry is "lsp", "cwd", a filename pattern (or list of
@@ -53,7 +55,7 @@ function M.detectors.lsp(buf)
       -- workspace_folders moved off client.config in newer nvim; accept both
       local folders = client.workspace_folders or (client.config and client.config.workspace_folders)
       for _, ws in pairs(folders or {}) do
-        roots[#roots + 1] = vim.uri_to_fname(ws.uri)
+        roots[#roots + 1] = nvim_compat.uri_to_file_name(ws.uri)
       end
       if client.root_dir then
         roots[#roots + 1] = client.root_dir
@@ -115,10 +117,10 @@ function M.detect(buf)
       local seen, found = {}, {}
       for _, path in ipairs(paths) do
         local real = vim.uv.fs_realpath(path)
-        path = real and vim.fs.normalize(real) or nil
-        if path and not seen[path] then
-          seen[path] = true
-          found[#found + 1] = path
+        local normalized = real and vim.fs.normalize(real) or nil
+        if normalized and not seen[normalized] then
+          seen[normalized] = true
+          found[#found + 1] = normalized
         end
       end
       -- Deepest root is the most specific one

@@ -10,6 +10,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/collision_idle_defer_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq = _H.test, _H.assert_eq
 
@@ -19,6 +20,10 @@ local sched = require("andrew.vault.work_scheduler")
 
 print("\n=== Collision IDLE Defer Tests ===\n")
 
+---@param dir string
+---@param rel string
+---@param lines string[]
+---@return string abs
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -33,6 +38,9 @@ end
 -- counter wrapping the live instance's _detect_collisions method. The build
 -- itself defers a collisions scan to IDLE, so we cancel that domain BEFORE
 -- installing the counter, so only the batch under test is measured.
+---@return string dir
+---@return VaultIndex idx
+---@return fun(): integer count  number of _detect_collisions calls so far
 local function new_vault_with_counter()
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -44,10 +52,14 @@ local function new_vault_with_counter()
 
   local calls = 0
   local orig = idx._detect_collisions
-  idx._detect_collisions = function(self, n, a)
+  ---@param self VaultIndex
+  ---@param n table<string, string[]>  name index
+  ---@param a table<string, string[]>  alias index
+  local function counting_detect_collisions(self, n, a)
     calls = calls + 1
-    return orig(self, n, a)
+    orig(self, n, a)
   end
+  idx._detect_collisions = counting_detect_collisions
 
   return dir, idx, function() return calls end
 end
@@ -59,7 +71,7 @@ end
 test(">=5-file batch defers collision detect to IDLE", function()
   local dir, idx, count = new_vault_with_counter()
 
-  local paths = {}
+  local paths = {} ---@type string[]
   for i = 1, 5 do
     paths[i] = write_file(dir, "f" .. i .. ".md", { "# F" .. i })
   end
@@ -93,13 +105,13 @@ end)
 test("back-to-back >=5-file batches coalesce to one deferred scan", function()
   local dir, idx, count = new_vault_with_counter()
 
-  local first = {}
+  local first = {} ---@type string[]
   for i = 1, 5 do
     first[i] = write_file(dir, "a" .. i .. ".md", { "# A" .. i })
   end
   idx:update_files_batch(first)
 
-  local second = {}
+  local second = {} ---@type string[]
   for i = 1, 5 do
     second[i] = write_file(dir, "b" .. i .. ".md", { "# B" .. i })
   end

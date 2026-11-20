@@ -27,6 +27,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/connections_cache_gen_only_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true =
   _H.test, _H.assert_eq, _H.assert_true
@@ -38,6 +39,9 @@ local config = require("andrew.vault.config")
 
 print("\n=== Connections Cache Generation-Only Tests ===\n")
 
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local f = assert(io.open(abs, "w"))
@@ -47,6 +51,7 @@ end
 
 -- A web of links so connection scoring yields a non-empty result for A.md:
 --   A -> B, A -> C, B -> C (A and B share an outlink to C; A links B).
+---@return string dir
 local function make_vault()
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -58,6 +63,8 @@ end
 
 -- Build the SINGLETON index that connections.compute reads via
 -- vault_index.current().
+---@param dir string
+---@return VaultIndex
 local function build_singleton(dir)
   vault_index._instance = nil
   local idx = vault_index.get(dir)
@@ -116,8 +123,9 @@ test("gen-valid hit returns content-stable, non-empty results", function()
   build_singleton(dir)
   config.connections.cache_ttl = 60
 
-  local r1 = connections.compute("A.md")
-  local r2 = connections.compute("A.md")
+  -- assert: `#r1` below would crash on a nil result anyway; this names the cause.
+  local r1 = assert(connections.compute("A.md"))
+  local r2 = assert(connections.compute("A.md"))
   assert_true(#r1 > 0, "results are non-empty")
   assert_eq(#r1, #r2, "result count stable across a gen-valid hit")
   assert_eq(r1[1].rel_path, r2[1].rel_path, "top result identical across a gen-valid hit")

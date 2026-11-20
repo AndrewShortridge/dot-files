@@ -38,6 +38,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/snacks_image_math_defer_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 local assert_false, assert_match = _H.assert_false, _H.assert_match
@@ -59,7 +60,12 @@ vim.opt.runtimepath:prepend(cfg)
 local cache = vim.fn.tempname() .. "-snacks-image"
 vim.fn.mkdir(cache, "p")
 
-local spec = dofile(cfg .. "/lua/andrew/plugins/snacks.lua")
+-- The shape of what plugins/snacks.lua returns, as far as this spec uses it.
+---@class SnacksImageMathSpecPluginSpec
+---@field opts { image: { cache: string, convert: { notify: boolean } } }
+---@field config fun(self: SnacksImageMathSpecPluginSpec, opts: table)
+
+local spec = dofile(cfg .. "/lua/andrew/plugins/snacks.lua") ---@type SnacksImageMathSpecPluginSpec
 spec.opts.image.cache = cache
 spec.opts.image.convert.notify = false
 spec.config(spec, spec.opts)
@@ -87,7 +93,10 @@ end)
 -- ---------------------------------------------------------------------------
 
 local real_get_mode = vim.api.nvim_get_mode
+---@param mode string
+---@param fn fun()
 local function with_mode(mode, fn)
+  ---@return vim.api.keyset.get_mode
   vim.api.nvim_get_mode = function()
     return { mode = mode, blocking = false }
   end
@@ -98,6 +107,8 @@ local function with_mode(mode, fn)
   end
 end
 
+---@param lines string[]
+---@return integer
 local function md_buf(lines)
   local buf = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -107,8 +118,11 @@ local function md_buf(lines)
 end
 
 -- Synchronous wrapper over the async doc.find.
+---@param buf integer
+---@return snacks.image.match[]
 local function find_all(buf)
-  local got
+  local got ---@type snacks.image.match[]?
+  ---@param imgs snacks.image.match[]
   doc.find(buf, function(imgs)
     got = imgs
   end)
@@ -116,15 +130,20 @@ local function find_all(buf)
     return got ~= nil
   end, 10)
   assert_true(got ~= nil, "doc.find never called back")
+  ---@cast got -nil
   return got
 end
 
+---@param imgs snacks.image.match[]
+---@return snacks.image.match[]
 local function math_matches(imgs)
+  ---@param i snacks.image.match
   return vim.tbl_filter(function(i)
     return i.type == "math"
   end, imgs)
 end
 
+---@return integer
 local function tex_count()
   return #vim.fn.glob(cache .. "/*-content.math.tex", true, true)
 end
@@ -186,7 +205,7 @@ test("insert mode inside the $$ block: that equation is skipped, the other still
   local buf = md_buf(edited)
   vim.api.nvim_win_set_cursor(0, { 4, 3 })
   local before = tex_count()
-  local maths
+  local maths ---@type snacks.image.match[]
   with_mode("i", function()
     maths = math_matches(find_all(buf))
   end)
@@ -202,7 +221,7 @@ end)
 test("insert mode on the closing $$ line still counts as editing", function()
   local buf = md_buf(lines)
   vim.api.nvim_win_set_cursor(0, { 5, 2 })
-  local maths
+  local maths ---@type snacks.image.match[]
   with_mode("i", function()
     maths = math_matches(find_all(buf))
   end)
@@ -214,7 +233,7 @@ end)
 test("replace mode is treated like insert mode", function()
   local buf = md_buf(lines)
   vim.api.nvim_win_set_cursor(0, { 7, 9 }) -- inside $a+b$
-  local maths
+  local maths ---@type snacks.image.match[]
   with_mode("R", function()
     maths = math_matches(find_all(buf))
   end)
@@ -226,7 +245,7 @@ end)
 test("insert mode with the cursor outside every equation: nothing is skipped", function()
   local buf = md_buf(lines)
   vim.api.nvim_win_set_cursor(0, { 1, 0 })
-  local maths
+  local maths ---@type snacks.image.match[]
   with_mode("i", function()
     maths = math_matches(find_all(buf))
   end)
@@ -239,7 +258,7 @@ test("insert mode in ANOTHER buffer never filters this one", function()
   local other = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_set_current_buf(other)
   vim.api.nvim_win_set_cursor(0, { 1, 0 })
-  local maths
+  local maths ---@type snacks.image.match[]
   with_mode("i", function()
     maths = math_matches(find_all(buf))
   end)
@@ -251,8 +270,9 @@ end)
 test("file-backed ![]() images are never deferred", function()
   local buf = md_buf(lines)
   vim.api.nvim_win_set_cursor(0, { 9, 5 }) -- inside the ![img](...) node
-  local files
+  local files ---@type snacks.image.match[]
   with_mode("i", function()
+    ---@param i snacks.image.match
     files = vim.tbl_filter(function(i)
       return i.type == "image"
     end, find_all(buf))
@@ -264,9 +284,10 @@ end)
 test("the ModeChanged re-render hook exists and targets insert/replace exits", function()
   local aus = vim.api.nvim_get_autocmds({ group = "andrew_snacks_image_math", event = "ModeChanged" })
   assert_true(#aus >= 2, "expected i*:* and R*:* ModeChanged autocmds")
-  local pats = {}
+  local pats = {} ---@type table<string, boolean>
   for _, a in ipairs(aus) do
-    pats[a.pattern] = true
+    -- Both ModeChanged autocmds are created with a pattern.
+    pats[a.pattern --[[@as string]]] = true
   end
   assert_true(pats["i*:*"], "i*:* pattern")
   assert_true(pats["R*:*"], "R*:* pattern")
@@ -276,10 +297,12 @@ test("inline.update records the instance so the hook can reach it", function()
   local inline = Image.inline
   local fake = setmetatable({ buf = 4242, imgs = {}, idx = {} }, inline)
   -- swap the real body out for this call only
-  local raw = getmetatable(fake).update
+  local raw = getmetatable(fake).update ---@type fun(self: snacks.image.inline)?
   assert_true(raw ~= nil)
   local called = false
   local orig_find = doc.find_visible
+  ---@param _ integer
+  ---@param cb snacks.image.find
   doc.find_visible = function(_, cb)
     called = true
     cb({})
@@ -301,22 +324,24 @@ test("a failed conversion of a cache-dir source writes a .failed marker", functi
   -- a src under the cache dir that does not exist -> Convert:run takes the
   -- "File not found" path (convert.lua:457-461) without spawning anything.
   local src = cache .. "/deadbeef-content.math.tex"
-  local done
+  local done ---@type snacks.image.Convert?
   local c = convert.convert({
     src = src,
+    ---@param cc snacks.image.Convert
     on_done = function(cc)
       done = cc
     end,
   })
   c:run()
   assert_true(done ~= nil, "on_done called")
+  ---@cast done -nil
   assert_true(done:error() ~= nil, "conversion reported an error")
   assert_eq(vim.fn.filereadable(c.file .. mod.MARKER), 1, "marker written next to " .. c.file)
 end)
 
 test("a second Convert for the same source is short-circuited: no run, no toast, still on_done", function()
   local src = cache .. "/deadbeef-content.math.tex"
-  local done, toasts = nil, 0
+  local done, toasts = nil, 0 ---@type snacks.image.Convert?, integer
   local real_error = Snacks.notify.error
   Snacks.notify.error = function()
     toasts = toasts + 1
@@ -324,6 +349,7 @@ test("a second Convert for the same source is short-circuited: no run, no toast,
   Image.config.convert.notify = true -- would toast if Convert:on_done ran
   local c = convert.convert({
     src = src,
+    ---@param cc snacks.image.Convert
     on_done = function(cc)
       done = cc
     end,
@@ -337,6 +363,7 @@ test("a second Convert for the same source is short-circuited: no run, no toast,
   Snacks.notify.error = real_error
   assert_false(stepped, "step() must not run for a known-failed source")
   assert_true(done ~= nil, "on_done still called so the placement settles")
+  ---@cast done -nil
   assert_true(done:done(), "marked done")
   assert_match(done:error(), "SnacksImageRetryFailed")
   assert_eq(toasts, 0, "no notification for a cached failure")
@@ -379,11 +406,8 @@ test(":SnacksImageRetryFailed clears markers and memory", function()
   vim.cmd("SnacksImageRetryFailed")
   assert_eq(vim.fn.filereadable(c.file .. mod.MARKER), 0, "marker deleted")
   assert_nil(next(mod._failed), "in-memory set cleared")
-  local stepped = false
   local c2 = convert.convert({ src = src })
-  c2.step = function()
-    stepped = true
-  end
+  c2.step = function() end
   c2:run()
   -- src still missing, so the real run reports File not found again (and
   -- re-marks it) -- the point is that it went through the real path.

@@ -34,6 +34,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/summary_tree_save_freshness_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
@@ -46,6 +47,9 @@ print("\n=== Summary Tree Save-Freshness Tests ===\n")
 -- ---------------------------------------------------------------------------
 -- Temp vault helpers.
 -- ---------------------------------------------------------------------------
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -55,10 +59,13 @@ local function write_file(dir, rel, lines)
   f:close()
 end
 
+---@param dir string
+---@param rel string
 local function rm_file(dir, rel)
   os.remove(dir .. "/" .. rel)
 end
 
+---@return string
 local function make_vault()
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -68,6 +75,8 @@ local function make_vault()
   return dir
 end
 
+---@param dir string
+---@return VaultIndex
 local function fresh_vi(dir)
   vault_index._instance = nil
   local idx = vault_index.VaultIndex.new(dir)
@@ -75,6 +84,9 @@ local function fresh_vi(dir)
   return idx
 end
 
+---@param list string[]
+---@param val string
+---@return boolean
 local function has(list, val)
   for _, v in ipairs(list) do
     if v == val then return true end
@@ -154,6 +166,14 @@ end)
 -- ===========================================================================
 -- 2. PARITY: incremental accessors == a fresh full rebuild.
 -- ===========================================================================
+---@class SummaryTreeFreshnessSpecCounts
+---@field tags string[]
+---@field fm string[]
+---@field inline string[]
+---@field counts table<string, number>
+
+---@param idx VaultIndex
+---@return SummaryTreeFreshnessSpecCounts
 local function canon_counts(idx)
   return {
     tags = idx:all_tags(),
@@ -163,6 +183,9 @@ local function canon_counts(idx)
   }
 end
 
+---@param dir string
+---@param idx VaultIndex
+---@param label string
 local function assert_parity(dir, idx, label)
   local full = fresh_vi(dir)
   local a, b = canon_counts(idx), canon_counts(full)
@@ -204,9 +227,16 @@ test("perf: single save invokes _recompute_ancestors 0 times (no O(N) sweep)", f
   local idx = fresh_vi(dir)
 
   -- Count _recompute_ancestors invocations on the live tree instance.
-  local tree = idx._summary_tree
+  -- VaultIndex._summary_tree is declared as a bare `table`; this is the one
+  -- SummaryTree method the test wraps.
+  ---@class SummaryTreeFreshnessSpecTree
+  ---@field _recompute_ancestors fun(self: SummaryTreeFreshnessSpecTree, segments: string[])
+  local tree = idx._summary_tree ---@type SummaryTreeFreshnessSpecTree
   local real = tree._recompute_ancestors
   local sweeps = 0
+  ---@param self SummaryTreeFreshnessSpecTree
+  ---@param ... string[]
+  ---@return nil
   tree._recompute_ancestors = function(self, ...)
     sweeps = sweeps + 1
     return real(self, ...)

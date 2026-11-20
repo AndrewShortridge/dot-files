@@ -25,6 +25,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/dql_result_cache_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -41,6 +42,9 @@ print("\n=== DQL Result Cache Perf Tests ===\n")
 -- ---------------------------------------------------------------------------
 -- Temp vault helpers.
 -- ---------------------------------------------------------------------------
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -52,6 +56,7 @@ end
 
 -- Build a small vault with a couple of notes carrying a tag so a LIST query
 -- returns rows.
+---@return string dir
 local function make_vault()
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -61,6 +66,8 @@ local function make_vault()
   return dir
 end
 
+---@param dir string
+---@return VaultIndex
 local function setup_vault(dir)
   vault_index._instance = nil
   local vi = vault_index.get(dir)
@@ -85,16 +92,29 @@ local parse_count = 0
 local exec_count = 0
 local real_parse = parser.parse
 local real_execute = executor.execute
-parser.parse = function(...)
+---@param query_string string
+---@return table|nil query
+---@return string|nil error
+local function spy_parse(query_string)
   parse_count = parse_count + 1
-  return real_parse(...)
+  return real_parse(query_string)
 end
-executor.execute = function(...)
+---@param ast table
+---@param index table
+---@param current_file_path string
+---@return table results
+---@return string|nil error
+local function spy_execute(ast, index, current_file_path)
   exec_count = exec_count + 1
-  return real_execute(...)
+  return real_execute(ast, index, current_file_path)
 end
+parser.parse = spy_parse
+executor.execute = spy_execute
 
 -- Create a scratch buffer with a dataview block, named to an abs path in dir.
+---@param dir string
+---@param name string
+---@return integer buf
 local function make_block_buffer(dir, name)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, dir .. "/" .. name)

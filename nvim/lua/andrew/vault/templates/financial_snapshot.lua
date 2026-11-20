@@ -75,7 +75,7 @@ local body_template = [==[
 - [[]]
 ]==]
 
-function M.run(e, p)
+function M.run(e)
   local period = e.input({ prompt = "Period (e.g., 2025-Q1, January 2025, 2025)" })
   if not period then return end
 

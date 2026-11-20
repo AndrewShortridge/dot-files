@@ -142,9 +142,6 @@ function M._infer_category(name)
   return "Meta"
 end
 
---- Collect entries from Neovim's command/keymap tables as a fallback.
---- Used for any Vault* commands or <leader>v keymaps not explicitly registered.
----@return VaultPaletteEntry[]
 --- Resolved "<leader>v" prefix, e.g. " v" when mapleader is a space.
 --- nvim_get_keymap()/nvim_buf_get_keymap() return the RESOLVED lhs (" vxh"),
 --- never the literal "<leader>vxh" form, so collection must match on the
@@ -171,6 +168,9 @@ local function _normalize_leader_v(lhs)
   return nil
 end
 
+--- Collect entries from Neovim's command/keymap tables as a fallback.
+--- Used for any Vault* commands or <leader>v keymaps not explicitly registered.
+---@return VaultPaletteEntry[]
 function M._collect_from_nvim()
   local extra = {}
   local registered_commands = {}

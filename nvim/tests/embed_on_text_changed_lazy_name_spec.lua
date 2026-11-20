@@ -10,6 +10,7 @@
 -- called for a buffer with no embed state. Reintroducing the bug (eager call at
 -- the site, or computing the name before the guards) makes the counter >= 1.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true =
   _H.test, _H.assert_eq, _H.assert_true
@@ -29,10 +30,13 @@ config.embed.sync.enabled = true
 -- Wrap nvim_buf_get_name with a call counter.
 local orig_get_name = vim.api.nvim_buf_get_name
 local name_calls = 0
-vim.api.nvim_buf_get_name = function(b)
+---@param b integer
+---@return string
+local function counting_get_name(b)
   name_calls = name_calls + 1
   return orig_get_name(b)
 end
+vim.api.nvim_buf_get_name = counting_get_name
 
 print("\n=== embed.on_text_changed lazy name Tests ===\n")
 
@@ -61,9 +65,11 @@ test("on_text_changed reruns for visible self-referential embed", function()
 
   local orig_schedule = sync.schedule_rerender
   local rerendered = false
-  sync.schedule_rerender = function(_)
+  ---@param _ number  bufnr
+  local function fake_schedule_rerender(_)
     rerendered = true
   end
+  sync.schedule_rerender = fake_schedule_rerender
 
   name_calls = 0
   embed.on_text_changed(bufnr)

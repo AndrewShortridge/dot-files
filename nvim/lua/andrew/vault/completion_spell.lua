@@ -38,8 +38,9 @@ local function word_at_cursor(ctx)
   end
   -- Fallback for a nil/odd context. pcall: expand("<cword>") raises E348 when
   -- there is genuinely no word under the cursor (e.g. an empty line).
+  -- expand() returns a list only when its {list} argument is set; here it is a string.
   local ok, cword = pcall(vim.fn.expand, "<cword>")
-  return (ok and cword) or ""
+  return (ok and cword --[[@as string]]) or ""
 end
 
 --- Spell suggestions depend on the WHOLE word typed so far, not on a stable

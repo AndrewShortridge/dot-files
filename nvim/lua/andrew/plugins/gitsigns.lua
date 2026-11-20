@@ -56,6 +56,9 @@ return {
 
     return {
       on_attach = function(bufnr)
+      -- Typed, or lua_ls takes the shape of this entry from the stub a spec
+      -- assigns to it.
+      ---@type gitsigns.main
       local gs = package.loaded.gitsigns
 
       local function map(mode, l, r, desc)
@@ -147,7 +150,11 @@ return {
       map({ "n", "x" }, "<leader>ghs", ":Gitsigns stage_hunk<CR>", "Stage Hunk")
       map({ "n", "x" }, "<leader>ghr", ":Gitsigns reset_hunk<CR>", "Reset Hunk")
       map("n", "<leader>ghS", gs.stage_buffer, "Stage Buffer")
-      map("n", "<leader>ghu", gs.undo_stage_hunk, "Undo Stage Hunk")
+      -- undo_stage_hunk is deprecated; gitsigns' replacement is stage_hunk on
+      -- a STAGED hunk, which unstages it. Unlike undo it acts on the hunk
+      -- under the cursor, not the last one staged, and on an unstaged hunk it
+      -- stages it (what <leader>ghs does).
+      map("n", "<leader>ghu", ":Gitsigns stage_hunk<CR>", "Unstage Hunk")
       map("n", "<leader>ghR", gs.reset_buffer, "Reset Buffer")
       map("n", "<leader>ghp", gs.preview_hunk_inline, "Preview Hunk Inline")
       map("n", "<leader>ghb", function() gs.blame_line({ full = true }) end, "Blame Line")

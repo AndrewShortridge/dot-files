@@ -7,81 +7,84 @@
 -- Configure netrw (built-in file explorer) to use tree style listing
 vim.cmd("let g:netrw_liststyle = 3")
 
--- Local alias for vim.opt to make configuration more concise
-local opt = vim.opt
+-- Plain values (boolean, number, string) are assigned through `vim.o`, whose
+-- fields lua_ls knows the type of. `vim.opt` is kept for what only it does: a
+-- list given as a table, and `:append()`. From Neovim 0.13 a `vim.opt` field is
+-- typed `vim.Option`, so a plain value assigned to one is flagged
+-- (assign-type-mismatch), although it sets the option exactly as `vim.o` does.
 
 -- =============================================================================
 -- Line Numbers
 -- =============================================================================
 -- Enable absolute line numbers and relative line numbers for better navigation
-opt.number = true
-opt.relativenumber = true
+vim.o.number = true
+vim.o.relativenumber = true
 
 -- =============================================================================
 -- Tabs and Indentation
 -- =============================================================================
 -- Configure tab behavior: 2 spaces for tabs, auto-expand tabs to spaces
-opt.tabstop = 2     -- Number of spaces a tab character displays
-opt.shiftwidth = 2  -- Number of spaces used for indentation
-opt.expandtab = true  -- Convert tabs to spaces
-opt.autoindent = true  -- Copy indentation from current line when starting new line
+vim.o.tabstop = 2     -- Number of spaces a tab character displays
+vim.o.shiftwidth = 2  -- Number of spaces used for indentation
+vim.o.expandtab = true  -- Convert tabs to spaces
+vim.o.autoindent = true  -- Copy indentation from current line when starting new line
 
 -- =============================================================================
 -- Text Wrapping
 -- =============================================================================
 -- Disable automatic line wrapping
-opt.wrap = false
+vim.o.wrap = false
 
 -- =============================================================================
 -- Search Options
 -- =============================================================================
 -- Configure case sensitivity for search
-opt.ignorecase = true   -- Ignore case when searching
-opt.smartcase = true    -- Become case-sensitive if search contains uppercase
+vim.o.ignorecase = true   -- Ignore case when searching
+vim.o.smartcase = true    -- Become case-sensitive if search contains uppercase
 
 -- =============================================================================
 -- Cursor and UI
 -- =============================================================================
 -- Highlight the cursor line for better visibility
-opt.cursorline = true
+vim.o.cursorline = true
 
 -- Enable true color support and dark background for terminal colors
-opt.termguicolors = true  -- Enable 24-bit RGB color in terminal
-opt.background = "dark"   -- Set background color scheme to dark
-opt.signcolumn = "yes"    -- Always show sign column for diagnostics/git signs
-opt.showtabline = 2       -- Always show the tabline (andrew/utils/tabline.lua
-                          -- draws it; <leader>uA toggles it)
+vim.o.termguicolors = true  -- Enable 24-bit RGB color in terminal
+vim.o.background = "dark"   -- Set background color scheme to dark
+vim.o.signcolumn = "yes"    -- Always show sign column for diagnostics/git signs
+vim.o.showtabline = 2       -- Always show the tabline (andrew/utils/tabline.lua
+                            -- draws it; <leader>uA toggles it)
 
 -- =============================================================================
 -- Backspace Behavior
 -- =============================================================================
 -- Allow backspace to work on indent, end of line, and before insert position
-opt.backspace = "indent,eol,start"
+vim.o.backspace = "indent,eol,start"
 
 -- =============================================================================
 -- Clipboard
 -- =============================================================================
 -- Use system clipboard as the default unnamed register for yank/put operations
-opt.clipboard:append("unnamedplus")
+vim.opt.clipboard:append("unnamedplus")
 
 -- =============================================================================
 -- Undo and Swap
 -- =============================================================================
-opt.undofile = true     -- Persistent undo across sessions
-opt.swapfile = false    -- Avoid swap prompts (git provides safety)
+vim.o.undofile = true     -- Persistent undo across sessions
+vim.o.swapfile = false    -- Avoid swap prompts (git provides safety)
 
 -- =============================================================================
 -- Scrolling
 -- =============================================================================
-opt.scrolloff = 8       -- Keep 8 lines visible above/below cursor
-opt.sidescrolloff = 8   -- Horizontal equivalent for nowrap mode
+vim.o.scrolloff = 8       -- Keep 8 lines visible above/below cursor
+vim.o.sidescrolloff = 8   -- Horizontal equivalent for nowrap mode
 
 -- Scroll wrapped lines by screen row instead of jumping a whole logical line.
 -- Only has an effect where 'wrap' is on: markdown (via ftplugin/markdown.lua,
 -- which sets it window-locally too) and any buffer where <leader>uw turns wrap
 -- on. LazyVim sets this globally (config/options.lua:100); without it, toggling
 -- wrap on a long-lined buffer scrolls in jarring multi-row jumps.
-opt.smoothscroll = true
+vim.o.smoothscroll = true
 
 -- snacks.nvim animation kill-switch, read by Snacks.animate.enabled() and
 -- flipped by <leader>ua. nil already behaves as true, so this is declarative
@@ -105,21 +108,21 @@ vim.g.snacks_animate = true
 -- 'folds' is kept (as LazyVim keeps it) and is safe with the treesitter `expr`
 -- folding markdown uses -- the session records fold STATE, and ftplugin/markdown
 -- re-establishes foldmethod/foldexpr on FileType when the buffer reloads.
-opt.sessionoptions = { "buffers", "curdir", "tabpages", "winsize", "help", "globals", "skiprtp", "folds" }
+vim.opt.sessionoptions = { "buffers", "curdir", "tabpages", "winsize", "help", "globals", "skiprtp", "folds" }
 
 -- =============================================================================
 -- Performance and UI
 -- =============================================================================
-opt.updatetime = 250    -- Faster CursorHold (default 4000ms is too slow for gitsigns/diagnostics)
-opt.showmode = false    -- Lualine already displays the mode
-opt.pumheight = 15      -- Limit completion popup height
-opt.completeopt = "menu,menuone,noselect"  -- Better native completion behavior
+vim.o.updatetime = 250    -- Faster CursorHold (default 4000ms is too slow for gitsigns/diagnostics)
+vim.o.showmode = false    -- Lualine already displays the mode
+vim.o.pumheight = 15      -- Limit completion popup height
+vim.o.completeopt = "menu,menuone,noselect"  -- Better native completion behavior
 
 -- =============================================================================
 -- Window Splitting
 -- =============================================================================
 -- Configure new window placement for splits
-opt.splitright = true   -- Vertical splits open to the right of current window
-opt.splitbelow = true   -- Horizontal splits open below current window
-opt.splitkeep = "screen" -- Keep text on the same screen line when splitting
-opt.winminwidth = 5     -- Never shrink a window narrower than this
+vim.o.splitright = true   -- Vertical splits open to the right of current window
+vim.o.splitbelow = true   -- Horizontal splits open below current window
+vim.o.splitkeep = "screen" -- Keep text on the same screen line when splitting
+vim.o.winminwidth = 5     -- Never shrink a window narrower than this

@@ -145,7 +145,7 @@ end
 -- Module-level cache so deadline data persists across month navigation and
 -- calendar re-opens without re-scanning the entire vault each time.
 -- Uses gen_cache for automatic generation-based invalidation with partial support.
-_deadline_cache = gen_cache.gen_cache(function(_idx)
+_deadline_cache = gen_cache.gen_cache(function()
   return scan_dates_from_index()
 end, {
   key_fn = function() return engine.vault_path end,
@@ -235,7 +235,7 @@ end
 --- Cached log directory scan.  Keyed by "YYYY-MM"; invalidated when the
 --- vault index generation changes (covers file creation/deletion and
 --- FocusGained events).
-local _log_cache = gen_cache.keyed_gen_cache(function(_idx, key)
+local _log_cache = gen_cache.keyed_gen_cache(function(_, key)
   local log_dir = engine.vault_path .. "/Log"
   local has_log = {}
 
@@ -519,7 +519,8 @@ function M.calendar()
     -- Position cursor on today if it's the current month, otherwise on the 1st
     local today = engine.today()
     local ty, tm, td = today:match("(%d+)-(%d+)-(%d+)")
-    ty, tm, td = tonumber(ty), tonumber(tm), tonumber(td)
+    -- engine.today() is os.date("%Y-%m-%d"), so the match above always yields digits
+    ty, tm, td = tonumber(ty), tonumber(tm), tonumber(td) --[[@as integer]]
     local target_day = 1
     if state.year == ty and state.month == tm then
       target_day = td

@@ -30,7 +30,7 @@ function M.titled(label, opts)
   return vim.tbl_deep_extend("force", opts or {}, {
     prompt = M.PROMPT,
     winopts = { title = " " .. label .. " ", title_pos = "center" },
-  })
+  }) --[[@as table]]
 end
 
 --- The look as an overlay for fzf-lua's setup() table: deep-merge it over the

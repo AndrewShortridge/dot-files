@@ -74,6 +74,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_render_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil, assert_deep_eq = _H.assert_nil, _H.assert_deep_eq
@@ -87,7 +88,46 @@ local render = require("andrew.fortran.render")
 -- lua/andrew/fortran/data/*.lua: the renderer's contract is the Entry shape,
 -- and a spec that depends on generated data cannot say which side broke.
 
+--- One dummy argument of an Entry's `interface`.
+---@class FortranRenderSpecDummy
+---@field name string
+---@field type string
+---@field intent? string
+---@field optional? boolean
+---@field dim? string array spec, e.g. "(*)"
+
+--- The registry Entry shape the renderer consumes (render.lua takes `table`).
+---@class FortranRenderSpecEntry
+---@field name? string
+---@field kind? string
+---@field signature? string
+---@field interface? FortranRenderSpecDummy[]
+---@field params? table<string, string> dummy name -> prose
+---@field summary? string
+---@field description? string
+---@field example? string
+---@field valid_on? string[]
+---@field result? string
+---@field result_type? string
+---@field value? string
+---@field standard? string
+---@field module? string
+---@field binding_note? string
+---@field see_also? string[]
+
+--- The lsp.ParameterInformation render.signature builds: the label is always
+--- a `[start, end)` byte-offset pair and the documentation always markdown.
+---@class FortranRenderSpecParameter: lsp.ParameterInformation
+---@field label [uinteger, uinteger]
+---@field documentation lsp.MarkupContent
+
+--- The lsp.SignatureInformation render.signature builds (annotated `table` there).
+---@class FortranRenderSpecSignature: lsp.SignatureInformation
+---@field parameters FortranRenderSpecParameter[]
+---@field documentation? lsp.MarkupContent
+
 --- design A1
+---@return FortranRenderSpecEntry
 local function mpi_comm_rank()
   return {
     name = "MPI_Comm_rank",
@@ -115,6 +155,7 @@ local function mpi_comm_rank()
 end
 
 --- design A2
+---@return FortranRenderSpecEntry
 local function private_clause()
   return {
     name = "PRIVATE",
@@ -132,6 +173,7 @@ local function private_clause()
 end
 
 --- design A3
+---@return FortranRenderSpecEntry
 local function omp_get_wtime()
   return {
     name = "omp_get_wtime",
@@ -148,6 +190,7 @@ local function omp_get_wtime()
 end
 
 --- design A4
+---@return FortranRenderSpecEntry
 local function allocatable_kw()
   return {
     name = "allocatable",
@@ -162,6 +205,7 @@ local function allocatable_kw()
 end
 
 --- design A5
+---@return FortranRenderSpecEntry
 local function mpi_comm_world()
   return {
     name = "MPI_COMM_WORLD",
@@ -176,6 +220,7 @@ local function mpi_comm_world()
 end
 
 --- a procedure with an optional dummy and an assumed-size array
+---@return FortranRenderSpecEntry
 local function mpi_bcast()
   return {
     name = "MPI_Bcast",
@@ -290,13 +335,13 @@ Get the calling process's rank within a communicator.
 - `ierror` — Error status; MPI_SUCCESS (0) on success. In the `mpi` / `mpif.h` binding this argument is MANDATORY.
 
 **Binding** `mpi` (`include 'mpif.h'`); `mpi_f08` spells `comm` as `type(MPI_Comm)` and makes `ierror` **optional** · **Standard** MPI-1.0 · **See also** `MPI_Comm_size`, `MPI_COMM_WORLD`]==]
-  local got = render.hover(mpi_comm_rank())
+  local got = render.hover(mpi_comm_rank()) ---@type lsp.MarkupContent
   assert_eq(got.kind, "markdown")
   assert_eq(got.value, expected)
 end)
 
 test("hover: the kind prefix lives inside the fence", function()
-  local v = render.hover(private_clause()).value
+  local v = render.hover(private_clause()).value ---@type string
   assert_eq(v:sub(1, #"```fortran\n(clause) PRIVATE(list)\n```"), "```fortran\n(clause) PRIVATE(list)\n```")
 end)
 
@@ -306,22 +351,22 @@ test("hover: the rule appears only when both halves are non-empty", function()
 end)
 
 test("hover: label replaces the display name on the first line only", function()
-  local v = render.hover(mpi_comm_rank(), "mpi_comm_rank").value
+  local v = render.hover(mpi_comm_rank(), "mpi_comm_rank").value ---@type string
   assert_true(v:find("```fortran\n(subroutine) mpi_comm_rank(\n", 1, true) == 1, v)
   assert_true(v:find("  integer, intent(in)  :: comm", 1, true) ~= nil)
-  local c = render.hover(mpi_comm_world(), "mpi_comm_world").value
+  local c = render.hover(mpi_comm_world(), "mpi_comm_world").value ---@type string
   assert_true(c:find("(constant) mpi_comm_world\n  integer, parameter :: MPI_COMM_WORLD = 0", 1, true) ~= nil, c)
 end)
 
 test("hover: A3 keeps a zero-dummy function on one line", function()
-  local v = render.hover(omp_get_wtime()).value
+  local v = render.hover(omp_get_wtime()).value ---@type string
   assert_true(v:find("```fortran\n(function) omp_get_wtime()\n  double precision :: omp_get_wtime\n```\n---\n", 1, true) == 1, v)
   assert_true(v:find("**Returns** Wall-clock seconds", 1, true) ~= nil)
   assert_true(v:find("**Module** `omp_lib` (`!$ use omp_lib`) · **Standard** OpenMP 2.0 · **See also** `omp_get_wtick`, `MPI_Wtime`", 1, true) ~= nil, v)
 end)
 
 test("hover: A5 renders the constant value and the mpi binding", function()
-  local v = render.hover(mpi_comm_world()).value
+  local v = render.hover(mpi_comm_world()).value ---@type string
   assert_true(v:find("```fortran\n(constant) MPI_COMM_WORLD\n  integer, parameter :: MPI_COMM_WORLD = 0\n```\n---\n", 1, true) == 1, v)
   assert_true(v:find("**Binding** `mpi` (`include 'mpif.h'`); the value is implementation-defined", 1, true) ~= nil, v)
 end)
@@ -368,8 +413,8 @@ end)
 
 test("completion_doc: identical to hover minus the kind prefix", function()
   local e = mpi_comm_rank()
-  local hover = render.hover(e).value
-  local doc = render.completion_doc(e).value
+  local hover = render.hover(e).value ---@type string
+  local doc = render.completion_doc(e).value ---@type string
   assert_eq(doc, (hover:gsub("^```fortran\n%(subroutine%) ", "```fortran\n")))
   assert_true(doc:find("(subroutine)", 1, true) == nil)
   assert_eq(render.completion_doc(e).kind, "markdown")
@@ -378,8 +423,10 @@ end)
 -- signature ------------------------------------------------------------------
 
 --- The contract nvim relies on: label:sub(start+1, end_) is the parameter.
+---@param entry FortranRenderSpecEntry
+---@return FortranRenderSpecSignature
 local function assert_offsets(entry)
-  local info = render.signature(entry, 0)
+  local info = render.signature(entry, 0) ---@type FortranRenderSpecSignature
   for i, p in ipairs(entry.interface) do
     local s, e = info.parameters[i].label[1], info.parameters[i].label[2]
     assert_eq(info.label:sub(s + 1, e), p.name, "parameter " .. i)
@@ -402,7 +449,7 @@ test("signature: a 0-dummy routine has an empty parameter list", function()
 end)
 
 test("signature: only the active parameter is documented", function()
-  local info = render.signature(mpi_comm_rank(), 1)
+  local info = render.signature(mpi_comm_rank(), 1) ---@type FortranRenderSpecSignature
   assert_eq(info.activeParameter, 1)
   assert_eq(info.parameters[1].documentation.value, "")
   assert_eq(info.parameters[3].documentation.value, "")
@@ -418,7 +465,7 @@ end)
 test("signature: documentation is summary plus the first description paragraph", function()
   local e = mpi_comm_rank()
   e.description = "First paragraph.\n\nSecond paragraph."
-  local info = render.signature(e, 0)
+  local info = render.signature(e, 0) ---@type FortranRenderSpecSignature
   assert_eq(
     info.documentation.value,
     "Get the calling process's rank within a communicator.\n\nFirst paragraph."
@@ -435,7 +482,7 @@ test("signature: the label is compact even when display is formatted", function(
 end)
 
 test("signature: no active parameter means no activeParameter field", function()
-  local info = render.signature(mpi_comm_rank(), nil)
+  local info = render.signature(mpi_comm_rank(), nil) ---@type FortranRenderSpecSignature
   assert_nil(info.activeParameter)
   assert_eq(info.parameters[2].documentation.value, "")
 end)
@@ -443,18 +490,18 @@ end)
 -- detail ---------------------------------------------------------------------
 
 test("detail: kind, compact argument list and provenance", function()
-  local detail, ld = render.detail(mpi_comm_rank())
+  local detail, ld = render.detail(mpi_comm_rank()) ---@type string, lsp.CompletionItemLabelDetails
   assert_eq(detail, "subroutine")
   assert_eq(ld.detail, "(comm, rank, ierror)")
   assert_eq(ld.description, "mpi")
 end)
 
 test("detail: non-procedures carry no argument list, standard is the fallback", function()
-  local detail, ld = render.detail(private_clause())
+  local detail, ld = render.detail(private_clause()) ---@type string, lsp.CompletionItemLabelDetails
   assert_eq(detail, "clause")
   assert_nil(ld.detail)
   assert_eq(ld.description, "OpenMP 5.2")
-  local _, ld2 = render.detail({ name = "x", kind = "keyword", standard = "F2008" })
+  local _, ld2 = render.detail({ name = "x", kind = "keyword", standard = "F2008" }) ---@type string, lsp.CompletionItemLabelDetails
   assert_eq(ld2.description, "F2008")
 end)
 
@@ -508,8 +555,11 @@ end)
 test("doc_to_markdown: the progress guard exits a stuck state", function()
   -- A state that neither eats a line nor changes state. Without the guard
   -- this loops forever inside a hover handler; with it, conversion stops.
+  ---@type fun(c: table)
   local saved = render._states.text
-  render._states.text = function() end
+  --- A state that neither eats a line nor changes state.
+  local function stuck_state() end
+  render._states.text = stuck_state
   local ok, got = pcall(render.doc_to_markdown, "!> anything at all")
   render._states.text = saved
   assert_true(ok, "conversion must return, not raise")

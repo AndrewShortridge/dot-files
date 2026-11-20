@@ -27,9 +27,11 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/colorizer_lazy_ft_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
+---@module "andrew.plugins.colorizer"
 local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/colorizer.lua")
 
 test("plugin spec returns a table for catgoose/nvim-colorizer.lua", function()
@@ -44,7 +46,7 @@ test("lazy-gated on color-relevant filetypes (not eager at startup)", function()
   assert_nil(plug.event, "event gate must be removed (replaced by ft)")
   assert_true(type(plug.ft) == "table", "ft gate must exist")
   -- ft must mirror the `filetypes` table and must NOT include markdown/'*'.
-  local fts = {}
+  local fts = {} ---@type table<string, boolean>
   for _, ft in ipairs(plug.ft) do fts[ft] = true end
   assert_nil(fts["*"], "ft must not contain the '*' wildcard")
   assert_nil(fts["markdown"], "ft must not contain markdown")
@@ -56,27 +58,35 @@ end)
 
 test("config restricts setup to color-relevant filetypes via NAMED key", function()
   -- Stub require("colorizer") to capture the opts; restore even on error.
-  local captured
+  -- What config passes to colorizer.setup(opts: table|nil).
+  local captured ---@type table|nil
   local real_require = _G.require
-  _G.require = function(mod)
+  ---@param mod string
+  ---@return any
+  local function fake_require(mod)
     if mod == "colorizer" then
-      return { setup = function(o) captured = o end }
+      return {
+        ---@param o table|nil
+        setup = function(o) captured = o end,
+      }
     end
     return real_require(mod)
   end
+  _G.require = fake_require
   local ok, err = pcall(plug.config)
   _G.require = real_require
   assert_true(ok, "config must not error: " .. tostring(err))
 
   assert_true(type(captured) == "table", "colorizer.setup must receive an opts table")
+  ---@cast captured -nil
 
   -- Named key, NOT positional (guards against the no-op positional regression).
   assert_nil(captured[1], "must use named `filetypes` key, not positional setup({ ... })")
   assert_true(type(captured.filetypes) == "table", "captured.filetypes must be a table")
 
   -- Build a set for membership checks.
-  local fts = {}
-  for _, ft in ipairs(captured.filetypes) do
+  local fts = {} ---@type table<string, boolean>
+  for _, ft in ipairs(captured.filetypes --[[@as string[] ]]) do
     fts[ft] = true
   end
 

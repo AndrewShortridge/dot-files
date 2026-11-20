@@ -52,6 +52,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_lsp_highlight_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil, assert_deep_eq = _H.assert_nil, _H.assert_deep_eq
@@ -60,6 +61,7 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 local hl = require("andrew.fortran.lsp_highlight")
 local scan = require("andrew.fortran.scan")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 -- Helpers -------------------------------------------------------------------
 
@@ -71,7 +73,7 @@ local function make_buf(lines)
   vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. ".f90")
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   hl.reset_cache()
-  return buf, vim.uri_from_bufnr(buf)
+  return buf, nvim_compat.uri_from_buffer(buf)
 end
 
 --- Ask for highlights with 1-based line / 1-based byte column, the way the
@@ -79,7 +81,7 @@ end
 ---@param uri string
 ---@param lnum integer
 ---@param col integer
----@return table[]|nil
+---@return lsp.DocumentHighlight[]|nil
 local function highlights(uri, lnum, col)
   return hl.highlight({
     textDocument = { uri = uri },
@@ -88,8 +90,12 @@ local function highlights(uri, lnum, col)
 end
 
 --- 1-based column of the `n`th occurrence of `needle` in `line`.
+---@param line string
+---@param needle string
+---@param n? integer default 1
+---@return integer|nil
 local function col_of(line, needle, n)
-  local init, col = 1, nil
+  local init, col = 1, nil ---@type integer, integer|nil
   for _ = 1, n or 1 do
     local s, e = line:lower():find(needle:lower(), init, true)
     if not s then
@@ -101,8 +107,10 @@ local function col_of(line, needle, n)
 end
 
 --- Highlights as sorted "lnum:col:kind" strings, in scanner coordinates.
+---@param list lsp.DocumentHighlight[]|nil
+---@return string[]
 local function shape(list)
-  local out = {}
+  local out = {} ---@type string[]
   for _, h in ipairs(list or {}) do
     out[#out + 1] = string.format(
       "%d:%d:%d",
@@ -116,6 +124,10 @@ local function shape(list)
 end
 
 --- The kind reported at (lnum, col), or nil when nothing is reported there.
+---@param list lsp.DocumentHighlight[]|nil
+---@param lnum integer
+---@param col integer|nil nil (needle not on the line) matches nothing
+---@return lsp.DocumentHighlightKind|nil
 local function kind_at(list, lnum, col)
   for _, h in ipairs(list or {}) do
     if h.range.start.line + 1 == lnum and h.range.start.character + 1 == col then
@@ -125,8 +137,11 @@ local function kind_at(list, lnum, col)
   return nil
 end
 
+--- Sorted 1-based lines the highlights start on, each once.
+---@param list lsp.DocumentHighlight[]|nil
+---@return integer[]
 local function lines_of(list)
-  local seen, out = {}, {}
+  local seen, out = {}, {} ---@type table<integer, boolean>, integer[]
   for _, h in ipairs(list or {}) do
     local l = h.range.start.line + 1
     if not seen[l] then
@@ -179,14 +194,15 @@ test("a word in a comment yields no highlights", function()
   local _, uri = make_buf(FIX)
   local col = col_of(FIX[10], "temp", 1)
   assert_true(col ~= nil, "fixture must have `temp` on the comment line:")
+  ---@cast col -nil
   assert_nil(highlights(uri, 10, col), "a comment word is not an identifier:")
   -- ...while the same word one line away is.
-  assert_true(highlights(uri, 12, col_of(FIX[12], "temp", 1)) ~= nil, "control:")
+  assert_true(highlights(uri, 12, assert(col_of(FIX[12], "temp", 1))) ~= nil, "control:")
 end)
 
 test("a word inside a string literal yields no highlights", function()
   local _, uri = make_buf(FIX)
-  local col = col_of(FIX[15], "temp", 1)
+  local col = assert(col_of(FIX[15], "temp", 1))
   assert_nil(highlights(uri, 15, col), "a literal's contents are not identifiers:")
 end)
 
@@ -194,18 +210,18 @@ test("matching is case-insensitive and finds the uppercase declaration", functio
   local _, uri = make_buf(FIX)
   -- Cursor on the lowercase `temp` of line 12; the declaration on line 7 is
   -- spelled TEMP.
-  local got = highlights(uri, 12, col_of(FIX[12], "temp", 1))
+  local got = highlights(uri, 12, assert(col_of(FIX[12], "temp", 1)))
   assert_deep_eq(lines_of(got), { 5, 7, 12 }, "TEMP on line 7 must match temp:")
 end)
 
 test("highlights stop at the enclosing program unit", function()
   local _, uri = make_buf(FIX)
-  local got = highlights(uri, 11, col_of(FIX[11], "i", 1))
+  local got = highlights(uri, 11, assert(col_of(FIX[11], "i", 1)))
   -- heat's `i`: declaration (8), loop control (11), two subscripts (12), the
   -- comparison (14). Nothing from cool, whose `i` lives on 22, 23 and 24.
   assert_deep_eq(lines_of(got), { 8, 11, 12, 14 }, "cool's `i` must not appear:")
 
-  local other = highlights(uri, 23, col_of(FIX[23], "i", 1))
+  local other = highlights(uri, 23, assert(col_of(FIX[23], "i", 1)))
   assert_deep_eq(lines_of(other), { 22, 23, 24 }, "and heat's must not appear in cool:")
 end)
 
@@ -214,29 +230,29 @@ test("`end do` and `end if` do not close the program unit", function()
   -- Line 16 sits past both an `end do` (13) and inside an `if`; if either
   -- construct closed the unit, flag's declaration on line 9 would be out of
   -- range.
-  local got = highlights(uri, 16, col_of(FIX[16], "flag", 1))
+  local got = highlights(uri, 16, assert(col_of(FIX[16], "flag", 1)))
   assert_deep_eq(lines_of(got), { 9, 14, 16 }, "the unit must survive `end do`:")
 end)
 
 test("nnode is scoped per subroutine too", function()
   local _, uri = make_buf(FIX)
-  local got = highlights(uri, 6, col_of(FIX[6], "nnode", 1))
+  local got = highlights(uri, 6, assert(col_of(FIX[6], "nnode", 1)))
   assert_deep_eq(lines_of(got), { 5, 6, 7, 11, 14 }, "cool's nnode is a different name:")
 end)
 
 test("a declaration is a write", function()
   local _, uri = make_buf(FIX)
-  local got = highlights(uri, 11, col_of(FIX[11], "i", 1))
+  local got = highlights(uri, 11, assert(col_of(FIX[11], "i", 1)))
   assert_eq(kind_at(got, 8, col_of(FIX[8], "i", 2)), WRITE, "`integer :: i` declares:")
 end)
 
 test("an assignment target is a write, its uses are reads", function()
   local _, uri = make_buf(FIX)
-  local got = highlights(uri, 12, col_of(FIX[12], "temp", 1))
+  local got = highlights(uri, 12, assert(col_of(FIX[12], "temp", 1)))
   assert_eq(kind_at(got, 12, col_of(FIX[12], "temp", 1)), WRITE, "temp(i) = ... writes:")
   assert_eq(kind_at(got, 12, col_of(FIX[12], "temp", 2)), READ, "... = temp(i) reads:")
 
-  local loop = highlights(uri, 11, col_of(FIX[11], "i", 1))
+  local loop = highlights(uri, 11, assert(col_of(FIX[11], "i", 1)))
   assert_eq(kind_at(loop, 11, col_of(FIX[11], "i", 1)), WRITE, "a do-loop control writes:")
   assert_eq(kind_at(loop, 12, col_of(FIX[12], "i", 1)), READ, "a subscript reads:")
 end)
@@ -245,10 +261,10 @@ test("`==` is a comparison, not a write", function()
   local _, uri = make_buf(FIX)
   -- Line 14 is `flag = i == nnode`: flag is written, i is compared at paren
   -- depth 0 -- the position where a naive "followed by =" test breaks.
-  local got = highlights(uri, 11, col_of(FIX[11], "i", 1))
+  local got = highlights(uri, 11, assert(col_of(FIX[11], "i", 1)))
   assert_eq(kind_at(got, 14, col_of(FIX[14], "i", 1)), READ, "`i ==` is not an assignment:")
 
-  local f = highlights(uri, 16, col_of(FIX[16], "flag", 1))
+  local f = highlights(uri, 16, assert(col_of(FIX[16], "flag", 1)))
   assert_eq(kind_at(f, 14, col_of(FIX[14], "flag", 1)), WRITE, "but `flag =` is:")
 end)
 
@@ -265,12 +281,12 @@ test("`=>` is a write and `/=` is not", function()
   }
   local _, uri = make_buf(src)
 
-  local p = highlights(uri, 5, col_of(src[5], "ptr", 1))
+  local p = highlights(uri, 5, assert(col_of(src[5], "ptr", 1)))
   assert_eq(kind_at(p, 5, col_of(src[5], "ptr", 1)), WRITE, "pointer association writes:")
 
   -- Line 6 puts `a` at paren depth 0 in front of a `/=`, so the paren-depth
   -- test cannot rescue it: only looking at the operator character can.
-  local a = highlights(uri, 7, col_of(src[7], "a", 1))
+  local a = highlights(uri, 7, assert(col_of(src[7], "a", 1)))
   assert_eq(kind_at(a, 6, col_of(src[6], "a", 1)), READ, "`a /=` compares:")
   assert_eq(kind_at(a, 7, col_of(src[7], "a", 1)), WRITE, "`a =` assigns:")
 end)
@@ -283,17 +299,17 @@ test("an `=` inside parentheses is a keyword argument, not a write", function()
     "end subroutine sel", -- 4
   }
   local _, uri = make_buf(src)
-  local got = highlights(uri, 2, col_of(src[2], "kind", 1))
+  local got = highlights(uri, 2, assert(col_of(src[2], "kind", 1)))
   assert_eq(kind_at(got, 2, col_of(src[2], "kind", 1)), READ, "kind=8 is not an assignment:")
 end)
 
 test("a bare keyword under the cursor yields nothing", function()
   local _, uri = make_buf(FIX)
-  assert_nil(highlights(uri, 11, col_of(FIX[11], "do", 1)), "`do` is not a symbol:")
+  assert_nil(highlights(uri, 11, assert(col_of(FIX[11], "do", 1))), "`do` is not a symbol:")
   -- ...unless the file declares a variable by that name.
   local src = { "subroutine k()", "  integer :: type", "  type = 3", "end subroutine k" }
   local _, uri2 = make_buf(src)
-  local got = highlights(uri2, 3, col_of(src[3], "type", 1))
+  local got = highlights(uri2, 3, assert(col_of(src[3], "type", 1)))
   assert_deep_eq(lines_of(got), { 2, 3 }, "a variable named `type` is still a variable:")
 end)
 
@@ -325,19 +341,22 @@ test("the scan is cached per changedtick and invalidated by an edit", function()
   local buf, uri = make_buf(FIX)
   local original = scan.scan_buffer
   local calls = 0
-  scan.scan_buffer = function(b)
+  ---@param b integer|nil
+  ---@return { defs: table[], calls: table[], refs: table[], decls: table[], masked: string[] }
+  local function counting_scan(b)
     calls = calls + 1
     return original(b)
   end
+  scan.scan_buffer = counting_scan
 
   local ok, err = pcall(function()
-    local a = highlights(uri, 11, col_of(FIX[11], "i", 1))
-    local b = highlights(uri, 12, col_of(FIX[12], "temp", 1))
+    local a = highlights(uri, 11, assert(col_of(FIX[11], "i", 1)))
+    local b = highlights(uri, 12, assert(col_of(FIX[12], "temp", 1)))
     assert_true(a ~= nil and b ~= nil, "both requests answered:")
     assert_eq(calls, 1, "a second request on an unchanged buffer must not rescan:")
 
     vim.api.nvim_buf_set_lines(buf, 0, 0, false, { "! a new first line" })
-    local c = highlights(uri, 12, col_of(FIX[11], "i", 1))
+    local c = highlights(uri, 12, assert(col_of(FIX[11], "i", 1)))
     assert_eq(calls, 2, "an edit must invalidate the cache:")
     -- Everything has shifted down one line, which is only true if the cached
     -- masked lines were rebuilt.
@@ -363,7 +382,7 @@ test("positions are byte columns, not utf-16 characters", function()
     "end subroutine widen", -- 5
   }
   local _, uri = make_buf(src)
-  local got = highlights(uri, 4, col_of(src[4], "idx", 1))
+  local got = highlights(uri, 4, assert(col_of(src[4], "idx", 1)))
   assert_eq(kind_at(got, 3, col_of(src[3], "idx", 1)), READ, "byte column past a multi-byte literal:")
   assert_deep_eq(shape(got), { "2:14:2", "3:23:3", "4:3:2" }, "every position in scanner coordinates:")
 end)

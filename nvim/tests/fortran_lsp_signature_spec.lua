@@ -58,6 +58,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_lsp_signature_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil = _H.assert_nil
@@ -66,24 +67,51 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 local sighelp = require("andrew.fortran.lsp_signature")
 local lsp = require("andrew.fortran.lsp")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 -- Helpers -------------------------------------------------------------------
+
+--- The lsp.ParameterInformation render.signature builds: the label is always
+--- a `[start, end)` byte-offset pair and the documentation always markdown.
+---@class FortranLspSignatureSpecParameter: lsp.ParameterInformation
+---@field label [uinteger, uinteger]
+---@field documentation lsp.MarkupContent
+
+--- The lsp.SignatureInformation render.signature builds.
+---@class FortranLspSignatureSpecSignature: lsp.SignatureInformation
+---@field parameters FortranLspSignatureSpecParameter[]
+
+--- The lsp.SignatureHelp `sighelp.answer` builds (annotated `table|nil` there).
+---@class FortranLspSignatureSpecHelp: lsp.SignatureHelp
+---@field signatures FortranLspSignatureSpecSignature[]
+---@field activeSignature uinteger
+---@field activeParameter uinteger
+
+--- The options `sighelp.answer` takes (its inline `opts` table, named).
+---@class FortranLspSignatureSpecOpts
+---@field fixed? boolean
+---@field locals? table<string, true>
+---@field project? table<string, table>
 
 --- Signature help with the cursor at the END of `lines[#lines]` unless `col`
 --- says otherwise -- the shape of typing `(` or `,` and waiting.
 ---@param lines string[]
 ---@param lnum integer|nil
 ---@param col integer|nil
----@param opts table|nil
+---@param opts FortranLspSignatureSpecOpts|nil
+---@return FortranLspSignatureSpecHelp|nil
 local function ask(lines, lnum, col, opts)
   lnum = lnum or #lines
   col = col or (#lines[lnum] + 1)
-  return sighelp.answer(lines, lnum, col, opts or {})
+  return sighelp.answer(lines, lnum, col, opts or {}) --[[@as FortranLspSignatureSpecHelp|nil]]
 end
 
 --- The single signature of an answer.
+---@param res FortranLspSignatureSpecHelp|nil
+---@return FortranLspSignatureSpecSignature
 local function only(res)
   assert_true(res ~= nil, "an answer was produced:")
+  ---@cast res -nil
   assert_eq(#res.signatures, 1, "exactly one signature:")
   return res.signatures[1]
 end
@@ -93,6 +121,8 @@ end
 test("activeParameter counts depth-0 commas", function()
   local res = ask({ "      call MPI_Comm_rank(MPI_COMM_WORLD, " })
   local sig = only(res)
+  -- only() asserted that res answered.
+  ---@cast res -nil
   assert_eq(res.activeSignature, 0, "one signature, index 0:")
   assert_eq(res.activeParameter, 1, "the cursor is in the second slot:")
   assert_eq(sig.activeParameter, 1, "the signature agrees with the envelope:")
@@ -142,7 +172,7 @@ test("the label stays compact under formatted display", function()
 end)
 
 test("the first slot is activeParameter 0", function()
-  local res = ask({ "      call MPI_Comm_rank(" })
+  local res = assert(ask({ "      call MPI_Comm_rank(" }))
   assert_eq(res.activeParameter, 0, "right after the open paren:")
 end)
 
@@ -156,6 +186,8 @@ test("a continuation line finds its statement", function()
   -- Cursor at the start of `dest` on the second line.
   local res = ask(lines, 2, 6)
   local sig = only(res)
+  -- only() asserted that res answered.
+  ---@cast res -nil
   assert_eq(sig.label, "MPI_Send(buf, count, datatype, dest, tag, comm, ierror)", "the library's dummy names:")
   assert_eq(res.activeParameter, 3, "three commas on line one put the cursor on dest:")
   assert_true(sig.parameters[4].documentation.value:find("dest", 1, true) ~= nil, "and dest is the documented one:")
@@ -184,12 +216,14 @@ end)
 test("the enclosing call resumes after a nested one closes", function()
   local res = ask({ "      call MPI_Send(size(a), " })
   local sig = only(res)
+  -- only() asserted that res answered.
+  ---@cast res -nil
   assert_eq(sig.label, "MPI_Send(buf, count, datatype, dest, tag, comm, ierror)", "back to MPI_Send:")
   assert_eq(res.activeParameter, 1, "one depth-0 comma, so the second slot:")
 end)
 
 test("commas inside a nested call do not count", function()
-  local res = ask({ "      call MPI_Send(size(a, 1), " })
+  local res = assert(ask({ "      call MPI_Send(size(a, 1), " }))
   assert_eq(res.activeParameter, 1, "size's own comma is at depth 2:")
 end)
 
@@ -252,6 +286,8 @@ end)
 test("omp_set_num_threads names its one dummy", function()
   local res = ask({ "      call omp_set_num_threads(" })
   local sig = only(res)
+  -- only() asserted that res answered.
+  ---@cast res -nil
   assert_eq(sig.label, "omp_set_num_threads(num_threads)", "fortls returns parameters: [] here:")
   assert_eq(res.activeParameter, 0, "the only slot:")
   assert_eq(sig.label:sub(sig.parameters[1].label[1] + 1, sig.parameters[1].label[2]), "num_threads",
@@ -261,9 +297,9 @@ end)
 -- Clamping ---------------------------------------------------------------------
 
 test("activeParameter is clamped to the last dummy", function()
-  local res = ask({ "      call omp_set_num_threads(n, m, " })
+  local res = assert(ask({ "      call omp_set_num_threads(n, m, " }))
   assert_eq(res.activeParameter, 0, "two extra commas cannot index past one dummy:")
-  local rank = ask({ "      call MPI_Comm_rank(a, b, c, d, " })
+  local rank = assert(ask({ "      call MPI_Comm_rank(a, b, c, d, " }))
   assert_eq(rank.activeParameter, 2, "clamped to ierror rather than dropped:")
   assert_true(#only(rank).parameters[3].documentation.value > 0, "and ierror is the documented one:")
 end)
@@ -295,11 +331,14 @@ test("signature help over the wire answers a real buffer", function()
   vim.fn.bufload(buf)
   vim.bo[buf].filetype = "fortran"
 
-  local got, done = nil, false
+  local got, done = nil, false ---@type FortranLspSignatureSpecHelp|nil, boolean
   lsp.dispatch("textDocument/signatureHelp", {
-    textDocument = { uri = vim.uri_from_bufnr(buf) },
+    textDocument = { uri = nvim_compat.uri_from_buffer(buf) },
     position = lsp.to_pos(4, #lines[4] + 1),
-  }, function(_, result)
+  },
+  ---@param _ lsp.ResponseError|nil
+  ---@param result FortranLspSignatureSpecHelp|nil
+  function(_, result)
     got, done = result, true
   end)
   assert_true(vim.wait(10000, function()
@@ -307,6 +346,7 @@ test("signature help over the wire answers a real buffer", function()
   end, 10), "the handler called back:")
 
   assert_true(got ~= nil, "the server answered:")
+  ---@cast got -nil
   assert_eq(got.activeParameter, 1, "the cursor is on rank:")
   assert_eq(got.signatures[1].label, "MPI_Comm_rank(comm, rank, ierror)", "with the compact label:")
 
@@ -318,11 +358,14 @@ test("signature help refuses a non-Fortran buffer", function()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "call MPI_Comm_rank(" })
   vim.bo[buf].filetype = "python"
-  local got, done = nil, false
+  local got, done = nil, false ---@type FortranLspSignatureSpecHelp|nil, boolean
   sighelp.signature({
-    textDocument = { uri = vim.uri_from_bufnr(buf) },
+    textDocument = { uri = nvim_compat.uri_from_buffer(buf) },
     position = { line = 0, character = 19 },
-  }, function(_, result)
+  },
+  ---@param _ lsp.ResponseError|nil
+  ---@param result FortranLspSignatureSpecHelp|nil
+  function(_, result)
     got, done = result, true
   end)
   assert_true(done, "answered synchronously:")

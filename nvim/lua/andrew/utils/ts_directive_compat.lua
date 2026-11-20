@@ -47,11 +47,15 @@ function M.apply()
   local real_add_predicate = query.add_predicate
   local real_add_directive = query.add_directive
 
+  -- Neovim's two registration functions, replaced on purpose while
+  -- nvim-treesitter registers its handlers, and put back below.
+  ---@diagnostic disable-next-line: duplicate-set-field
   query.add_predicate = function(name, handler, o)
     return real_add_predicate(name, function(m, ...)
       return handler(normalize(m), ...)
     end, o)
   end
+  ---@diagnostic disable-next-line: duplicate-set-field
   query.add_directive = function(name, handler, o)
     return real_add_directive(name, function(m, ...)
       return handler(normalize(m), ...)

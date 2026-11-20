@@ -177,7 +177,8 @@ function M.record_toggle(bufnr, header_lnum, is_now_open)
   local fp, suffix = fingerprint(bufnr, header_lnum)
   if not fp or not suffix then return end
 
-  local rel = engine.vault_relative(fname)
+  -- is_vault_buf() above passed, so this buffer's name is inside the vault
+  local rel = engine.vault_relative(fname) --[[@as string]]
   local db = load_db()
 
   local user_state = is_now_open and "open" or "closed"
@@ -225,7 +226,8 @@ function M.clear(all)
   local db = load_db()
   local fname = vim.api.nvim_buf_get_name(bufnr)
 
-  local rel = engine.vault_relative(fname)
+  -- is_vault_buf() above passed, so this buffer's name is inside the vault
+  local rel = engine.vault_relative(fname) --[[@as string]]
   if db[rel] then
     db[rel] = nil
     save_db(db)
@@ -288,14 +290,14 @@ function M.restore(bufnr)
 
       vim.api.nvim_buf_call(bufnr, function()
         if override == "open" then
-          pcall(vim.cmd, content_start .. "foldopen")
+          pcall(vim.cmd --[[@as function]], content_start .. "foldopen")
         elseif override == "closed" then
           local fold_level = vim.fn.foldlevel(content_start)
           if fold_level > 0 then
-            pcall(vim.cmd, content_start .. "foldclose")
+            pcall(vim.cmd --[[@as function]], content_start .. "foldclose")
           else
-            pcall(vim.cmd, content_start .. "," .. block_end .. "fold")
-            pcall(vim.cmd, content_start .. "foldclose")
+            pcall(vim.cmd --[[@as function]], content_start .. "," .. block_end .. "fold")
+            pcall(vim.cmd --[[@as function]], content_start .. "foldclose")
           end
         end
       end)

@@ -116,7 +116,8 @@ if not attached then
   fail(("no client named %q attached to the buffer within 15s (attached: %s; andrew.fortran loaded: %s)")
     :format(CLIENT, #names > 0 and table.concat(names, ",") or "none", tostring(package.loaded["andrew.fortran"] ~= nil)))
 end
-local client = extras_client()
+-- vim.wait above returned true only once extras_client() was non-nil.
+local client = extras_client() --[[@as vim.lsp.Client]]
 if client.offset_encoding ~= "utf-8" then
   fail("expected utf-8 offset encoding, got " .. tostring(client.offset_encoding))
 end
@@ -215,7 +216,7 @@ end
 local typed = "  call MPI_Al"
 vim.api.nvim_buf_set_lines(buf, SEND_LINE, SEND_LINE, false, { typed })
 local NEW_LINE = SEND_LINE + 1
-local cparams = params_at(NEW_LINE, #typed + 1) -- cursor just past the `l`
+local cparams = params_at(NEW_LINE, #typed + 1) --[[@as lsp.CompletionParams]] -- cursor just past the `l`
 cparams.context = { triggerKind = 1 } -- Invoked
 res, why = ask("textDocument/completion", cparams, "completion(MPI_Al)")
 if res == nil then

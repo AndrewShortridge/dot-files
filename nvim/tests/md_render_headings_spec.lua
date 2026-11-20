@@ -24,8 +24,8 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/md_render_headings_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
@@ -33,11 +33,12 @@ vim.opt.runtimepath:append(vim.fn.stdpath("data") .. "/lazy/md-render.nvim")
 vim.cmd("filetype on")
 
 -- Everything md-render sends to the terminal goes through this one function.
-local sent_to_terminal = {}
----@diagnostic disable-next-line: duplicate-set-field
-vim.api.nvim_ui_send = function(data)
-  sent_to_terminal[#sent_to_terminal + 1] = data
+local sent_to_terminal = {} ---@type string[]
+---@param content string
+local function record_ui_send(content)
+  sent_to_terminal[#sent_to_terminal + 1] = content
 end
+vim.api.nvim_ui_send = record_ui_send
 
 local markdown = require("md-render.markdown")
 local text_size = require("md-render.text_size")

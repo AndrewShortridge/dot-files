@@ -5,22 +5,36 @@
 -- Every test redirects engine.vault_path at a throwaway temp directory, so the
 -- real vault is never read from or written to.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
-local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
+local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
+--- Fails unless haystack is a string containing needle (plain find).
+---@param haystack string|nil  anything other than a string fails
+---@param needle string
+---@param msg? string
 local function assert_contains(haystack, needle, msg)
   if type(haystack) ~= "string" or not haystack:find(needle, 1, true) then
     error((msg or "missing substring") .. ": " .. vim.inspect(needle))
   end
 end
 
+---@param haystack string|nil  anything other than a string passes
+---@param needle string
+---@param msg? string
 local function assert_not_contains(haystack, needle, msg)
   if type(haystack) == "string" and haystack:find(needle, 1, true) then
     error((msg or "unexpected substring present") .. ": " .. vim.inspect(needle))
   end
 end
 
+---@param got any
+---@param expected any
+---@param msg? string
 local function assert_deep_eq(got, expected, msg)
+  ---@param a any
+  ---@param b any
+  ---@return boolean
   local function deep_eq(a, b)
     if a == b then return true end
     if type(a) ~= "table" or type(b) ~= "table" then return false end
@@ -45,7 +59,7 @@ local people = require("andrew.vault.people")
 --- Point the engine at an empty temp vault, run fn, then restore.
 ---@param fn fun(root: string)
 local function in_temp_vault(fn)
-  local real_path = engine.vault_path
+  local real_path = engine.vault_path ---@type string
   local root = vim.fn.tempname() .. "-people-spec"
   vim.fn.mkdir(root .. "/People", "p")
   engine.vault_path = root
@@ -55,6 +69,8 @@ local function in_temp_vault(fn)
   if not ok then error(err) end
 end
 
+---@param path string
+---@return string|nil content  nil when the file cannot be opened
 local function read(path)
   local fd = io.open(path, "r")
   if not fd then return nil end
@@ -67,6 +83,7 @@ end
 -- list_names
 -- ---------------------------------------------------------------------------
 test("list_names returns sorted basenames and ignores non-markdown", function()
+  ---@param root string
   in_temp_vault(function(root)
     vim.fn.writefile({ "x" }, root .. "/People/Zoe Last.md")
     vim.fn.writefile({ "x" }, root .. "/People/Adam First.md")
@@ -77,6 +94,7 @@ test("list_names returns sorted basenames and ignores non-markdown", function()
 end)
 
 test("list_names returns an empty table when People/ is missing", function()
+  ---@param root string
   in_temp_vault(function(root)
     vim.fn.delete(root .. "/People", "rf")
     assert_deep_eq(people.list_names(), {})
@@ -92,6 +110,7 @@ test("rel_path prefixes People/ and sanitizes filename-hostile characters", func
 end)
 
 test("exists is false for a missing note and for a blank name", function()
+  ---@param root string
   in_temp_vault(function(root)
     assert_true(not people.exists("Nobody Here"))
     assert_true(not people.exists(""))
@@ -104,6 +123,7 @@ end)
 -- create_stub
 -- ---------------------------------------------------------------------------
 test("create_stub writes person frontmatter and reports created", function()
+  ---@param root string
   in_temp_vault(function(root)
     assert_eq(people.create_stub("Rongbo Wang"), "created")
     local c = read(root .. "/People/Rongbo Wang.md")
@@ -128,6 +148,7 @@ test("create_stub never opens a buffer", function()
 end)
 
 test("create_stub is idempotent and reports exists", function()
+  ---@param root string
   in_temp_vault(function(root)
     assert_eq(people.create_stub("Rongbo Wang"), "created")
     vim.fn.writefile({ "SENTINEL" }, root .. "/People/Rongbo Wang.md")
@@ -139,15 +160,20 @@ end)
 test("create_stub rejects blank and non-string names", function()
   in_temp_vault(function()
     assert_eq(people.create_stub("   "), "error")
+    -- Invalid on purpose: create_stub rejects a nil and a non-string name.
+    ---@diagnostic disable-next-line: param-type-mismatch
     assert_eq(people.create_stub(nil), "error")
+    ---@diagnostic disable-next-line: param-type-mismatch
     assert_eq(people.create_stub(42), "error")
   end)
 end)
 
 test("create_stub emits aliases as an indented YAML block list", function()
+  ---@param root string
   in_temp_vault(function(root)
     people.create_stub("F. J. Cherne", { aliases = { "Frank Cherne", "Cherne, F.J." } })
-    local c = read(root .. "/People/F. J. Cherne.md")
+    -- A missing stub would crash the c:find below anyway; assert names the cause.
+    local c = assert(read(root .. "/People/F. J. Cherne.md"))
     -- Two-space indent is required by the index parser (patterns.lua).
     assert_contains(c, 'aliases:\n  - "Frank Cherne"\n  - "Cherne, F.J."\n')
     -- aliases must sit directly after name:, before role:
@@ -194,7 +220,7 @@ test("emitted author YAML parses into frontmatter values and outlinks", function
   local entry = parser.parse_content(text, "Library/x.md", { mtime = { sec = 0 }, size = #text })
   assert_deep_eq(entry.frontmatter.authors, { "[[Rongbo Wang]]", "[[Sean O'Malley]]" })
 
-  local targets = {}
+  local targets = {} ---@type string[]
   for _, l in ipairs(entry.outlinks or {}) do
     targets[#targets + 1] = l.path
   end

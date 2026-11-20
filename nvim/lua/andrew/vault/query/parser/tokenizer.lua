@@ -64,7 +64,7 @@ end
 
 --- Tokenize a DQL query string into a flat list of tokens.
 ---@param src string  the raw query text
----@return table[]    list of tokens, always ending with an EOF token
+---@return table[]|nil list of tokens, always ending with an EOF token; nil on failure
 ---@return string|nil error message on failure
 function M.tokenize(src)
   local TK = M.TK

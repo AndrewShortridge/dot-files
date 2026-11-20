@@ -27,8 +27,9 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_core_floatterm_state_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
-local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
+local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
@@ -42,6 +43,7 @@ local function toggle()
   vim.wait(120)
 end
 
+---@return integer
 local function float_wins()
   local n = 0
   for _, w in ipairs(vim.api.nvim_list_wins()) do
@@ -52,8 +54,9 @@ local function float_wins()
   return n
 end
 
+---@return integer[]
 local function term_bufs()
-  local out = {}
+  local out = {} ---@type integer[]
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_valid(b) and vim.bo[b].filetype == "floating_terminal" then
       out[#out + 1] = b
@@ -62,6 +65,7 @@ local function term_bufs()
   return out
 end
 
+---@return integer?
 local function term_win()
   for _, w in ipairs(vim.api.nvim_list_wins()) do
     local b = vim.api.nvim_win_get_buf(w)
@@ -99,6 +103,7 @@ test("closing the float as a plain window still leaves toggle working on ONE pre
   toggle()
   local win = term_win()
   assert_true(win ~= nil, "terminal float must exist")
+  ---@cast win -nil
 
   -- Exactly what <C-w>c / <leader>wd / :q do: close the window without going
   -- through hide().
@@ -114,7 +119,8 @@ end)
 test("is_open() reflects the window, not a cached flag", function()
   cleanup()
   toggle()
-  local win = term_win()
+  -- nvim_win_close would raise on a missing window anyway; assert names the cause.
+  local win = assert(term_win())
   vim.api.nvim_win_close(win, true)
   vim.wait(80)
   -- Second toggle from the externally-closed state must OPEN (not hide).
@@ -130,8 +136,9 @@ test("a terminal whose job exited is dropped, so the next toggle is a fresh shel
   assert_true(first ~= nil, "terminal buffer expected")
 
   -- End the shell the way typing `exit` does.
-  local job = vim.b[first].terminal_job_id
+  local job = vim.b[first].terminal_job_id ---@type integer?
   assert_true(job ~= nil, "terminal buffer must carry a job id")
+  ---@cast job -nil
   vim.fn.jobstop(job)
   -- TermClose -> hide() + scheduled close(); give both a chance to run.
   vim.wait(1500, function()
@@ -150,8 +157,12 @@ end)
 
 test("send reaches a hidden-but-live terminal and warns when there is none", function()
   cleanup()
-  local notes = {}
+  local notes = {} ---@type string[]
   local orig = vim.notify
+  ---@param msg string
+  ---@param lvl integer|nil
+  ---@param o table|nil
+  ---@return nil
   vim.notify = function(msg, lvl, o)
     notes[#notes + 1] = tostring(msg)
     return orig(msg, lvl, o)
@@ -181,8 +192,12 @@ end)
 
 test("unknown subcommand warns, bare :FloatingTerminal toggles", function()
   cleanup()
-  local notes = {}
+  local notes = {} ---@type string[]
   local orig = vim.notify
+  ---@param msg string
+  ---@param lvl integer|nil
+  ---@param o table|nil
+  ---@return nil
   vim.notify = function(msg, lvl, o)
     notes[#notes + 1] = tostring(msg)
     return orig(msg, lvl, o)
@@ -205,19 +220,21 @@ test("<leader>tt, <C-/> and <C-_> are all mapped to the toggle", function()
   -- Under -u NONE mapleader is unset, so <leader> is the default backslash.
   local leader = vim.g.mapleader or "\\"
   local want = { [leader .. "tt"] = "n", ["<C-/>"] = "n", ["<C-_>"] = "n" }
-  local seen = {}
+  local seen = {} ---@type table<string, boolean>
   for _, m in ipairs(vim.api.nvim_get_keymap("n")) do
     if want[m.lhs] then
-      seen[m.lhs] = true
+      -- nvim_get_keymap always sets lhs; _meta/api_keysets_extra.lua marks it optional.
+      seen[m.lhs --[[@as string]]] = true
       assert_true(type(m.callback) == "function", m.lhs .. " must be a lua callback")
     end
   end
   for lhs in pairs(want) do
     assert_true(seen[lhs], lhs .. " is not mapped in normal mode")
   end
-  local tmodes = {}
+  local tmodes = {} ---@type table<string, boolean>
   for _, m in ipairs(vim.api.nvim_get_keymap("t")) do
-    tmodes[m.lhs] = true
+    -- nvim_get_keymap always sets lhs; _meta/api_keysets_extra.lua marks it optional.
+    tmodes[m.lhs --[[@as string]]] = true
   end
   assert_true(tmodes["<C-/>"], "<C-/> must also be mapped in terminal mode")
   assert_true(tmodes["<C-_>"], "<C-_> must also be mapped in terminal mode")

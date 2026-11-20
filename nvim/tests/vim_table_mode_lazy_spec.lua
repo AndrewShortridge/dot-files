@@ -22,11 +22,16 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/vim_table_mode_lazy_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
+---@module "andrew.plugins.vim-table-mode"
 local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/vim-table-mode.lua")
 
+---@param list? string[]
+---@param val string
+---@return boolean
 local function contains(list, val)
   for _, v in ipairs(list or {}) do
     if v == val then return true end

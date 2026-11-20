@@ -174,8 +174,7 @@ map("zE", "<Nop>", "Fold eliminate disabled (expr foldmethod)")
 map("zf", "<Nop>", "Fold create disabled (expr foldmethod)")
 map("zF", "<Nop>", "Fold create disabled (expr foldmethod)")
 map("<leader>ml", function()
-  local level = vim.fn.input("Fold level: ")
-  level = tonumber(level)
+  local level = tonumber(vim.fn.input("Fold level: "))
   if level then
     vim.opt_local.foldenable = true
     vim.opt_local.foldlevel = level
@@ -683,9 +682,10 @@ end, "Create callout")
 -- =============================================================================
 
 map("<leader>mS", function()
-  vim.opt_local.spell = not vim.opt_local.spell:get()
+  local is_spell_on = not vim.opt_local.spell:get()
+  vim.opt_local.spell = is_spell_on
   vim.notify(
-    "Spell checking " .. (vim.opt_local.spell:get() and "ON" or "OFF"),
+    "Spell checking " .. (is_spell_on and "ON" or "OFF"),
     vim.log.levels.INFO
   )
 end, "Toggle spell check")
@@ -740,6 +740,7 @@ vim.api.nvim_buf_create_user_command(0, "TableCreate", function(opts)
     vim.notify("Invalid dimensions: " .. args[1] .. " (expected CxR, e.g., 3x4)", vim.log.levels.ERROR)
     return
   end
+  ---@cast rows -nil parse_dimensions() returns both numbers or neither
 
   local headers = nil
   if args[2] then
@@ -766,6 +767,7 @@ map("<leader>Tc", function()
       vim.notify("Invalid dimensions: " .. dim .. " (expected CxR, e.g., 3x4)", vim.log.levels.ERROR)
       return
     end
+    ---@cast rows -nil parse_dimensions() returns both numbers or neither
 
     vim.ui.input({ prompt = "Headers (pipe-separated, or empty for defaults): " }, function(header_str)
       local headers = nil
@@ -851,6 +853,7 @@ map("<leader>Tdt", function()
     vim.notify("Not inside a table", vim.log.levels.WARN)
     return
   end
+  ---@cast end_row -nil find_table_bounds() returns both rows or neither
   vim.api.nvim_buf_set_lines(0, start_row - 1, end_row, false, {})
   vim.api.nvim_win_set_cursor(0, { math.min(start_row, vim.api.nvim_buf_line_count(0)), 0 })
   vim.notify("Deleted table (" .. (end_row - start_row + 1) .. " lines)", vim.log.levels.INFO)

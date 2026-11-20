@@ -530,7 +530,7 @@ end
 ---@param vault_path string vault root path
 ---@param on_done? fun(lines: string[], limit_reached: boolean) optional callback for async mode
 ---@return string[]|nil lines (sync mode only; nil in async mode)
----@return boolean limit_reached true if max_result_lines cap was hit (sync mode only)
+---@return boolean|nil limit_reached true if max_result_lines cap was hit (sync mode only; nil in async mode)
 function M.ripgrep_in_files(text_ast, file_paths, vault_path, on_done)
   if not text_ast then
     if on_done then on_done({}, false) return nil end

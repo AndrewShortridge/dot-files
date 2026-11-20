@@ -9,6 +9,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/collision_on_demand_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -17,6 +18,21 @@ local vi = require("andrew.vault.vault_index")
 
 print("\n=== Collision On-Demand Tests ===\n")
 
+---@alias CollisionOnDemandType "alias-alias"|"name-alias"|"basename"
+
+-- One record of `VaultIndex._collisions` (annotated there as a bare `table[]`),
+-- as vault_index_collisions.detect builds it.
+---@class CollisionOnDemandRecord
+---@field type CollisionOnDemandType
+---@field key string
+---@field files? string[]        alias-alias and basename records
+---@field name_files? string[]   name-alias records
+---@field alias_files? string[]  name-alias records
+---@field message string
+
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -26,6 +42,10 @@ local function write_file(dir, rel, lines)
   f:close()
 end
 
+---@param list? CollisionOnDemandRecord[]
+---@param ctype CollisionOnDemandType
+---@param key string
+---@return CollisionOnDemandRecord?
 local function find_collision(list, ctype, key)
   for _, c in ipairs(list or {}) do
     if c.type == ctype and c.key == key then return c end
@@ -53,6 +73,7 @@ test("show_collisions recomputes and reports a basename collision", function()
 
   local hit = find_collision(idx._collisions, "basename", "dup")
   assert_true(hit ~= nil, "basename collision on 'dup' reported on demand")
+  ---@cast hit -nil
   assert_eq(#hit.files, 2, "two files share the 'dup' basename")
 end)
 
@@ -71,6 +92,7 @@ test("show_collisions reports an alias-alias collision on demand", function()
 
   local hit = find_collision(idx._collisions, "alias-alias", "shared")
   assert_true(hit ~= nil, "alias-alias collision on 'shared' reported on demand")
+  ---@cast hit -nil
   assert_eq(#hit.files, 2, "two files define alias 'shared'")
 end)
 
@@ -100,6 +122,7 @@ test("on-demand recompute reflects collision added by a small incremental update
   pcall(function() idx:show_collisions() end)
   local hit = find_collision(idx._collisions, "basename", "note")
   assert_true(hit ~= nil, "new 'note' basename collision surfaced on demand")
+  ---@cast hit -nil
   assert_eq(#hit.files, 2, "both note.md files reported")
 end)
 

@@ -15,6 +15,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fix_fortran_highlight_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_false, _H.assert_nil
@@ -30,6 +31,7 @@ local NS = H.namespace()
 --- A loaded, named Fortran buffer holding `lines`.
 ---@param lines string[]
 ---@param name string|nil drives scan.is_fixed for fixed-form tests
+---@return integer buf
 local function fbuf(lines, name)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -40,12 +42,22 @@ local function fbuf(lines, name)
   return buf
 end
 
+---@class FixFortranHighlightMark  one extmark of the highlight namespace, flattened
+---@field row integer
+---@field col integer
+---@field group? string
+---@field priority? integer
+---@field text string
+
 --- Every mark as { row0, col0, end_col, group, text }.
+---@param buf integer
+---@return FixFortranHighlightMark[]
 local function marks(buf)
-  local out = {}
+  local out = {} ---@type FixFortranHighlightMark[]
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, NS, 0, -1, { details = true })) do
-    local row, col, d = m[2], m[3], m[4]
+    -- assert: `details = true` always returns m[4]; d.hl_group below would crash without it.
+    local row, col, d = m[2], m[3], assert(m[4])
     out[#out + 1] = {
       row = row,
       col = col,
@@ -58,6 +70,10 @@ local function marks(buf)
 end
 
 --- Group painted on the first occurrence of `text`, or nil.
+---@param buf integer
+---@param text string
+---@return string|nil group
+---@return FixFortranHighlightMark|nil mark
 local function group_of(buf, text)
   for _, m in ipairs(marks(buf)) do
     if m.text == text then
@@ -188,6 +204,7 @@ test("paint sits above tree-sitter's priority 100", function()
   H.paint(buf, 0, 15)
   local _, m = group_of(buf, "MPI_INIT")
   assert_true(m ~= nil, "no MPI_INIT mark")
+  ---@cast m -nil
   assert_true(m.priority > 100, "priority must beat tree-sitter, got " .. tostring(m.priority))
   assert_eq(m.priority, H.PRIORITY)
   vim.api.nvim_buf_delete(buf, { force = true })
@@ -211,7 +228,7 @@ end)
 test("OpenMP directive lines are painted, END is not", function()
   local buf = fbuf(FREE, "fixhl_omp.f90")
   H.paint(buf, 0, 15)
-  local found = {}
+  local found = {} ---@type table<string, true>
   for _, m in ipairs(marks(buf)) do
     if m.row == 10 or m.row == 12 then
       assert_eq(m.group, "FortranOMPKeyword", "directive token in the wrong group: " .. m.text)
@@ -261,7 +278,8 @@ test("fixed form: a C$OMP sentinel in column 1 is a directive", function()
   H.paint(buf, 0, #FIXED)
   local g, m = group_of(buf, "C$")
   assert_eq(g, "FortranOMPKeyword", "the fixed-form sentinel was not coloured")
-  assert_eq(m.row, 5)
+  -- assert: m.row would crash on a nil mark anyway; this names the cause.
+  assert_eq(assert(m, "no C$ mark").row, 5)
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
 
@@ -345,6 +363,7 @@ test("with a parser available, TS comment ranges are honoured", function()
   parser:parse(true)
   local skip = H.ts_skip(buf, 0, 15)
   assert_true(skip ~= nil, "ts_skip answered nil with a parser present")
+  ---@cast skip -nil
   assert_true(skip[8] ~= nil, "the whole-line comment was not reported as a skip range")
   H.paint(buf, 0, 15)
   for _, m in ipairs(marks(buf)) do
@@ -465,7 +484,7 @@ test("a viewport-sized paint on a 5000-line buffer stays well under 5ms", functi
     "    PRINT *, size(x), omp_get_thread_num(), present(n)",
     "  END SUBROUTINE sub",
   }
-  local lines = {}
+  local lines = {} ---@type string[]
   while #lines < 5000 do
     for _, l in ipairs(unit) do
       lines[#lines + 1] = l

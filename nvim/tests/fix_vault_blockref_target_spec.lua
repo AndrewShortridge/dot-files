@@ -11,6 +11,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fix_vault_blockref_target_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -19,11 +20,17 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;"
 
 local link_utils = require("andrew.vault.link_utils")
 
+---@alias BlockrefTargetParse { name: string, heading: string|nil, block_id: string|nil, alias: string|nil }
+
+---@param inner string  the text between [[ and ]]
+---@return BlockrefTargetParse
 local function parsed(inner)
   local r = link_utils.parse_target(inner)
   return { name = r.name, heading = r.heading, block_id = r.block_id, alias = r.alias }
 end
 
+---@param inner string
+---@param want { name: string?, heading: string?, block_id: string?, alias: string? }
 local function check(inner, want)
   local got = parsed(inner)
   for _, k in ipairs({ "name", "heading", "block_id", "alias" }) do

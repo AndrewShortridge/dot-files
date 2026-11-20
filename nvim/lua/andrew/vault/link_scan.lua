@@ -78,8 +78,16 @@ local _q_code_span = parse_q("markdown_inline", "(code_span) @code")
 local _cache = {}
 
 --- Per-buffer dirty accumulator fed by our private on_bytes attach.
---- `full` forces a whole-buffer rescan (cold attach or unsafe line math).
----@type table<number, { dmin: number, dmax: number, delta: number, full: boolean }>
+--- dirty_clean() documents `edit_row` and `edit_pre_end`.
+---@class CodeExclDirty
+---@field dmin number first pending dirty row, post-edit (math.huge when clean)
+---@field dmax number last pending dirty row, post-edit (-1 when clean)
+---@field delta number net line-count change of the pending edits
+---@field full boolean forces a whole-buffer rescan (cold attach or unsafe line math)
+---@field edit_row number minimum pre-edit start row of the pending edits (math.huge when clean)
+---@field edit_pre_end number maximum pre-edit end row (exclusive) of the pending edits (-1 when clean)
+
+---@type table<number, CodeExclDirty>
 local _dirty = {}
 
 --- Reset a buffer's dirty accumulator to "clean" (nothing pending).
@@ -108,7 +116,7 @@ local function ensure_attach(bufnr)
   _dirty[bufnr].full = true
 
   vim.api.nvim_buf_attach(bufnr, false, {
-    on_bytes = function(_, buf, _tick, start_row, _, _, old_end_row, _, _, new_end_row, _, _)
+    on_bytes = function(_, buf, _, start_row, _, _, old_end_row, _, _, new_end_row, _, _)
       local d = _dirty[buf]
       if not d then return true end -- cache cleared -> detach
 
@@ -215,7 +223,8 @@ local function capture_span_ranges_fallback(bufnr, lo, hi)
   local out = {}
   local iok, iparser = pcall(vim.treesitter.get_parser, bufnr, "markdown_inline")
   if iok and iparser then
-    local itrees = iparser:parse()
+    -- parse() without a callback is synchronous and always returns the trees
+    local itrees = iparser:parse() --[[@as table<integer, TSTree>]]
     for _, itree in ipairs(itrees) do
       local iroot = itree:root()
       if _q_code_span then
@@ -816,7 +825,7 @@ function M.get_link_ranges(line)
   local ranges = {}
 
   -- Wikilinks: [[...]] and ![[...]]
-  pat.scan_all_links(line, function(_inner, start_col, end_col, _is_embed)
+  pat.scan_all_links(line, function(_, start_col, end_col)
     ranges[#ranges + 1] = { start_col = start_col - 1, end_col = end_col }
   end)
 

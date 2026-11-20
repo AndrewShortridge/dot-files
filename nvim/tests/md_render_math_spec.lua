@@ -45,19 +45,21 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/md_render_math_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 -- md-render runs `redraw!`; with print() output in the message area that has
 -- crashed a headless Neovim. Results go straight to stdout.
-_G.print = function(...)
-  local parts = {}
+---@param ... any
+local function print_to_stdout(...)
+  local parts = {} ---@type string[]
   for index = 1, select("#", ...) do
     parts[#parts + 1] = tostring((select(index, ...)))
   end
   io.stdout:write(table.concat(parts, "\t") .. "\n")
 end
+_G.print = print_to_stdout
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 vim.opt.runtimepath:append(vim.fn.stdpath("data") .. "/lazy/md-render.nvim")
@@ -68,7 +70,8 @@ vim.cmd("filetype on")
 vim.o.swapfile = false
 vim.o.termguicolors = true
 
-local sent_to_terminal = {}
+local sent_to_terminal = {} ---@type string[]
+---@param data string
 ---@diagnostic disable-next-line: duplicate-set-field
 vim.api.nvim_ui_send = function(data)
   sent_to_terminal[#sent_to_terminal + 1] = data
@@ -99,8 +102,30 @@ set_terminal_can_scale_text(true)
 
 local STAND_IN = "▓"
 
--- Answers per equation; `look_answers["<cell_width>x<cell_height>"]` holds
--- answers for one look only, as the real module keys pictures by look.
+--- What a lookup was asked, as `fake_tex.lookup` records it.
+---@class MdRenderMathSpecLookup
+---@field kind "inline"|"display"
+---@field tex string
+---@field look MdRenderMathLook
+
+--- A `tex.request` call, as `fake_tex.request` records it.
+---@class MdRenderMathSpecRequest
+---@field equations MdRenderMathEquation[]
+---@field look MdRenderMathLook
+---@field on_settled fun()
+
+--- Stand-in for andrew.utils.md_render_math_tex (Contract v2); answers are
+--- keyed `"<kind>\0<tex>"`. `look_answers["<cell_width>x<cell_height>"]` holds
+--- answers for one look only, as the real module keys pictures by look.
+---@class MdRenderMathSpecFakeTex
+---@field answers table<string, MdRenderMathPicture|false>
+---@field look_answers table<string, table<string, MdRenderMathPicture|false>> by `"<cell_width>x<cell_height>"`
+---@field failures table<string, string> TeX's message per equation key
+---@field lookups MdRenderMathSpecLookup[]
+---@field requests MdRenderMathSpecRequest[]
+---@field forgotten string[] TeX of each `forget`
+---@field retries integer
+---@field is_available_answer boolean
 local fake_tex = {
   answers = {},
   look_answers = {},
@@ -125,8 +150,8 @@ local function has_balanced_braces(tex)
   return depth == 0
 end
 
----@param look table
----@return table answers for exactly this look
+---@param look MdRenderMathLook
+---@return table<string, MdRenderMathPicture|false> answers for exactly this look
 local function answers_of_look(look)
   local key = look.cell_width .. "x" .. look.cell_height
   fake_tex.look_answers[key] = fake_tex.look_answers[key] or {}
@@ -134,9 +159,13 @@ local function answers_of_look(look)
 end
 
 function fake_tex.setup() end
+---@return boolean
 function fake_tex.is_available()
   return fake_tex.is_available_answer
 end
+---@param equation MdRenderMathEquation
+---@param look MdRenderMathLook
+---@return MdRenderMathPicture|false|nil
 function fake_tex.lookup(equation, look)
   fake_tex.lookups[#fake_tex.lookups + 1] =
     { kind = equation.kind, tex = equation.tex, look = look }
@@ -144,25 +173,32 @@ function fake_tex.lookup(equation, look)
   if not has_balanced_braces(equation.tex) then
     return false
   end
-  local key = equation.kind .. "\0" .. equation.tex
+  local key = equation.kind .. "\0" .. equation.tex ---@type string
   local for_look = answers_of_look(look)[key]
   if for_look ~= nil then
     return for_look
   end
   return fake_tex.answers[key]
 end
+---@param equations MdRenderMathEquation[]
+---@param look MdRenderMathLook
+---@param on_settled fun()
 function fake_tex.request(equations, look, on_settled)
   fake_tex.requests[#fake_tex.requests + 1] =
     { equations = vim.deepcopy(equations), look = look, on_settled = on_settled }
 end
+---@param equation MdRenderMathEquation
+---@return string?
 function fake_tex.failure_of(equation)
   if not has_balanced_braces(equation.tex) then
     return "unbalanced braces"
   end
   return fake_tex.failures[equation.kind .. "\0" .. equation.tex]
 end
+---@param equation MdRenderMathEquation
+---@param look MdRenderMathLook
 function fake_tex.forget(equation, look)
-  local key = equation.kind .. "\0" .. equation.tex
+  local key = equation.kind .. "\0" .. equation.tex ---@type string
   fake_tex.forgotten[#fake_tex.forgotten + 1] = equation.tex
   fake_tex.answers[key] = nil
   answers_of_look(look)[key] = nil
@@ -170,6 +206,7 @@ end
 function fake_tex.retry()
   fake_tex.retries = fake_tex.retries + 1
 end
+---@return { is_available: boolean, reason: string?, pdftex: string, cache_directory: string }
 function fake_tex.status()
   return {
     is_available = fake_tex.is_available_answer,
@@ -179,6 +216,24 @@ function fake_tex.status()
   }
 end
 
+---@class MdRenderMathSpecKittyCall
+---@field picture MdRenderMathPicture
+---@field box? { columns: integer, rows: integer }
+---@field foreground string
+
+---@class MdRenderMathSpecKittyMark
+---@field owner integer
+---@field groups table<string, true>
+
+--- Stand-in for andrew.utils.md_render_math_kitty.
+---@class MdRenderMathSpecFakeKitty
+---@field MAX_CELLS integer
+---@field supported boolean
+---@field cell_width integer? nil: no cell size known
+---@field cell_height integer
+---@field calls MdRenderMathSpecKittyCall[]
+---@field marks MdRenderMathSpecKittyMark[]
+---@field missing table<string, true> picture paths whose file is gone
 local fake_kitty = {
   MAX_CELLS = 297,
   supported = true,
@@ -189,12 +244,16 @@ local fake_kitty = {
   missing = {},
 }
 function fake_kitty.setup() end
+---@return boolean
+---@return string? reason
 function fake_kitty.is_supported()
   if fake_kitty.supported then
     return true
   end
   return false, "TERM is not xterm-kitty"
 end
+---@return integer? cell_width
+---@return integer? cell_height
 function fake_kitty.cell_size()
   if not fake_kitty.cell_width then
     return nil
@@ -203,13 +262,22 @@ function fake_kitty.cell_size()
 end
 
 --- Group of a stand-in picture -> its foreground.
-local picture_foreground = {}
+local picture_foreground = {} ---@type table<string, integer>
+
+---@class MdRenderMathSpecImage
+---@field rows string[] handed out, shared
+---@field group string
+---@field copy string[] the rows as made, to see a caller change them
+
+---@class MdRenderMathSpecImages
+---@field [integer] string image keys, in the order made
+---@field [string] MdRenderMathSpecImage by image key
 
 --- As the real module: one image, so one group, per picture, box and colour,
 --- and the rows handed out are shared (callers must not change them).
-local images = {}
+local images = {} ---@type MdRenderMathSpecImages
 
----@param picture table
+---@param picture MdRenderMathPicture
 ---@param box? { columns: integer, rows: integer }
 ---@param foreground string
 ---@return string
@@ -219,6 +287,11 @@ local function image_key(picture, box, foreground)
   return ("%s %dx%d %s"):format(picture.path, columns, row_count, foreground)
 end
 
+---@param picture MdRenderMathPicture
+---@param box? { columns: integer, rows: integer }
+---@param foreground string
+---@return string[]? rows
+---@return string highlight_group (or why there are no rows)
 function fake_kitty.cells(picture, box, foreground)
   assert(type(foreground) == "string" and foreground:find("^%x%x%x%x%x%x$"), "a foreground")
   fake_kitty.calls[#fake_kitty.calls + 1] =
@@ -238,7 +311,7 @@ function fake_kitty.cells(picture, box, foreground)
     local group = "MathSpecPicture" .. #images
     picture_foreground[group] = 0x200000 + #images
     vim.api.nvim_set_hl(0, group, { fg = picture_foreground[group], sp = 1, nocombine = true })
-    local rows = {}
+    local rows = {} ---@type string[]
     for _ = 1, row_count do
       rows[#rows + 1] = string.rep(STAND_IN, columns)
     end
@@ -250,24 +323,30 @@ function fake_kitty.cells(picture, box, foreground)
 end
 
 --- The group the stand-in gave a picture shown unboxed in Special's colour.
----@param picture table
+---@param picture MdRenderMathPicture
 ---@return string?
 local function group_of_picture(picture)
   local image = images[image_key(picture, nil, "3366CC")]
   return image and image.group
 end
+---@param owner integer
+---@param groups table<string, true>
 function fake_kitty.mark(owner, groups)
   fake_kitty.marks[#fake_kitty.marks + 1] = { owner = owner, groups = vim.deepcopy(groups) }
 end
 
 local fake_text = { inline_calls = 0, display_calls = 0 }
+---@param tex string
+---@return string
 function fake_text.inline(tex)
   fake_text.inline_calls = fake_text.inline_calls + 1
   return "«" .. tex .. "»"
 end
+---@param tex string
+---@return string[]
 function fake_text.display(tex)
   fake_text.display_calls = fake_text.display_calls + 1
-  local rows = {}
+  local rows = {} ---@type string[]
   for row in (tex .. "\n"):gmatch("([^\n]*)\n") do
     rows[#rows + 1] = "«" .. row .. "»"
   end
@@ -282,6 +361,7 @@ local picture_count = 0
 ---@param columns integer
 ---@param rows? integer
 ---@param scale? number
+---@return MdRenderMathPicture
 local function new_picture(columns, rows, scale)
   picture_count = picture_count + 1
   return {
@@ -292,9 +372,9 @@ local function new_picture(columns, rows, scale)
   }
 end
 
----@param kind string
+---@param kind "inline"|"display"
 ---@param tex string
----@param answer table|false|nil
+---@param answer_value MdRenderMathPicture|false|nil
 local function answer(kind, tex, answer_value)
   fake_tex.answers[kind .. "\0" .. tex] = answer_value
 end
@@ -308,11 +388,33 @@ end
 -- Helpers
 -- -----------------------------------------------------------------------------
 
+--- `opts` of md-render.preview's build_content.
+---@alias MdRenderMathSpecBuildOpts { max_width?: integer, fold_state?: table<integer, boolean>, expand_state?: table<integer, boolean>, autolinks?: MdRender.Autolink[] }
+
+--- The parts of md-render.preview this spec uses: `require("md-render")`
+--- fills in `preview` through a metatable lua_ls does not follow, and the
+--- module declares no class of its own.
+---@class MdRenderMathSpecPreview
+---@field build_content fun(lines: string[], opts?: MdRenderMathSpecBuildOpts): MdRender.Content
+---@field _sessions table<integer, MdRender.Session> live sessions by view buffer
+---@field toggle fun(opts?: { max_width?: integer })
+---@field split fun(opts?: { mods?: table, max_width?: integer })
+---@field rebuild_visible fun()
+
+--- An extmark from `nvim_buf_get_extmarks(..., { details = true })`: unlike
+--- `vim.api.keyset.get_extmark_item`, its details are always there.
+---@class MdRenderMathSpecExtmark
+---@field [1] integer extmark_id
+---@field [2] integer row
+---@field [3] integer col
+---@field [4] vim.api.keyset.extmark_details
+
+---@type MdRenderMathSpecPreview
 local preview = require("md-render").preview
 local MAX_WIDTH = 60
 
 ---@param lines string[]
----@return table content
+---@return MdRender.Content content
 local function build(lines)
   return preview.build_content(lines, { max_width = MAX_WIDTH })
 end
@@ -320,7 +422,7 @@ end
 --- A build under `vim.g.md_render_math = setting`.
 ---@param setting "off"|"text"
 ---@param lines string[]
----@return table content
+---@return MdRender.Content content
 local function build_as(setting, lines)
   vim.g.md_render_math = setting
   local content = build(lines)
@@ -329,11 +431,11 @@ local function build_as(setting, lines)
 end
 
 --- Highlight groups of a view line (1-based), in the content.
----@param content table
+---@param content MdRender.Content
 ---@param line_number integer
----@return table[]
+---@return MdRender.Highlight.Group[]
 local function groups_on(content, line_number)
-  local groups = {}
+  local groups = {} ---@type MdRender.Highlight.Group[]
   for _, entry in ipairs(content.highlights) do
     if entry.line == line_number - 1 then
       vim.list_extend(groups, entry.groups)
@@ -342,7 +444,7 @@ local function groups_on(content, line_number)
   return groups
 end
 
----@param content table
+---@param content MdRender.Content
 ---@param needle string plain text
 ---@return integer? line_number
 ---@return string? line
@@ -354,28 +456,46 @@ local function find_line(content, needle)
   end
 end
 
----@param groups table[]
+---@param groups MdRender.Highlight.Group[]
 ---@param name string
----@return table[]
+---@return MdRender.Highlight.Group[]
 local function groups_named(groups, name)
+  ---@param group MdRender.Highlight.Group
   return vim.tbl_filter(function(group)
     return group.hl == name
   end, groups)
 end
 
 --- What a group covers on its line.
+---@param line string
+---@param group MdRender.Highlight.Group
+---@return string
 local function covered(line, group)
   local end_col = group.end_col == -1 and #line or group.end_col
   return line:sub(group.col + 1, end_col)
 end
 
+---@param content MdRender.Content
+---@param line_number integer
+---@return MdRender.Highlight.Group[]
 local function picture_groups_on(content, line_number)
+  ---@param group MdRender.Highlight.Group
   return vim.tbl_filter(function(group)
     return group.hl:find("^MathSpecPicture") ~= nil
   end, groups_on(content, line_number))
 end
 
+---@class MdRenderMathSpecView
+---@field lines string[]
+---@field highlights MdRender.LineHighlight[]
+---@field links MdRender.LinkMetadata[]
+---@field source_line_map integer[]
+---@field anchors table<string, integer>
+---@field text_placements MdRender.TextPlacement[]
+
 --- Content reduced to what the view shows, for comparing two builds.
+---@param content MdRender.Content
+---@return MdRenderMathSpecView
 local function view_of(content)
   return {
     lines = content.lines,
@@ -387,7 +507,8 @@ local function view_of(content)
   }
 end
 
----@param content table
+---@param content MdRender.Content
+---@param label string
 local function assert_line_map_whole(content, label)
   assert_eq(#content.source_line_map, #content.lines, label .. ": one source line per view line")
   for index = 2, #content.source_line_map do
@@ -398,6 +519,7 @@ local function assert_line_map_whole(content, label)
   end
 end
 
+---@param milliseconds? integer
 local function settle(milliseconds)
   vim.wait(milliseconds or 50, function()
     return false
@@ -550,6 +672,11 @@ test("inline in a callout, title and body", function()
     body and body:find("│ Body " .. STAND_IN:rep(4) .. " text.", 1, true),
     "body: " .. tostring(body)
   )
+  -- Both found: the two assertions above fail the test otherwise.
+  ---@cast title_number -nil
+  ---@cast title -nil
+  ---@cast body_number -nil
+  ---@cast body -nil
   assert_eq(
     covered(title, picture_groups_on(content, title_number)[1]),
     STAND_IN:rep(3),
@@ -567,6 +694,8 @@ test("inline in a table cell: the column is as wide as the picture", function()
   local content = build({ "| A | B |", "|---|---|", "| x | $s_{cell}$ |" })
   local row_number, row = find_line(content, STAND_IN)
   assert_true(row ~= nil, "a table row holds the picture")
+  ---@cast row_number -nil
+  ---@cast row -nil
   assert_eq(
     covered(row, picture_groups_on(content, row_number)[1]),
     STAND_IN:rep(8),
@@ -624,6 +753,7 @@ test(
     local is_checked, failure = pcall(function()
       for _, source in ipairs(sources) do
         local content = build(source)
+        ---@type integer, table<string, true>
         local pictures, placed = 0, {}
         for line_number, line in ipairs(content.lines) do
           for _, group in ipairs(picture_groups_on(content, line_number)) do
@@ -637,6 +767,8 @@ test(
         end
         assert_eq(pictures, 2, source[1] .. ": pictures:")
         local _, first_row = find_line(content, STAND_IN)
+        -- Two pictures were counted above: there is a row with their cells.
+        ---@cast first_row -nil
         assert_true(not first_row:find("width", 1, true), source[1] .. ": wrapped")
       end
     end)
@@ -654,6 +786,8 @@ test("several equations on one line, two of them adjacent", function()
   local line = content.lines[1]
   assert_eq(line, "  A ▓ B ▓▓ C ▓▓▓▓▓▓▓ end", "view line:")
   local groups = picture_groups_on(content, 1)
+  ---@param a MdRender.Highlight.Group
+  ---@param b MdRender.Highlight.Group
   table.sort(groups, function(a, b)
     return a.col < b.col
   end)
@@ -726,6 +860,9 @@ test("a block inside a list item keeps the item's indent", function()
   answer("display", "x+y", new_picture(4, 1))
   local content = build({ "- Item", "  $$", "  x+y", "  $$", "- Next" })
   local number, line = find_line(content, STAND_IN)
+  -- No picture row: the test fails on the next line anyway.
+  ---@cast number -nil
+  ---@cast line -nil
   assert_true(vim.startswith(line, "    "), "indented under the item: " .. line)
   assert_eq(covered(line, groups_on(content, number)[1]), STAND_IN:rep(4), "picture bytes:")
   assert_true(find_line(content, "Next") ~= nil, "the list goes on")
@@ -735,6 +872,9 @@ test("a block inside a callout: rows carry the bar and the callout colours", fun
   answer("display", "\\dot{\\psi}", new_picture(6, 2))
   local content = build({ "> [!note] T", "> $$", "> \\dot{\\psi}", "> $$", "", "After." })
   local number, line = find_line(content, STAND_IN)
+  -- No picture row: the test fails on the next line anyway.
+  ---@cast number -nil
+  ---@cast line -nil
   assert_true(vim.startswith(line, "  │ "), "starts with the bar: " .. line)
   assert_true(content.lines[number + 1]:find(STAND_IN:rep(6), 1, true) ~= nil, "second row")
   assert_true(not content.lines[number + 2]:find("psi", 1, true), "TeX not shown")
@@ -824,6 +964,8 @@ test("a picture not made yet shows as text under MdRenderMath, inline and block"
   local content = build({ "Wait $pend_1$ here.", "", "$$", "pend_2", "$$" })
   local line_number, line = find_line(content, "«pend_1»")
   assert_true(line ~= nil, "inline text")
+  ---@cast line_number -nil
+  ---@cast line -nil
   assert_eq(
     covered(line, groups_named(groups_on(content, line_number), "MdRenderMath")[1]),
     "«pend_1»",
@@ -831,6 +973,8 @@ test("a picture not made yet shows as text under MdRenderMath, inline and block"
   )
   local block_number, block = find_line(content, "«pend_2»")
   assert_true(block ~= nil, "block text")
+  ---@cast block_number -nil
+  ---@cast block -nil
   assert_eq(covered(block, groups_on(content, block_number)[1]), "«pend_2»", "block highlight:")
   assert_true(
     block:find("^%s+«") ~= nil and #block:match("^%s*") > 2,
@@ -1009,6 +1153,7 @@ test("TeX and its text are not spell-checked: an extmark with spell = false over
         math_ranges = math_ranges + 1
         local line_text = content.lines[entry.line + 1]
         local end_col = group.end_col == -1 and #line_text or group.end_col
+        ---@param mark MdRenderMathSpecExtmark
         local is_unchecked = vim.iter(marks):any(function(mark)
           return mark[2] == entry.line
             and mark[3] == group.col
@@ -1029,8 +1174,12 @@ end)
 -- -----------------------------------------------------------------------------
 
 --- Builds per view: md-render passes a view's `opts` to every build of it.
+---@type table<table, integer>
 local builds_of = setmetatable({}, { __mode = "k" })
 local counted_build_content = preview.build_content
+---@param lines string[]
+---@param opts? MdRenderMathSpecBuildOpts
+---@return MdRender.Content
 preview.build_content = function(lines, opts)
   if opts then
     builds_of[opts] = (builds_of[opts] or 0) + 1
@@ -1044,6 +1193,9 @@ local function builds_of_view(view_bufnr)
   return builds_of[preview._sessions[view_bufnr].opts] or 0
 end
 
+---@param lines string[]
+---@return string note
+---@return integer bufnr
 local function open_note(lines)
   vim.cmd("silent! only")
   local note = vim.fn.tempname() .. ".md"
@@ -1052,6 +1204,7 @@ local function open_note(lines)
   return note, vim.api.nvim_get_current_buf()
 end
 
+---@param note string
 local function close_everything(note)
   vim.cmd("silent! only")
   vim.cmd("silent! enew!")
@@ -1060,7 +1213,7 @@ local function close_everything(note)
 end
 
 --- Give the source of a view new lines and rebuild the view.
----@param session table
+---@param session MdRender.Session
 ---@param source_bufnr integer
 ---@param lines string[]
 local function rebuild_with(session, source_bufnr, lines)
@@ -1069,14 +1222,17 @@ local function rebuild_with(session, source_bufnr, lines)
   session:rebuild()
 end
 
+---@param bufnr integer
+---@return string
 local function view_text(bufnr)
   return table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
 end
 
----@param request table
+---@param request MdRenderMathSpecRequest
 ---@return string
 local function texs_of(request)
   return table.concat(
+    ---@param equation MdRenderMathEquation
     vim.tbl_map(function(equation)
       return equation.tex
     end, request.equations),
@@ -1141,9 +1297,10 @@ test("failed TeX and pictures that exist are not requested", function()
   assert_eq(#fake_tex.requests, 0, "no request:")
 end)
 
----@param request table
+---@param request MdRenderMathSpecRequest
 ---@return integer[] the numbers in the TeX `<name>_<number>`
 local function numbers_of(request)
+  ---@param equation MdRenderMathEquation
   return vim.tbl_map(function(equation)
     return tonumber(equation.tex:match("_(%d+)$"))
   end, request.equations)
@@ -1154,7 +1311,7 @@ end
 ---@param except? { from: integer, to: integer }
 ---@return integer[]
 local function numbers(from, to, except)
-  local list = {}
+  local list = {} ---@type integer[]
   for number = from, to do
     if not (except and number >= except.from and number <= except.to) then
       list[#list + 1] = number
@@ -1167,7 +1324,7 @@ end
 ---@param count integer
 ---@return string[] as many list items, each with the equation `<name>_<number>`
 local function numbered_items(name, count)
-  local source = {}
+  local source = {} ---@type string[]
   for index = 1, count do
     source[index] = ("- Item $%s_%d$ here"):format(name, index)
   end
@@ -1322,6 +1479,7 @@ end)
 ---@type string?
 local reported_mode
 local get_mode = vim.api.nvim_get_mode
+---@return vim.api.keyset.get_mode
 ---@diagnostic disable-next-line: duplicate-set-field
 vim.api.nvim_get_mode = function()
   if reported_mode then
@@ -1485,11 +1643,11 @@ test(
     settle(50)
     -- The colour set by a `ColorScheme` autocmd made after the adapter's
     -- (a plugin loaded later): seen.
-    local later = vim.api.nvim_create_autocmd("ColorScheme", {
+    local later = assert(vim.api.nvim_create_autocmd("ColorScheme", {
       callback = function()
         vim.cmd("hi Special guifg=#00aa00")
       end,
-    })
+    }))
     before = builds_of_view(view_bufnr)
     vim.api.nvim_exec_autocmds("ColorScheme", {})
     settle(50)
@@ -1529,6 +1687,8 @@ test(
     local note = open_note({ "Environment $env_1$ here." })
     preview.toggle()
     local view_bufnr = vim.api.nvim_get_current_buf()
+    ---@param change fun()
+    ---@return integer
     local function rebuilds_after(change)
       local before = builds_of_view(view_bufnr)
       hidden_session.dirty = false
@@ -1634,13 +1794,14 @@ test("split with a source edit in between", function()
   answer("inline", "split_1", new_picture(2))
   local note, source_bufnr = open_note({ "Split $split_1$ text.", "", "Second." })
   preview.split({ mods = { vertical = true } })
-  local view_window
+  local view_window ---@type integer?
   for _, window in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     if vim.b[vim.api.nvim_win_get_buf(window)].md_render then
       view_window = window
     end
   end
   assert_true(view_window ~= nil, "a view window")
+  ---@cast view_window -nil
   local view_bufnr = vim.api.nvim_win_get_buf(view_window)
   assert_true(view_text(view_bufnr):find(STAND_IN:rep(2), 1, true) ~= nil, "picture in the split")
   vim.api.nvim_buf_set_lines(source_bufnr, 2, 3, false, { "Second with $split_2$." })
@@ -1668,12 +1829,15 @@ end)
 
 --- The extmarks of stand-in pictures in a buffer, whatever their namespace.
 ---@param bufnr integer
----@return table[] marks with details
+---@return MdRenderMathSpecExtmark[] marks with details
 local function picture_marks(bufnr)
-  local marks = {}
+  local marks = {} ---@type MdRenderMathSpecExtmark[]
   for _, namespace in pairs(vim.api.nvim_get_namespaces()) do
+    -- Asked with `details = true`: every item has its details.
     for _, mark in
-      ipairs(vim.api.nvim_buf_get_extmarks(bufnr, namespace, 0, -1, { details = true }))
+      ipairs(
+        vim.api.nvim_buf_get_extmarks(bufnr, namespace, 0, -1, { details = true }) --[[@as MdRenderMathSpecExtmark[] ]]
+      )
     do
       if mark[4].hl_group and mark[4].hl_group:find("^MathSpecPicture") then
         marks[#marks + 1] = mark
@@ -1700,6 +1864,7 @@ test(
   "on screen the picture's colour is the cell's, in every container and on the cursor line",
   function()
     set_terminal_can_scale_text(false)
+    ---@type table<string, { tex: string, columns: integer, rows?: integer, kind?: "inline"|"display" }>
     local containers = {
       paragraph = { tex = "grid_p", columns = 3 },
       bold = { tex = "grid_b", columns = 2 },
@@ -1712,6 +1877,7 @@ test(
       block = { tex = "grid_d", columns = 6, rows = 2, kind = "display" },
       callout_block = { tex = "grid_cd", columns = 4, rows = 2, kind = "display" },
     }
+    ---@type table<string, MdRenderMathPicture>, table<string, string>
     local picture_of_container, group_of = {}, {}
     for name, container in pairs(containers) do
       local picture = new_picture(container.columns, container.rows)
@@ -1752,13 +1918,14 @@ test(
     local checked = 0
     for name, group in pairs(group_of) do
       -- The picture's first cell: where the extmark of its group starts.
-      local found
+      local found ---@type { line_number: integer, byte: integer }?
       for _, mark in ipairs(picture_marks(view_bufnr)) do
         if not found and mark[4].hl_group == group then
           found = { line_number = mark[2] + 1, byte = mark[3] }
         end
       end
       assert_true(found ~= nil, name .. ": picture in the view")
+      ---@cast found -nil
       for _, on_cursor_line in ipairs({ false, true }) do
         vim.api.nvim_win_set_cursor(window, { on_cursor_line and found.line_number or 1, 0 })
         if not on_cursor_line and found.line_number == 1 then
@@ -1791,7 +1958,7 @@ test(
 -- -----------------------------------------------------------------------------
 
 ---@param owner integer
----@return table? groups of the last mark of `owner`
+---@return table<string, true>? groups of the last mark of `owner`
 local function last_mark_of(owner)
   for index = #fake_kitty.marks, 1, -1 do
     if fake_kitty.marks[index].owner == owner then
@@ -1803,6 +1970,7 @@ end
 ---@param owner integer
 ---@return integer
 local function marks_of(owner)
+  ---@param mark MdRenderMathSpecKittyMark
   return #vim.tbl_filter(function(mark)
     return mark.owner == owner
   end, fake_kitty.marks)
@@ -1875,6 +2043,8 @@ test("an unclosed $$: the search for its end is made once, not once per line", f
   )
   -- However the lines are read: four times the note, about four times the
   -- time (a search per line is sixteen times).
+  ---@param note string[]
+  ---@return number nanoseconds
   local function fastest_build(note)
     local fastest = math.huge
     for _ = 1, 3 do
@@ -1904,6 +2074,8 @@ end)
 test("the text memo is bounded: kept while in use, made again once two generations pass", function()
   local made = 0
   local upstream_inline = fake_text.inline
+  ---@param tex string
+  ---@return string
   fake_text.inline = function(tex)
     if tex == "memo_keep" then
       made = made + 1
@@ -1914,7 +2086,7 @@ test("the text memo is bounded: kept while in use, made again once two generatio
   ---@param count integer distinct equations never built before
   local function build_distinct(count)
     batch = batch + 1
-    local line = {}
+    local line = {} ---@type string[]
     for index = 1, count do
       line[#line + 1] = ("$mb%d_%d$"):format(batch, index)
     end
@@ -1966,6 +2138,8 @@ test("a closing $ before a digit does not close, and md-render is told so", func
   local plain = build_as("off", source)
   local number, line = find_line(content, "It is US")
   assert_eq(line, "  It is US$3 or US$4.", "currency left as written:")
+  -- Found: the assertion above fails the test otherwise.
+  ---@cast number -nil
   assert_eq(#groups_named(groups_on(content, number), "MdRenderMath"), 0, "and not math:")
   assert_true(find_line(content, "Zero $z_d$0 and nine $n_d$9") ~= nil, "0 and 9 both refuse")
   assert_true(find_line(content, STAND_IN .. " costs $3") ~= nil, "$x$ costs $3")
@@ -1978,6 +2152,7 @@ test("a closing $ before a digit does not close, and md-render is told so", func
       price .. ": as md-render shows it:"
     )
   end
+  ---@param lookup MdRenderMathSpecLookup
   local looked_up = vim.tbl_map(function(lookup)
     return lookup.tex
   end, fake_tex.lookups)
@@ -1989,12 +2164,15 @@ end)
 -- character by character: kept here only to prove the scanner that replaced
 -- it. `refuses_digit` adds the digit rule at the one place it applies.
 local OLD_ESCAPABLE_CHARS = [[!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~]]
+---@param text string
+---@param refuses_digit boolean
+---@return MdRenderMathSpan[]
 local function old_inline_math_spans(text, refuses_digit)
-  local without_code = {}
+  local without_code = {} ---@type string[]
   local position = 1
   while position <= #text do
     local char = text:sub(position, position)
-    local close = char == "`" and text:find("`", position + 1, true)
+    local close = char == "`" and text:find("`", position + 1, true) ---@type integer|false|nil
     if close then
       without_code[#without_code + 1] = string.rep("\1", close - position + 1)
       position = close + 1
@@ -2004,7 +2182,7 @@ local function old_inline_math_spans(text, refuses_digit)
     end
   end
   local unescaped = table.concat(without_code)
-  local masked = {}
+  local masked = {} ---@type string[]
   position = 1
   while position <= #unescaped do
     local char = unescaped:sub(position, position)
@@ -2018,7 +2196,7 @@ local function old_inline_math_spans(text, refuses_digit)
     end
   end
   local scanned = table.concat(masked)
-  local spans = {}
+  local spans = {} ---@type MdRenderMathSpan[]
   position = 1
   while position <= #scanned do
     local char = scanned:sub(position, position)
@@ -2029,6 +2207,8 @@ local function old_inline_math_spans(text, refuses_digit)
       local close = scanned:find("$$", position + 2, true)
       local tex = close and text:sub(position + 2, close - 1)
       if tex and tex:find("%S") then
+        -- `tex` is only set when `close` is.
+        ---@cast close -nil
         spans[#spans + 1] =
           { first = position, last = close + 1, tex = vim.trim(tex), is_display = true }
         position = close + 2
@@ -2040,6 +2220,8 @@ local function old_inline_math_spans(text, refuses_digit)
       local tex = close and close > position + 1 and text:sub(position + 1, close - 1)
       local is_refused = refuses_digit and close and scanned:sub(close + 1, close + 1):find("%d")
       if tex and not tex:find("^%s") and not tex:find("%s$") and not is_refused then
+        -- `tex` is only set when `close` is.
+        ---@cast close -nil
         spans[#spans + 1] = { first = position, last = close, tex = tex, is_display = false }
         position = close + 1
       else
@@ -2054,6 +2236,10 @@ end
 
 test("the span scanner pairs as the old one did, and md-render pairs exactly that", function()
   local spans_of = math_adapter._inline_math_spans
+  ---@param a MdRenderMathSpan[]
+  ---@param b MdRenderMathSpan[]
+  ---@param compare_positions boolean
+  ---@return boolean
   local function same(a, b, compare_positions)
     if #a ~= #b then
       return false
@@ -2069,6 +2255,7 @@ test("the span scanner pairs as the old one did, and md-render pairs exactly tha
     end
     return true
   end
+  ---@param line string
   local function check(line)
     local spans, escapes = spans_of(line)
     if #spans == 0 and not escapes then
@@ -2081,6 +2268,7 @@ test("the span scanner pairs as the old one did, and md-render pairs exactly tha
     end
     local md_render_text = line
     if escapes then
+      ---@type string[], integer
       local pieces, from = {}, 1
       for _, at in ipairs(escapes) do
         pieces[#pieces + 1] = line:sub(from, at - 1) .. "\\"
@@ -2110,7 +2298,7 @@ test("the span scanner pairs as the old one did, and md-render pairs exactly tha
     { "$", "$", "$", "$", "`", "\\", " ", "a", "x", "_", "{", "}", "1", "2", "9", "é", "*", "[" }
   math.randomseed(20261115)
   for _ = 1, 20000 do
-    local parts = {}
+    local parts = {} ---@type string[]
     for index = 1, math.random(0, 20) do
       parts[index] = alphabet[math.random(#alphabet)]
     end
@@ -2124,15 +2312,18 @@ end)
 ---@param escapes integer[]?
 ---@return integer[]
 local function dollars_md_render_keeps(line, escapes)
+  ---@param code string
   local masked = line:gsub("`[^`]*`", function(code)
     return ("\1"):rep(#code)
   end)
   masked = masked:gsub("\\[!-/:-@[-`{-~]", "\1\1")
+  ---@type table<integer, true>, integer[]
   local is_escaped, dollars = {}, {}
   for _, at in ipairs(escapes or {}) do
     is_escaped[at] = true
   end
-  for at in masked:gmatch("()%$") do
+  -- `()` captures positions: integers, which lua_ls types as strings.
+  for at in masked:gmatch("()%$") --[[@as fun(): integer?]] do
     if not is_escaped[at] then
       dollars[#dollars + 1] = at
     end
@@ -2211,9 +2402,19 @@ local LINE_WORDS = {
   "https://e.com/$x$",
 }
 
+--- md-render's `process_inline_math` (markdown.lua), the pass watched below.
+---@alias MdRenderMathSpecMathPass fun(text: string, hl_group: string, highlights: MdRender.Markdown.Highlight[], links: MdRender.Markdown.Link[]): string
+
+--- A pair md-render's math pass made, as bytes of the line.
+---@class MdRenderMathSpecPair
+---@field first integer byte of the opening `$`
+---@field last integer byte of the closing `$`
+---@field tex string
+
 test("each line is md-render's as written, or the adapter pairs the `$` md-render pairs", function()
   -- md-render's math pass, watched: what its other inline passes left it,
   -- and the TeX of each pair it took there.
+  ---@type integer, MdRenderMathSpecMathPass
   local pass_index, pass
   for index = 1, math.huge do
     local name, value = debug.getupvalue(md_render_own_render, index)
@@ -2223,7 +2424,13 @@ test("each line is md-render's as written, or the adapter pairs the `$` md-rende
       break
     end
   end
+  ---@type string, string[]
   local given, taken
+  ---@param text string
+  ---@param group string
+  ---@param highlights MdRender.Markdown.Highlight[]
+  ---@param links MdRender.Markdown.Link[]
+  ---@return string
   debug.setupvalue(md_render_own_render, pass_index, function(text, group, highlights, links)
     local before = #highlights
     local processed = pass(text, group, highlights, links)
@@ -2235,7 +2442,13 @@ test("each line is md-render's as written, or the adapter pairs the `$` md-rende
   end)
   --- `line` with a backslash before each `$` of `escapes`, and each `$` of
   --- `dollars` the result of `mark` for its number, or itself.
+  ---@param line string
+  ---@param escapes integer[]?
+  ---@param dollars integer[]
+  ---@param mark? fun(number: integer): string
+  ---@return string
   local function line_for_md_render(line, escapes, dollars, mark)
+    ---@type table<integer, true>, table<integer, integer>, string[], integer
     local is_escaped, number_of, pieces, from = {}, {}, {}, 1
     for _, at in ipairs(escapes or {}) do
       is_escaped[at] = true
@@ -2243,7 +2456,8 @@ test("each line is md-render's as written, or the adapter pairs the `$` md-rende
     for number, at in ipairs(dollars) do
       number_of[at] = number
     end
-    for at in line:gmatch("()%$") do
+    -- `()` captures positions: integers, which lua_ls types as strings.
+    for at in line:gmatch("()%$") --[[@as fun(): integer?]] do
       pieces[#pieces + 1] = line:sub(from, at - 1)
       if is_escaped[at] then
         pieces[#pieces + 1] = "\\$"
@@ -2258,20 +2472,26 @@ test("each line is md-render's as written, or the adapter pairs the `$` md-rende
   --- md-render's pairs of `line` with a backslash before each of `escapes`,
   --- as bytes of `line`; nil where which `$` its math pass is given is not
   --- told by marks (U+F0000 on) in their place.
+  ---@param line string
+  ---@param escapes integer[]?
+  ---@return MdRenderMathSpecPair[]?
   local function md_render_pairs(line, escapes)
     local dollars = dollars_md_render_keeps(line, escapes)
     md_render_own_render(line_for_md_render(line, escapes, dollars))
+    ---@type string, string[], table<integer, integer>, integer
     local given_text, taken_texs, given_dollars, given_count = given, taken, {}, 0
-    for at in given_text:gmatch("()%$") do
+    -- `()` captures positions: integers, which lua_ls types as strings.
+    for at in given_text:gmatch("()%$") --[[@as fun(): integer?]] do
       given_count = given_count + 1
       given_dollars[at] = given_count
     end
     if given_count ~= #dollars then
+      ---@param number integer
       md_render_own_render(line_for_md_render(line, escapes, dollars, function(number)
         return "\243\176" .. string.char(0x80 + math.floor(number / 64), 0x80 + number % 64)
       end))
-      local kept = {}
-      for high, low in given:gmatch("\243\176([\128-\191])([\128-\191])") do
+      local kept = {} ---@type integer[]
+      for high, low in given:gmatch("\243\176([\128-\191])([\128-\191])") --[[@as fun(): string?, string]] do
         kept[#kept + 1] = dollars[(high:byte() - 0x80) * 64 + low:byte() - 0x80]
         if not kept[#kept] or (kept[#kept - 1] or 0) >= kept[#kept] then
           return nil
@@ -2284,6 +2504,7 @@ test("each line is md-render's as written, or the adapter pairs the `$` md-rende
     end
     -- TeX holds no `$`: a pair is the first `$` on from the last closing
     -- that its TeX and a `$` follow.
+    ---@type MdRenderMathSpecPair[], integer
     local made, search_from = {}, 1
     for _, tex in ipairs(taken_texs) do
       local opening = given_text:find("$" .. tex .. "$", search_from, true)
@@ -2302,7 +2523,7 @@ test("each line is md-render's as written, or the adapter pairs the `$` md-rende
   local line_count, alike_left, left_for_comments, behind_markup = 20000, 0, 0, 0
   math.randomseed(20261116)
   for _ = 1, line_count do
-    local words = {}
+    local words = {} ---@type string[]
     for index = 1, math.random(1, 9) do
       words[index] = LINE_WORDS[math.random(#LINE_WORDS)]
     end
@@ -2316,10 +2537,11 @@ test("each line is md-render's as written, or the adapter pairs the `$` md-rende
       local written = old_inline_math_spans(line, true)
       local is_alike = made ~= nil and #made > 0 and #written == #made
       for index, span in ipairs(written) do
+        -- `is_alike` is false when `made` is nil: the `and` stops before it.
         is_alike = is_alike
           and not span.is_display
-          and made[index].first == span.first
-          and made[index].last == span.last
+          and (made --[[@as MdRenderMathSpecPair[] ]])[index].first == span.first
+          and (made --[[@as MdRenderMathSpecPair[] ]])[index].last == span.last
       end
       if is_alike and (line:find("%%", 1, true) or line:find("<!--", 1, true)) then
         left_for_comments = left_for_comments + 1
@@ -2329,9 +2551,11 @@ test("each line is md-render's as written, or the adapter pairs the `$` md-rende
     else
       local label = vim.inspect(line)
       assert_true(made ~= nil, label .. ": md-render's math pass is given other `$`")
+      ---@cast made -nil
       if line:find("[%*_=~%[|>]%$") then
         behind_markup = behind_markup + 1
       end
+      ---@type table<integer, integer>, table<integer, integer>, integer
       local closing_of, inner_of, inline_count = {}, {}, 0
       for _, span in ipairs(spans) do
         if span.is_display then
@@ -2375,13 +2599,13 @@ test("a display picture that would shrink below half its size is text", function
 end)
 
 test("display text wider than the line is wrapped by md-render, line numbers kept", function()
-  local words = {}
+  local words = {} ---@type string[]
   for index = 1, 30 do
     words[index] = "w" .. index
   end
   local content =
     build_as("text", { "Before.", "", "$$", table.concat(words, " "), "$$", "", "After." })
-  local rows = {}
+  local rows = {} ---@type integer[]
   for number, line in ipairs(content.lines) do
     assert_true(vim.api.nvim_strwidth(line) <= MAX_WIDTH, "within the view: " .. line)
     if line:find("w%d") then
@@ -2417,7 +2641,7 @@ local function equation_at_text(view_bufnr, needle, offset)
 end
 
 --- The quickfix list `:MdRenderMath errors` makes.
----@return table[]
+---@return vim.fn.getqflist.ret.item[]
 local function listed_errors()
   vim.fn.setqflist({}, "r", { items = {} })
   vim.cmd("MdRenderMath errors")
@@ -2489,7 +2713,9 @@ test(
     })
     -- As listed: in line order, those of one line as met (a failed fence is
     -- noted before everything else).
+    ---@return string[]
     local function listed()
+      ---@param item vim.fn.getqflist.ret.item
       return vim.tbl_map(function(item)
         return ("%d %d %s"):format(item.bufnr, item.lnum, item.text)
       end, listed_errors())
@@ -2510,17 +2736,20 @@ test(
 )
 
 test(":MdRenderMath status: the mode and why not pictures; completion", function()
-  local echoed
+  -- What the stubbed nvim_echo was given last; every read follows an echo.
+  local echoed ---@type string
   local echo = vim.api.nvim_echo
+  ---@param chunks [string, integer|string?][]
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.api.nvim_echo = function(chunks)
     echoed = chunks[1][1]
   end
+  ---@return string
   local function status()
     vim.cmd("MdRenderMath status")
     return echoed:match("^[^\n]*")
   end
-  local results = { status() }
+  local results = { status() } ---@type string[]
   fake_kitty.supported = false
   results[2] = status()
   fake_kitty.supported, fake_tex.is_available_answer = true, false
@@ -2548,18 +2777,18 @@ end)
 
 --- The same lines built by md-render alone and in text mode.
 ---@param lines string[]
----@return table alone
----@return table ours
+---@return MdRender.Content alone
+---@return MdRender.Content ours
 local function alone_and_text(lines)
   return build_as("off", lines), build_as("text", lines)
 end
 
 --- Tokens (`W1q`, `aaa`, ...) on a content's lines -> the first line showing each.
----@param content table
+---@param content MdRender.Content
 ---@param pattern string
 ---@return table<string, string>
 local function tokens_shown(content, pattern)
-  local shown = {}
+  local shown = {} ---@type table<string, string>
   for _, line in ipairs(content.lines) do
     for token in line:gmatch(pattern) do
       shown[token] = shown[token] or line
@@ -2568,8 +2797,12 @@ local function tokens_shown(content, pattern)
   return shown
 end
 
+---@param alone MdRender.Content
+---@param ours MdRender.Content
+---@param pattern string
 ---@return string[] tokens md-render alone shows that this module does not
 local function lost_tokens(alone, ours, pattern)
+  ---@type table<string, string>, string[]
   local shown, lost = tokens_shown(ours, pattern), {}
   for token in pairs(tokens_shown(alone, pattern)) do
     if not shown[token] then
@@ -2593,6 +2826,7 @@ test("a $$ line with TeX on it is md-render's: no block, nothing lost", function
     assert_eq(table.concat(lost_tokens(alone, ours, "%l%l%l+"), " "), "", label .. ": lost:")
     forget_calls()
     build(case)
+    ---@param lookup MdRenderMathSpecLookup
     assert_eq(#vim.tbl_filter(function(lookup)
       return lookup.kind == "display"
     end, fake_tex.lookups), 0, label .. ": no block:")
@@ -2633,10 +2867,13 @@ test("quoted and plain blocks pair as md-render reads them", function()
   local ended = { "> $$", "> aaa", "", "para", "", "> $$", "> bbb", "> $$" }
   local alone, ours = alone_and_text(ended)
   assert_eq(table.concat(lost_tokens(alone, ours, "%l%l%l+"), " "), "", "quote ended: lost:")
+  ---@param content MdRender.Content
+  ---@param needle string
+  ---@return integer
   local function count_of(content, needle)
     local count = 0
     for _, line in ipairs(content.lines) do
-      count = count + select(2, line:gsub(needle, ""))
+      count = count + select(2, line:gsub(needle, "")) --[[@as integer]]
     end
     return count
   end
@@ -2649,7 +2886,7 @@ test("quoted and plain blocks pair as md-render reads them", function()
   -- 3. A TeX line of a plain block that starts with `>` keeps it.
   forget_calls()
   build({ "$$", "f(x)", "> 0", "$$" })
-  local texs = {}
+  local texs = {} ---@type string[]
   for _, lookup in ipairs(fake_tex.lookups) do
     texs[#texs + 1] = lookup.kind .. ": " .. lookup.tex
   end
@@ -2672,11 +2909,11 @@ test("quoted and plain blocks pair as md-render reads them", function()
 end)
 
 --- How many times each token is shown.
----@param content table
+---@param content MdRender.Content
 ---@param pattern string
 ---@return table<string, integer>
 local function token_counts(content, pattern)
-  local counts = {}
+  local counts = {} ---@type table<string, integer>
   for _, line in ipairs(content.lines) do
     for token in line:gmatch(pattern) do
       counts[token] = (counts[token] or 0) + 1
@@ -2691,7 +2928,7 @@ end
 local function display_lookups(lines)
   forget_calls()
   build(lines)
-  local texs = {}
+  local texs = {} ---@type string[]
   for _, lookup in ipairs(fake_tex.lookups) do
     if lookup.kind == "display" then
       texs[#texs + 1] = lookup.tex
@@ -2777,7 +3014,7 @@ test(
 test("after a closing `$$ (1)`, `$$ ` or `tex $$`, no block is drawn: prose stays prose", function()
   for _, closing in ipairs({ "$$ (1)", "$$ ", "+ c $$" }) do
     for _, prefix in ipairs({ "", "> " }) do
-      local note = {}
+      local note = {} ---@type string[]
       for _, line in ipairs({ "$$", "a = b", closing, "", "Prose aaa here.", "" }) do
         note[#note + 1] = (line == "" and prefix ~= "") and ">" or (prefix .. line)
       end
@@ -2859,6 +3096,7 @@ test("a `$` behind markup md-render takes away first pairs as md-render pairs it
     "",
     "where (blue) *constant* $= p_1 V_1 = p_2 V_2$.",
   })
+  ---@param lookup MdRenderMathSpecLookup
   local texs = vim.tbl_map(function(lookup)
     return lookup.tex
   end, fake_tex.lookups)
@@ -2867,8 +3105,10 @@ test("a `$` behind markup md-render takes away first pairs as md-render pairs it
 end)
 
 test(":MdRenderMath errors and status name the `$$` line from which blocks are left", function()
-  local echoed
+  -- What the stubbed nvim_echo was given last; every read follows an echo.
+  local echoed ---@type string
   local echo = vim.api.nvim_echo
+  ---@param chunks [string, integer|string?][]
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.api.nvim_echo = function(chunks)
     echoed = chunks[1][1]
@@ -2890,6 +3130,7 @@ test(":MdRenderMath errors and status name the `$$` line from which blocks are l
     "$$",
   })
   preview.toggle()
+  ---@param item vim.fn.getqflist.ret.item
   local items = vim.tbl_map(function(item)
     return ("%d %d %s"):format(item.bufnr, item.lnum, item.text)
   end, listed_errors())
@@ -3040,17 +3281,25 @@ end)
 --- words, `T<n>q` for TeX, `C<n>q` for anything in a code fence.
 ---@return string[]
 local function generated_note()
+  ---@type string[], integer, boolean
   local lines, token_count, is_in_code = {}, 0, false
+  ---@generic T
+  ---@param list T[]
+  ---@return T
   local function pick(list)
     return list[math.random(#list)]
   end
+  ---@param kind string
+  ---@return string
   local function token(kind)
     token_count = token_count + 1
     return (is_in_code and "C" or kind) .. token_count .. "q"
   end
+  ---@param text string
   local function add(text)
     lines[#lines + 1] = text
   end
+  ---@return string
   local function prose()
     local word = token("W")
     if math.random(8) <= 5 then
@@ -3075,6 +3324,8 @@ local function generated_note()
       .. equation
       .. pick({ "", " or $4", " $", " " .. token("W") })
   end
+  ---@param first string
+  ---@param rest string
   local function block(first, rest)
     add(first .. pick({ "$$", "$$", "$$", "$$ ", " $$", "$$\t", "$$  " }))
     for _ = 1, math.random(0, 2) do
@@ -3084,6 +3335,8 @@ local function generated_note()
     -- `$$ (1)` and `tex $$`: the writer closes, md-render does not.
     add(rest .. pick({ "$$", "$$", "$$", "$$ ", " $$", "$$  ", "$$ (1)", token("T") .. " $$" }))
   end
+  ---@param first string
+  ---@param rest string
   local function body(first, rest)
     local choice = math.random(6)
     if choice <= 3 then
@@ -3098,6 +3351,7 @@ local function generated_note()
     end
   end
   --- Lines of one of `shapes`, each `T` or `W` at a line's end a token.
+  ---@param shapes string[][]
   local function add_shape(shapes)
     for _, line in ipairs(pick(shapes)) do
       add((line:gsub("[TW]$", token)))
@@ -3289,7 +3543,7 @@ end
 ---@return string?
 local function written_block_tex(note, tex)
   local token = tex:match("T%d+q")
-  local token_line
+  local token_line ---@type integer?
   for index, line in ipairs(note) do
     if token and line:find(token, 1, true) then
       token_line = index
@@ -3298,6 +3552,8 @@ local function written_block_tex(note, tex)
   if not token_line then
     return nil
   end
+  ---@param index integer
+  ---@return integer?
   local function is_delimiter(index)
     local text = note[index]:gsub("^[%s>]*", "")
     return text:find("^%$%$") or text:find("^[`~][`~][`~]")
@@ -3310,7 +3566,7 @@ local function written_block_tex(note, tex)
     closing = closing + 1
   end
   local markers = select(2, (note[opening]:match("^%s*>[>%s]*") or ""):gsub(">", ""))
-  local tex_lines = {}
+  local tex_lines = {} ---@type string[]
   for index = opening + 1, closing - 1 do
     local line = note[index]
     for _ = 1, markers do
@@ -3326,10 +3582,11 @@ end
 ---@param texts string[]
 ---@return table<string, true>
 local function written_inline_texs(texts)
-  local candidates = {}
+  local candidates = {} ---@type table<string, true>
   for _, text in ipairs(texts) do
-    for position in text:gmatch("()%$") do
-      local close = text:find("$", position + 1, true)
+    -- `()` captures positions: integers, which lua_ls types as strings.
+    for position in text:gmatch("()%$") --[[@as fun(): integer?]] do
+      local close = text:find("$", position + 1, true) ---@type integer|false|nil
       if close then
         candidates[text:sub(position + 1, close - 1)] = true
       end
@@ -3343,27 +3600,38 @@ local function written_inline_texs(texts)
 end
 
 --- Pictures by kind and width, shared by the notes: few highlight groups.
-local picture_pool = {}
+local picture_pool = {} ---@type table<string, MdRenderMathPicture>
 
 --- A build of `note` in which every equation has a picture: the content,
 --- the equations looked up, and the texts md-render rendered.
 ---@param note string[]
 ---@param width integer
----@return table content
----@return { kind: string, tex: string }[] lookups
+---@return MdRender.Content content
+---@return { kind: "inline"|"display", tex: string }[] lookups
 ---@return string[] rendered
 local function built_with_pictures(note, width)
   local lookup, markdown = fake_tex.lookup, require("md-render.markdown")
   local render = markdown.render
+  ---@type { kind: "inline"|"display", tex: string }[], string[]
   local looked_up, rendered = {}, {}
+  ---@param equation MdRenderMathEquation
+  ---@return MdRenderMathPicture
   fake_tex.lookup = function(equation)
     looked_up[#looked_up + 1] = { kind = equation.kind, tex = equation.tex }
     local is_inline = equation.kind == "inline"
     local columns = (is_inline and 2 or 4) + #equation.tex % 3
-    local key = equation.kind .. columns
+    local key = equation.kind .. columns ---@type string
     picture_pool[key] = picture_pool[key] or new_picture(columns, is_inline and 1 or 2)
     return picture_pool[key]
   end
+  ---@param text string
+  ---@param ... any md-render's other arguments, passed on
+  ---@return string rendered_text
+  ---@return MdRender.Markdown.Highlight[] highlights
+  ---@return MdRender.Markdown.Link[] links
+  ---@return string? special_type
+  ---@return string? list_marker
+  ---@return string? alert_type
   markdown.render = function(text, ...)
     rendered[#rendered + 1] = text
     return render(text, ...)
@@ -3377,14 +3645,14 @@ local function built_with_pictures(note, width)
 end
 
 --- Each picture highlight whose bytes are not exactly a row of its cells.
----@param content table
+---@param content MdRender.Content
 ---@return string[]
 local function misplaced_pictures(content)
-  local cells_of_group = {}
+  local cells_of_group = {} ---@type table<string, string>
   for _, key in ipairs(images) do
     cells_of_group[images[key].group] = images[key].rows[1]
   end
-  local misplaced = {}
+  local misplaced = {} ---@type string[]
   for line_number, line in ipairs(content.lines) do
     for _, group in ipairs(picture_groups_on(content, line_number)) do
       if covered(line, group) ~= cells_of_group[group.hl] then
@@ -3416,6 +3684,7 @@ test(
         "",
         label .. ": lost words, TeX and code:"
       )
+      ---@type table<string, integer>, string[]
       local shown_alone, twice = token_counts(alone, "[WTC]%d+q"), {}
       for token, count in pairs(token_counts(ours, "[WTC]%d+q")) do
         if count > (shown_alone[token] or 0) then
@@ -3473,9 +3742,12 @@ test("links on a line with escaped dollars: every text field as md-render makes 
   }
   --- The text fields of each link (its columns follow the line, which
   --- differs where md-render took a price for math).
+  ---@param content MdRender.Content
+  ---@return table<string, string>[]
   local function text_fields(content)
+    ---@param link MdRender.LinkMetadata
     return vim.tbl_map(function(link)
-      local fields = {}
+      local fields = {} ---@type table<string, string>
       for name, value in pairs(link) do
         if type(value) == "string" then
           fields[name] = value
@@ -3510,6 +3782,8 @@ test("equation_at: the equation under the cursor, not one whose text contains it
   forget_calls()
   local upstream_inline = fake_text.inline
   -- As the real text module: `x^2` shows as `x²`, which contains `x`.
+  ---@param tex string
+  ---@return string
   fake_text.inline = function(tex)
     return (tex:gsub("%^2", "²"))
   end
@@ -3538,7 +3812,7 @@ test("equation_at: the equation under the cursor, not one whose text contains it
   assert_eq(equation_at_text(view_bufnr, "pp + rr", 5), "pp + rr", "p + r on the joined line:")
   assert_eq(equation_at_text(view_bufnr, "and then", 0), nil, "prose:")
   -- A table cell: md-render's rows do not tell which equation is where.
-  local table_cell
+  local table_cell ---@type string?
   for index, line in ipairs(vim.api.nvim_buf_get_lines(view_bufnr, 0, -1, false)) do
     local square = line:find("tt²", 1, true)
     if square then
@@ -3565,7 +3839,7 @@ test("pictures first for what any window on the view shows", function()
   vim.api.nvim_win_set_cursor(0, { 1, 0 })
   forget_calls()
   rebuild_with(session, source_bufnr, numbered_items("vw2", 200))
-  local first = {}
+  local first = {} ---@type table<integer, true>
   for _, number in ipairs(numbers_of(fake_tex.requests[1])) do
     first[number] = true
   end
@@ -3590,7 +3864,9 @@ test("a view that fails to rebuild: the others are rebuilt, one message", functi
   failing_session.rebuild = function()
     error("broken view")
   end
+  ---@type fun(msg: string, level: integer|nil, opts: table|nil), string[]
   local notify, messages = vim.notify, {}
+  ---@param message string
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.notify = function(message)
     messages[#messages + 1] = message

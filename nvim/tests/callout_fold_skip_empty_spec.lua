@@ -16,13 +16,23 @@
 -- the fold side-effects rather than the autocmd. No source-introspection.
 -- Run with: nvim --headless -u NONE -l tests/callout_fold_skip_empty_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 local cf = require("andrew.vault.callout_folds")
 
+-- One element of `callout_folds.get_all_blocks` (annotated there as a bare `table[]`).
+---@class CalloutFoldSkipEmptyBlock
+---@field start_line integer  1-indexed header line
+---@field end_line integer    1-indexed last line of the block
+---@field header_lnum integer
+---@field suffix? string      "+" or "-" when present
+
 --- Create a scratch buffer with the given lines.
+---@param lines string[]
+---@return integer bufnr
 local function make_buf(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -77,7 +87,7 @@ test("range-fold commands close '-' callouts and leave '+' callouts open", funct
   vim.wo.foldmethod = "manual"
   vim.cmd("normal! zE")
 
-  local blocks = cf.get_all_blocks(buf)
+  local blocks = cf.get_all_blocks(buf) ---@type CalloutFoldSkipEmptyBlock[]
   assert_eq(#blocks, 2, "expected exactly two callout blocks")
 
   -- Mirror apply_callout_folds: create the fold, open it unless suffix is '-'.

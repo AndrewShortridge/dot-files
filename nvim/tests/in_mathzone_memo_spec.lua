@@ -22,6 +22,7 @@
 --   Test 3: invalidation -- editing the buffer (bumps changedtick) or moving
 --           the cursor busts the cache, so the parser is fetched again.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -32,6 +33,11 @@ local tex = require("andrew.utils.tex")
 
 -- Make a fresh buffer with the given filetype + lines, make it current, place
 -- the cursor at (row 1-indexed, col 0-indexed).
+---@param ft string
+---@param lines string[]
+---@param row integer  1-indexed
+---@param col integer  0-indexed
+---@return integer buf
 local function make_buf(ft, lines, row, col)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -79,10 +85,14 @@ test("in_mathzone: N repeated calls at fixed cursor -> 1 treesitter parse", func
 
   local calls = 0
   local orig = vim.treesitter.get_parser
-  vim.treesitter.get_parser = function(...)
+  ---@param ... any  forwarded untouched to the real get_parser(buf?, lang?, opts?)
+  ---@return vim.treesitter.LanguageTree?
+  ---@return string?
+  local function counting_get_parser(...)
     calls = calls + 1
     return orig(...)
   end
+  vim.treesitter.get_parser = counting_get_parser
 
   local ok, err = pcall(function()
     local N = 50
@@ -112,10 +122,14 @@ test("in_mathzone: edit (changedtick) and cursor move bust the memo", function()
   -- (a) Edit the buffer: bumps changedtick -> next call must re-parse.
   local calls = 0
   local orig = vim.treesitter.get_parser
-  vim.treesitter.get_parser = function(...)
+  ---@param ... any  forwarded untouched to the real get_parser(buf?, lang?, opts?)
+  ---@return vim.treesitter.LanguageTree?
+  ---@return string?
+  local function counting_get_parser(...)
     calls = calls + 1
     return orig(...)
   end
+  vim.treesitter.get_parser = counting_get_parser
 
   local ok, err = pcall(function()
     vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "text $x + z$ more" })

@@ -42,6 +42,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_ftnchek_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
@@ -76,8 +77,28 @@ local OUTPUT = table.concat({
   "No main program found",
 }, "\n")
 
-local findings = ftnchek.parse(OUTPUT)
+-- A finding as ftnchek.parse documents it (it annotates the list as `table[]`).
+---@class FortranFtnchekDetail
+---@field path string
+---@field lnum integer
+---@field col? integer
+---@field text string
 
+---@class FortranFtnchekFinding
+---@field path string
+---@field lnum integer
+---@field col? integer
+---@field severity integer  vim.diagnostic.severity
+---@field message string
+---@field base? string      the shared headline of an "and at position N" group
+---@field details FortranFtnchekDetail[]
+
+---@alias FortranFtnchekDiag { path: string, lnum: integer, col: integer, message: string, severity: integer }
+
+local findings = ftnchek.parse(OUTPUT) ---@type FortranFtnchekFinding[]
+
+---@param msg_pattern string  a plain substring of the message
+---@return FortranFtnchekFinding?
 local function find(msg_pattern)
   for _, f in ipairs(findings) do
     if f.message:find(msg_pattern, 1, true) then
@@ -109,8 +130,8 @@ test("a header is distinguished from a detail by indentation", function()
   -- word and a detail's text starts at a space.
   local _, _, _, header = ftnchek.split_loc('"main.f", line 5: Warning in module MAIN: x')
   local _, _, _, detail = ftnchek.split_loc('"main.f", line 5:     UNUSEDX declared')
-  assert_eq(header:sub(1, 1), "W", "header text begins at the word:")
-  assert_eq(detail:sub(1, 1), " ", "detail text keeps its indentation:")
+  assert_eq(assert(header):sub(1, 1), "W", "header text begins at the word:")
+  assert_eq(assert(detail):sub(1, 1), " ", "detail text keeps its indentation:")
 end)
 
 test("noise lines are dropped", function()
@@ -128,12 +149,14 @@ test("noise lines are dropped", function()
   assert_nil(find("No main program found"), "the trailer:")
   local elems = find("Elements never used")
   assert_true(elems ~= nil, "the Elements finding is present:")
+  ---@cast elems -nil
   assert_eq(#elems.details, 0, "the unprefixed `    N` line was not absorbed as a detail:")
 end)
 
 test("a syntax error keeps its column and ERROR severity", function()
   local f = find("syntax error, unexpected end of statement")
   assert_true(f ~= nil, "found:")
+  ---@cast f -nil
   assert_eq(f.path, "bad.f", "path:")
   assert_eq(f.lnum, 4, "lnum:")
   assert_eq(f.col, 7, "col:")
@@ -143,6 +166,7 @@ end)
 test("details keep their own location", function()
   local f = find("varying number of arguments")
   assert_true(f ~= nil, "found:")
+  ---@cast f -nil
   assert_eq(f.path, "cooling.f", "header path:")
   assert_eq(#f.details, 2, "detail count:")
   assert_eq(f.details[1].path, "cooling.f", "callee detail path:")
@@ -157,6 +181,8 @@ test("and-at-position opens a new finding", function()
   local p3 = find("data type mismatch at position 3:")
   assert_true(p2 ~= nil, "position 2 finding:")
   assert_true(p3 ~= nil, "position 3 finding:")
+  ---@cast p2 -nil
+  ---@cast p3 -nil
   -- Position 3's facts belong to position 3, not to position 2.
   assert_eq(#p2.details, 2, "position 2 detail count:")
   assert_eq(#p3.details, 2, "position 3 detail count:")
@@ -165,6 +191,7 @@ end)
 
 test("both ends of a cross-file finding get a diagnostic", function()
   local diags = ftnchek.diagnostics(findings)
+  ---@type FortranFtnchekDiag?, FortranFtnchekDiag?
   local at_caller, at_callee = nil, nil
   for _, d in ipairs(diags) do
     if d.message:find("varying number of arguments", 1, true) then
@@ -177,6 +204,7 @@ test("both ends of a cross-file finding get a diagnostic", function()
   end
   assert_true(at_callee ~= nil, "a marker on the definition:")
   assert_true(at_caller ~= nil, "a marker on the CALL:")
+  ---@cast at_caller -nil
   -- The caller's marker has to carry the headline; the bare detail text says
   -- nothing about what disagreed.
   assert_true(
@@ -191,7 +219,7 @@ end)
 
 test("a detail at the header's own location is not duplicated", function()
   local diags = ftnchek.diagnostics(findings)
-  local n = 0
+  local n = 0 ---@type integer
   for _, d in ipairs(diags) do
     if d.path == "main.f" and d.lnum == 5 then
       n = n + 1

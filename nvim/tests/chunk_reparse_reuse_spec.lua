@@ -22,6 +22,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/chunk_reparse_reuse_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_deep_eq =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_deep_eq
@@ -35,13 +36,54 @@ print("\n=== Chunk Re-Parse Reuse Tests ===\n")
 -- Instrument the real parser: count actual parse_chunk invocations.
 local parse_chunk_calls = 0
 local orig_parse_chunk = parser.parse_chunk
-parser.parse_chunk = function(...)
+---@param chunk_lines string[]
+---@param start_line number
+---@param fm_fields table|nil
+---@return table parsed_data
+local function counting_parse_chunk(chunk_lines, start_line, fm_fields)
   parse_chunk_calls = parse_chunk_calls + 1
-  return orig_parse_chunk(...)
+  return orig_parse_chunk(chunk_lines, start_line, fm_fields)
 end
+parser.parse_chunk = counting_parse_chunk
+
+-- One element of `VaultIndexEntry._chunks` (annotated there as a bare `table[]`).
+---@class ChunkReparseReuseChunk
+---@field start_line integer
+---@field end_line integer
+---@field digest string
+---@field parsed_data? table  parse_chunk's result; absent on chunks loaded from disk
+
+-- The fields this spec compares of the entry's block_ids / tasks / outlinks
+-- records (annotated in the parser as bare `table[]`).
+---@class ChunkReparseReuseBlockId
+---@field id string
+---@field line integer
+
+---@class ChunkReparseReuseTask
+---@field text string
+---@field line integer
+---@field checked? boolean  the parser's task records carry `completed`, not `checked`
+
+---@class ChunkReparseReuseLink
+---@field path string
+---@field display string
+---@field embed boolean
+
+---@class ChunkReparseReusePlainHeading
+---@field text string
+---@field line integer
+---@field level integer
+
+---@class ChunkReparseReuseContentOpts
+---@field edit_heading? integer       heading whose task text is edited (with edited_task)
+---@field edited_task? boolean
+---@field insert_line_after? integer  heading under which an extra paragraph is inserted
 
 local NOTE = "note.md"
 
+---@param dir string
+---@param body string
+---@return string abs
 local function write_note(dir, body)
   local abs = dir .. "/" .. NOTE
   local f = assert(io.open(abs, "w"))
@@ -53,6 +95,8 @@ end
 -- Build a many-chunk note: frontmatter + N headings, each with a task, a link,
 -- an inline field and a block id. >= min_chunk_lines (20) and >1 chunk.
 local N_HEADINGS = 10
+---@param opts? ChunkReparseReuseContentOpts
+---@return string
 local function build_content(opts)
   opts = opts or {}
   local lines = { "---", "title: Note", "tags: [base]", "---", "" }
@@ -83,25 +127,36 @@ end
 -- against the chunked path, NOT parser.parse_content, because the chunked path
 -- normalizes all line numbers to absolute while parse_content uses body-relative
 -- task lines — a pre-existing parser quirk, out of scope for this perf fix.)
+---@param entry VaultIndexEntry
+---@param ref VaultIndexEntry
+---@param label? string
 local function assert_entries_equal(entry, ref, label)
   -- Strip metatable / derived noise: compare only the parse-derived arrays.
+  ---@param arr? VaultHeading[]
+  ---@return ChunkReparseReusePlainHeading[]
   local function plain_headings(arr)
-    local out = {}
+    local out = {} ---@type ChunkReparseReusePlainHeading[]
     for i, h in ipairs(arr or {}) do out[i] = { text = h.text, line = h.line, level = h.level } end
     return out
   end
+  ---@param arr? ChunkReparseReuseBlockId[]
+  ---@return ChunkReparseReuseBlockId[]
   local function plain_blocks(arr)
-    local out = {}
+    local out = {} ---@type ChunkReparseReuseBlockId[]
     for i, b in ipairs(arr or {}) do out[i] = { id = b.id, line = b.line } end
     return out
   end
+  ---@param arr? ChunkReparseReuseTask[]
+  ---@return ChunkReparseReuseTask[]
   local function plain_tasks(arr)
-    local out = {}
+    local out = {} ---@type ChunkReparseReuseTask[]
     for i, t in ipairs(arr or {}) do out[i] = { text = t.text, line = t.line, checked = t.checked } end
     return out
   end
+  ---@param arr? ChunkReparseReuseLink[]
+  ---@return ChunkReparseReuseLink[]
   local function plain_links(arr)
-    local out = {}
+    local out = {} ---@type ChunkReparseReuseLink[]
     for i, l in ipairs(arr or {}) do out[i] = { path = l.path, display = l.display, embed = l.embed } end
     return out
   end
@@ -119,6 +174,9 @@ end
 -- chunks before the update: the reuse guard requires cached.parsed_data, so with
 -- it absent process_chunks re-parses ALL chunks (identical to the old behavior
 -- and to the post-load path). This is the correct "reparse everything" baseline.
+---@param seed_content string
+---@param final_content string
+---@return VaultIndexEntry
 local function full_reparse_reference(seed_content, final_content)
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -127,7 +185,7 @@ local function full_reparse_reference(seed_content, final_content)
   idx:build_sync()
   idx:update_file(abs)               -- builds _chunks cache (with parsed_data)
   -- Drop cached parsed_data -> forces full chunk reparse on the next update.
-  for _, c in ipairs(idx.files[NOTE]._chunks) do c.parsed_data = nil end
+  for _, c in ipairs(idx.files[NOTE]._chunks --[[@as ChunkReparseReuseChunk[] ]]) do c.parsed_data = nil end
   write_note(dir, final_content)
   idx:update_file(abs)
   return idx.files[NOTE]
@@ -137,6 +195,10 @@ end
 -- build_sync uses parser.parse_file (no _chunks); the FIRST update_file builds
 -- the chunk cache, the SECOND is the genuine incremental diff. So seed by
 -- running update_file once after build_sync.
+---@param content string
+---@return VaultIndex idx
+---@return string dir
+---@return string abs
 local function seed_index(content)
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -187,12 +249,17 @@ test("incremental entry matches full chunked reparse after edit + line shift", f
 
   -- Specifically assert a downstream chunk's line numbers shifted correctly:
   -- heading 10 lives 2 lines later in v2 than v1 (proves the line-delta math).
+  ---@param e VaultIndexEntry
+  ---@param text string
+  ---@return VaultHeading?
   local function find_heading(e, text)
     for _, h in ipairs(e.headings) do if h.text == text then return h end end
   end
   local h10 = find_heading(idx.files[NOTE], "Heading 10")
   local ref_h10 = find_heading(ref, "Heading 10")
   assert_true(h10 ~= nil and ref_h10 ~= nil, "heading 10 present")
+  ---@cast h10 -nil
+  ---@cast ref_h10 -nil
   assert_eq(h10.line, ref_h10.line, "shifted heading line matches full reparse")
 end)
 
@@ -251,14 +318,14 @@ test("warm_chunk_cache makes post-load first save re-parse only the touched chun
   local loaded = idx2.files[NOTE]
   assert_true(loaded._chunks ~= nil and #loaded._chunks > 1, "loaded chunks present")
   assert_true(loaded._chunks[2].parsed_data == nil, "loaded chunk carries no parsed_data")
-  local digests_before = {}
-  for i, c in ipairs(loaded._chunks) do digests_before[i] = c.digest end
+  local digests_before = {} ---@type string[]
+  for i, c in ipairs(loaded._chunks --[[@as ChunkReparseReuseChunk[] ]]) do digests_before[i] = c.digest end
 
   -- Warm the chunk cache (what the BufReadPost IDLE job does).
   idx2:warm_chunk_cache(abs)
   assert_true(loaded._chunks[1].parsed_data ~= nil, "chunk 1 parsed_data warmed")
   assert_true(loaded._chunks[2].parsed_data ~= nil, "chunk 2 parsed_data warmed")
-  for i, c in ipairs(loaded._chunks) do
+  for i, c in ipairs(loaded._chunks --[[@as ChunkReparseReuseChunk[] ]]) do
     assert_eq(c.digest, digests_before[i], "warm leaves chunk digest unchanged")
   end
 

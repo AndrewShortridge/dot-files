@@ -43,6 +43,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_docs_render_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
@@ -56,7 +57,7 @@ test("a plain string passes through untouched", function()
 end)
 
 test("a structured entry renders every section", function()
-  local out = docs.render({
+  local out = assert(docs.render({
     name = "**size** - Return the number of elements",
     synopsis = { usage = "```fortran\nresult = size(array, dim)\n```", interface = "```fortran\ninterface\n```" },
     characteristics = { "first point", "second point" },
@@ -66,7 +67,7 @@ test("a structured entry renders every section", function()
     examples = { code = "print *, size(a)", results = "```text\n5\n```" },
     standard = "Fortran 90",
     see_also = { "[**shape**](#shape)", "[**lbound**](#lbound)" },
-  })
+  }))
   for _, section in ipairs({ "Name", "Synopsis", "Characteristics", "Description",
                             "Options", "Result", "Examples", "Standard", "See Also" }) do
     assert_true(out:find("### %*%*" .. section:gsub(" ", " ") .. "%*%*") ~= nil,
@@ -78,10 +79,10 @@ end)
 
 test("options follow the synopsis order", function()
   -- shape(source, kind): alphabetical order would document them backwards.
-  local out = docs.render({
+  local out = assert(docs.render({
     synopsis = { usage = "result = shape(source, kind)" },
     options = { kind = "The kind.", source = "The source." },
-  })
+  }))
   local isource = out:find("%*%*source%*%*")
   local ikind = out:find("%*%*kind%*%*")
   assert_true(isource ~= nil and ikind ~= nil, "both options rendered:")
@@ -91,17 +92,17 @@ end)
 test("a substring argument name is not matched early", function()
   -- `dim` occurs inside `dimension` well before its own mention; a
   -- non-whole-word search would order it first.
-  local out = docs.render({
+  local out = assert(docs.render({
     synopsis = { usage = "result = f(dimension_arg, dim)" },
     options = { dim = "The dimension index.", dimension_arg = "The array." },
-  })
+  }))
   local iarg = out:find("%*%*dimension_arg%*%*")
   local idim = out:find("%*%*dim%*%*")
   assert_true(iarg < idim, "dimension_arg before dim:")
 end)
 
 test("missing sections are omitted, not emitted empty", function()
-  local out = docs.render({ name = "**x** - a thing", description = "Some prose." })
+  local out = assert(docs.render({ name = "**x** - a thing", description = "Some prose." }))
   assert_true(out:find("### %*%*Name%*%*") ~= nil, "name kept:")
   assert_true(out:find("### %*%*Options%*%*") == nil, "no empty Options:")
   assert_true(out:find("### %*%*Examples%*%*") == nil, "no empty Examples:")
@@ -115,15 +116,20 @@ test("an entry with no known sections yields nil", function()
 end)
 
 test("junk input yields nil", function()
+  -- Invalid on purpose: render() must return nil for nil input.
+  ---@diagnostic disable-next-line: param-type-mismatch
   assert_nil(docs.render(nil), "nil:")
+  -- Invalid on purpose: render() must return nil for a number.
+  ---@diagnostic disable-next-line: param-type-mismatch
   assert_nil(docs.render(42), "number:")
 end)
 
 test("every entry in the real file resolves to a string", function()
   -- The regression itself: five entries were tables, and every consumer
   -- assumed a string.
-  local all = docs.load()
-  local bad = {}
+  -- Values are `any`: whether they are all strings is what this test checks.
+  local all = docs.load() ---@type table<string, any>
+  local bad = {} ---@type string[]
   for k, v in pairs(all) do
     if type(v) ~= "string" then
       bad[#bad + 1] = k
@@ -137,6 +143,7 @@ test("the five formerly-structured intrinsics survive a hover round trip", funct
   for _, w in ipairs({ "size", "shape", "lbound", "ubound", "allocated" }) do
     local d = docs.get(w)
     assert_true(type(d) == "string", w .. " is a string:")
+    ---@cast d string
     local ok = pcall(vim.split, d, "\n")
     assert_true(ok, w .. " survives vim.split:")
     assert_true(d:find("### %*%*Name%*%*") ~= nil, w .. " has a Name section:")

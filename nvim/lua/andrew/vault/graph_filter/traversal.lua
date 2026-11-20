@@ -62,7 +62,7 @@ local sort_nodes = sort_utils.sort_by_name
 ---@param arena_scope? integer optional arena scope for ephemeral extra tables
 ---@return fun(rel: string, entry: table, depth: number, link_type: string, parent: table): table|nil
 local function make_on_discover(center_rel, predicate, all_nodes, forward_like, backlink_like, arena_scope)
-  return function(rel, entry, depth, link_type, parent)
+  return function(_, entry, _, link_type, parent)
     local abs = entry.abs_path
     if not predicate(abs) then return nil end
     local name = entry.basename

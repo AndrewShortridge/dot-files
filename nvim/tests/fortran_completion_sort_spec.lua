@@ -4,6 +4,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_completion_sort_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
@@ -12,8 +13,28 @@ package.path = cfg .. "/lua/?.lua;" .. vim.fn.stdpath("data") .. "/lazy/blink.cm
   .. vim.fn.stdpath("data") .. "/lazy/blink.cmp/lua/?/init.lua;" .. package.path
 
 local S = require("andrew.fortran.completion_sort")
+
+-- The part of the plugins/blink-cmp.lua lazy.nvim spec this test reads.
+---@class FortranCompletionSortBlinkSpec
+---@field opts { fuzzy: blink.cmp.FuzzyConfig }
+
+---@type FortranCompletionSortBlinkSpec
 local blink = dofile(cfg .. "/lua/andrew/plugins/blink-cmp.lua")
 
+-- A minimal stand-in for blink.cmp.CompletionItem: only the fields the
+-- comparator and blink's "score"/"sort_text" sorts read.
+---@class FortranCompletionSortItem
+---@field source_id string
+---@field label string
+---@field score number
+---@field sortText string
+---@field exact? boolean
+
+---@param source_id string
+---@param label string
+---@param score? number  defaults to 0
+---@param exact? boolean
+---@return FortranCompletionSortItem
 local function item(source_id, label, score, exact)
   return { source_id = source_id, label = label, score = score or 0, sortText = label, exact = exact }
 end
@@ -78,13 +99,17 @@ test("the comparator is a strict weak ordering table.sort accepts", function()
   -- 300 items across four sources with random scores; table.sort raises
   -- "invalid order function" on an inconsistent comparator.
   local sources = { "lsp", "snippets", "path", "buffer" }
-  local list = {}
+  local list = {} ---@type FortranCompletionSortItem[]
   math.randomseed(42)
   for i = 1, 300 do
     list[i] = item(sources[(i % 4) + 1], ("n%03d"):format(i), math.random(0, 20), math.random() < 0.1)
   end
   local sort = require("blink.cmp.fuzzy.sort")
-  local ok, err = pcall(sort.sort, list, {
+  -- The fake items carry every field these three sorts read.
+  local ok, err = pcall(sort.sort, list --[[@as blink.cmp.CompletionItem[] ]], {
+    ---@param a blink.cmp.CompletionItem
+    ---@param b blink.cmp.CompletionItem
+    ---@return boolean|nil
     function(a, b)
       return S.compare(a, b, "fortran")
     end,
@@ -93,16 +118,22 @@ test("the comparator is a strict weak ordering table.sort accepts", function()
   })
   assert_true(ok, "table.sort rejected the comparator: " .. tostring(err))
   -- Tiers: exact lsp, exact other, non-exact lsp, the rest.
+  ---@param it FortranCompletionSortItem
+  ---@return integer
   local function tier(it)
     local lsp = it.source_id == "lsp"
     if it.exact then return lsp and 1 or 2 end
     return lsp and 3 or 4
   end
+  ---@type integer, number?
   local prev_tier, prev_score = 0, nil
   for _, it in ipairs(list) do
     local t = tier(it)
     assert_true(t >= prev_tier, "tier order broken at " .. it.label .. ":")
     if t == prev_tier then
+      -- prev_tier starts at 0, below every tier, so a match means an earlier
+      -- iteration already set prev_score.
+      ---@cast prev_score -nil
       assert_true(prev_score >= it.score, "score order broken inside a tier at " .. it.label .. ":")
     end
     prev_tier, prev_score = t, it.score
@@ -120,9 +151,12 @@ test("the blink spec wires the comparator first and keeps blink's defaults after
   -- The wrapper routes to the module: an lsp/snippet pair in Fortran decides,
   -- and in a non-Fortran buffer it defers.
   vim.bo.filetype = "fortran"
-  assert_eq(sorts[1](item("lsp", "a", 1), item("snippets", "b", 9)), true, "wired comparator (fortran):")
+  -- The fake items carry every field the comparator reads.
+  assert_eq(sorts[1](item("lsp", "a", 1) --[[@as blink.cmp.CompletionItem]],
+    item("snippets", "b", 9) --[[@as blink.cmp.CompletionItem]]), true, "wired comparator (fortran):")
   vim.bo.filetype = "lua"
-  assert_nil(sorts[1](item("lsp", "a", 1), item("snippets", "b", 9)), "wired comparator (lua):")
+  assert_nil(sorts[1](item("lsp", "a", 1) --[[@as blink.cmp.CompletionItem]],
+    item("snippets", "b", 9) --[[@as blink.cmp.CompletionItem]]), "wired comparator (lua):")
   vim.bo.filetype = ""
 end)
 

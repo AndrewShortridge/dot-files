@@ -30,10 +30,8 @@ end
 
 --- Transform a brace-delimited block `{ stmts }`.
 --- Consumes the opening `{` and closing `}`.
---- If `is_arrow` is true, doesn't emit enclosing tokens (used for arrow function blocks).
 ---@param ctx table
----@param is_arrow boolean|nil
-function M.transform_block(ctx, is_arrow)
+function M.transform_block(ctx)
   if not C.tk_is(ctx, TK.PUNCT, "{") then return end
   C.tk_advance(ctx) -- skip {
 
@@ -137,7 +135,7 @@ function M.transform_statement(ctx)
 
   -- Function declarations
   if t.type == TK.IDENT and t.value == "function" then
-    local next_sig, next_off = C.peek_significant(ctx, 1)
+    local next_sig = C.peek_significant(ctx, 1)
     if next_sig.type == TK.IDENT then
       -- Named function declaration
       C.tk_advance(ctx) -- skip 'function'
@@ -167,7 +165,7 @@ function M.transform_statement(ctx)
 
       -- Function body
       if C.tk_is(ctx, TK.PUNCT, "{") then
-        M.transform_block(ctx, false)
+        M.transform_block(ctx)
       end
 
       C.emit(ctx, "\nend")
@@ -226,7 +224,7 @@ function M.transform_statement(ctx)
 
           -- Loop body
           if C.tk_is(ctx, TK.PUNCT, "{") then
-            M.transform_block(ctx, false)
+            M.transform_block(ctx)
           else
             -- Single statement body
             C.emit(ctx, "\n  ")
@@ -260,7 +258,7 @@ function M.transform_statement(ctx)
           C.skip_ws(ctx)
 
           if C.tk_is(ctx, TK.PUNCT, "{") then
-            M.transform_block(ctx, false)
+            M.transform_block(ctx)
           else
             C.emit(ctx, "\n  ")
             M.transform_statement(ctx)
@@ -318,7 +316,7 @@ function M.transform_statement(ctx)
 
       -- Loop body
       if C.tk_is(ctx, TK.PUNCT, "{") then
-        M.transform_block(ctx, false)
+        M.transform_block(ctx)
       else
         C.emit(ctx, "\n  ")
         M.transform_statement(ctx)
@@ -364,7 +362,7 @@ function M.transform_statement(ctx)
 
     -- If body
     if C.tk_is(ctx, TK.PUNCT, "{") then
-      M.transform_block(ctx, false)
+      M.transform_block(ctx)
     else
       -- Single statement
       C.emit(ctx, "\n  ")
@@ -399,7 +397,7 @@ function M.transform_statement(ctx)
         end
         C.skip_ws(ctx)
         if C.tk_is(ctx, TK.PUNCT, "{") then
-          M.transform_block(ctx, false)
+          M.transform_block(ctx)
         else
           C.emit(ctx, "\n  ")
           M.transform_statement(ctx)
@@ -410,7 +408,7 @@ function M.transform_statement(ctx)
         C.emit(ctx, "\nelse")
         C.skip_ws(ctx)
         if C.tk_is(ctx, TK.PUNCT, "{") then
-          M.transform_block(ctx, false)
+          M.transform_block(ctx)
         else
           C.emit(ctx, "\n  ")
           M.transform_statement(ctx)
@@ -449,7 +447,7 @@ function M.transform_statement(ctx)
     end
     C.skip_ws(ctx)
     if C.tk_is(ctx, TK.PUNCT, "{") then
-      M.transform_block(ctx, false)
+      M.transform_block(ctx)
     else
       C.emit(ctx, "\n  ")
       M.transform_statement(ctx)

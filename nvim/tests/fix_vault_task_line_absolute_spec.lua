@@ -15,6 +15,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fix_vault_task_line_absolute_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -85,7 +86,7 @@ test("parse_content and parse_chunk agree on the same body", function()
   -- parse_chunk is handed the body only, told where it starts in the file, and
   -- has always returned file-absolute lines.
   local body = { lines[4], lines[5], lines[6] }
-  local from_chunk = parser.parse_chunk(body, 4, nil).tasks
+  local from_chunk = parser.parse_chunk(body, 4, nil).tasks ---@type table[]
   assert_eq(#from_content, #from_chunk)
   for i = 1, #from_content do
     assert_eq(from_content[i].line, from_chunk[i].line,
@@ -115,7 +116,7 @@ test("the index schema version was bumped past the body-relative format", functi
   -- old body-relative task lines; vault_index.load() must reject it on version
   -- mismatch and rebuild instead of trusting those numbers.
   local src = vim.fn.readfile(vim.fn.stdpath("config") .. "/lua/andrew/vault/vault_index.lua")
-  local version
+  local version ---@type string?
   for _, l in ipairs(src) do
     version = version or l:match("^local SCHEMA_VERSION = (%d+)")
   end

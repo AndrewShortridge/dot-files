@@ -133,6 +133,7 @@ function M.filter_results(results, names)
           for name_lower, original_name in pairs(name_lower_set) do
             local ms, me = utils.find_name_at_col(line_lower, name_lower, r.col)
             if ms then
+              ---@cast me -nil
               if link_scan.overlaps_range(ms - 1, me, link_ranges) then
                 skip = true
                 break

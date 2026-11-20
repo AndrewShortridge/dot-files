@@ -28,6 +28,9 @@ return {
     local ts_context_commentstring = require("ts_context_commentstring.integrations.comment_nvim")
 
     -- Setup with tree-sitter integration
+    -- Comment.nvim declares every CommentConfig field required, but setup()
+    -- merges what it is given over its defaults (Comment/config.lua, Config:set).
+    ---@diagnostic disable-next-line: missing-fields
     comment.setup({
       -- Pre-hook for tree-sitter comment string detection
       -- Enables accurate commenting in: Vue, JSX, Svelte, HTML, etc.

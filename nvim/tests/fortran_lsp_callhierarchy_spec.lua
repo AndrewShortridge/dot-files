@@ -60,6 +60,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_lsp_callhierarchy_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil, assert_deep_eq = _H.assert_nil, _H.assert_deep_eq
@@ -68,6 +69,24 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 local scan = require("andrew.fortran.scan")
 local ch = require("andrew.fortran.lsp_callhierarchy")
+local nvim_compat = require("andrew.utils.nvim_compat")
+
+--- The `data` lsp_callhierarchy's item_for_unit attaches to the items it builds.
+---@class FortranLspCallhierarchyItemData
+---@field lname string
+---@field kind string
+---@field root string
+---@field path string
+---@field lnum integer
+---@field col integer
+
+---@class FortranLspCallhierarchyItem: lsp.CallHierarchyItem
+---@field data FortranLspCallhierarchyItemData
+
+---@alias FortranLspCallhierarchyCall lsp.CallHierarchyIncomingCall|lsp.CallHierarchyOutgoingCall
+
+--- The callback ch.prepare / ch.incoming / ch.outgoing answer through.
+---@alias FortranLspCallhierarchyCallback fun(err: table|nil, result: table[]|nil)
 
 local HAVE_RG = vim.fn.executable("rg") == 1
 
@@ -138,25 +157,37 @@ vim.fn.writefile(SOLVER, root .. "/code/solver.f90")
 vim.fn.writefile(MAIN, root .. "/code/main.f90")
 vim.fn.writefile(REPORT, root .. "/code/report.f90")
 
+---@param name string
+---@return string
 local function path_of(name)
   return root .. "/code/" .. name
 end
 
+---@param name string
+---@return string
 local function uri_of(name)
-  return vim.uri_from_fname(path_of(name))
+  return nvim_compat.uri_from_file_name(path_of(name))
 end
 
 -- Helpers --------------------------------------------------------------------
 
 --- LSP position of `needle` on line `lnum` (1-based) of `lines`.
+---@param lines string[]
+---@param lnum integer
+---@param needle string
+---@return lsp.Position
 local function pos_of(lines, lnum, needle)
   local col = assert(lines[lnum]:find(needle, 1, true), "needle not on that line")
   return { line = lnum - 1, character = col - 1 }
 end
 
 --- Drive an async provider entry point to completion.
+---@param run fun(cb: FortranLspCallhierarchyCallback)
+---@return table[]|nil
 local function await(run)
-  local result, done = nil, false
+  local result, done = nil, false ---@type table[]|nil, boolean
+  ---@param _ table|nil
+  ---@param res table[]|nil
   run(function(_, res)
     result = res
     done = true
@@ -167,25 +198,41 @@ local function await(run)
   return result
 end
 
+---@param file string
+---@param lines string[]
+---@param lnum integer
+---@param needle string
+---@return FortranLspCallhierarchyItem[]|nil
 local function prepare(file, lines, lnum, needle)
+  ---@param cb FortranLspCallhierarchyCallback
   return await(function(cb)
     ch.prepare({ textDocument = { uri = uri_of(file) }, position = pos_of(lines, lnum, needle) }, cb)
   end)
 end
 
 --- Sorted "Name" list from a hierarchy result, reading `from` or `to`.
+---@param result FortranLspCallhierarchyCall[]|nil
+---@param field "from"|"to"
+---@return string[]
 local function endpoints(result, field)
-  local out = {}
+  local out = {} ---@type string[]
   for _, entry in ipairs(result or {}) do
-    out[#out + 1] = entry[field].name
+    -- `field` names the other end of the call in both shapes.
+    out[#out + 1] = (entry[field] --[[@as lsp.CallHierarchyItem]]).name
   end
   table.sort(out)
   return out
 end
 
+---@overload fun(result: lsp.CallHierarchyIncomingCall[]|nil, field: "from", name: string): lsp.CallHierarchyIncomingCall|nil
+---@overload fun(result: lsp.CallHierarchyOutgoingCall[]|nil, field: "to", name: string): lsp.CallHierarchyOutgoingCall|nil
+---@param result FortranLspCallhierarchyCall[]|nil
+---@param field "from"|"to"
+---@param name string
+---@return FortranLspCallhierarchyCall|nil
 local function entry_named(result, field, name)
   for _, e in ipairs(result or {}) do
-    if e[field].name == name then
+    if (e[field] --[[@as lsp.CallHierarchyItem]]).name == name then
       return e
     end
   end
@@ -193,8 +240,10 @@ local function entry_named(result, field, name)
 end
 
 --- 0-based start lines of a fromRanges list, sorted.
+---@param entry FortranLspCallhierarchyCall
+---@return integer[]
 local function range_lines(entry)
-  local out = {}
+  local out = {} ---@type integer[]
   for _, r in ipairs(entry.fromRanges) do
     out[#out + 1] = r.start.line
   end
@@ -210,6 +259,7 @@ test("prepare on a definition spans the whole unit and needs no project scan", f
   ch.reset()
   local items = prepare("physics.f90", PHYSICS, 3, "Heating")
   assert_true(items and #items == 1, "one item for the procedure under the cursor:")
+  ---@cast items -nil
   local item = items[1]
   assert_eq(item.name, "Heating", "source spelling is kept:")
   -- SymbolKind.Function -- a subroutine is a free-standing program unit, not a
@@ -230,6 +280,7 @@ test("prepare on a nested unit does not swallow its siblings", function()
   ch.reset()
   local items = prepare("physics.f90", PHYSICS, 7, "Energy")
   assert_true(items and #items == 1)
+  ---@cast items -nil
   assert_eq(items[1].name, "Energy")
   assert_eq(items[1].range.start.line, 6, "opens on line 7:")
   assert_eq(items[1].range["end"].line, 9, "closes on `end function` (line 10):")
@@ -250,6 +301,7 @@ test("prepare on a call site resolves to the callee's definition", function()
   ch.reset()
   local items = prepare("solver.f90", SOLVER, 4, "Heating")
   assert_true(items and #items == 1, "the callee is identified from the call statement:")
+  ---@cast items -nil
   assert_eq(items[1].name, "Heating")
   assert_eq(items[1].uri, uri_of("physics.f90"), "the item is the DEFINITION, not the call site:")
   assert_eq(items[1].selectionRange.start.line, 2, "at physics.f90 line 3:")
@@ -262,6 +314,7 @@ test("prepare on a paren reference: a known procedure yes, an array no", functio
   ch.reset()
   local fn = prepare("solver.f90", SOLVER, 5, "Energy")
   assert_true(fn and #fn == 1, "Energy( is a call because the project defines Energy:")
+  ---@cast fn -nil
   assert_eq(fn[1].uri, uri_of("physics.f90"))
 
   -- Same syntax, no definition: `arr(3)` is a subscript. This is the single
@@ -279,14 +332,15 @@ test("incoming groups call sites by the unit that contains them", function()
   end
   ch.reset()
   local item = prepare("physics.f90", PHYSICS, 3, "Heating")[1]
-  local result = await(function(cb)
+  ---@param cb FortranLspCallhierarchyCallback
+  local result = await(function(cb) ---@type lsp.CallHierarchyIncomingCall[]|nil
     ch.incoming({ item = item }, cb)
   end)
 
   -- Both callers live in solver.f90. Grouping by FILE would give one entry.
   assert_deep_eq(endpoints(result, "from"), { "Drive", "Step" }, "one entry per calling unit:")
 
-  local step = entry_named(result, "from", "Step")
+  local step = assert(entry_named(result, "from", "Step"))
   assert_eq(step.from.uri, uri_of("solver.f90"))
   assert_eq(step.from.range.start.line, 0, "the caller item spans the calling unit:")
   assert_eq(step.from.range["end"].line, 7, "Step ends on line 8:")
@@ -294,7 +348,7 @@ test("incoming groups call sites by the unit that contains them", function()
   -- continuation. Line 3 is a comment and must not appear.
   assert_deep_eq(range_lines(step), { 3, 6 }, "Step's two call sites (0-based lines 3 and 6):")
 
-  local drive = entry_named(result, "from", "Drive")
+  local drive = assert(entry_named(result, "from", "Drive"))
   assert_deep_eq(range_lines(drive), { 11, 12 }, "`call Heating` and `call HEATING` are both calls:")
 
   -- Trap 2: `subroutine Heating(t)` is itself a `Heating(` hit. If the
@@ -308,9 +362,10 @@ test("incoming reports one range per call site, not one per scanner pass", funct
   end
   ch.reset()
   local item = prepare("physics.f90", PHYSICS, 3, "Heating")[1]
-  local result = await(function(cb)
+  ---@param cb FortranLspCallhierarchyCallback
+  local result = assert(await(function(cb) ---@type lsp.CallHierarchyIncomingCall[]
     ch.incoming({ item = item }, cb)
-  end)
+  end))
   local total = 0
   for _, e in ipairs(result) do
     total = total + #e.fromRanges
@@ -327,7 +382,8 @@ test("incoming on a name nobody calls is empty, not an error", function()
   end
   ch.reset()
   local item = prepare("main.f90", MAIN, 1, "Main")[1]
-  local result = await(function(cb)
+  ---@param cb FortranLspCallhierarchyCallback
+  local result = await(function(cb) ---@type lsp.CallHierarchyIncomingCall[]|nil
     ch.incoming({ item = item }, cb)
   end)
   assert_nil(result, "nothing calls the program:")
@@ -343,7 +399,8 @@ test("outgoing is the item's own body, not its whole file", function()
   end
   ch.reset()
   local item = prepare("solver.f90", SOLVER, 1, "Step")[1]
-  local result = await(function(cb)
+  ---@param cb FortranLspCallhierarchyCallback
+  local result = await(function(cb) ---@type lsp.CallHierarchyOutgoingCall[]|nil
     ch.outgoing({ item = item }, cb)
   end)
 
@@ -352,7 +409,7 @@ test("outgoing is the item's own body, not its whole file", function()
   assert_deep_eq(endpoints(result, "to"), { "Energy", "Heating" }, "Step's callees only:")
   assert_nil(entry_named(result, "to", "MPI_Barrier"), "Drive's callee is not Step's:")
 
-  local heating = entry_named(result, "to", "Heating")
+  local heating = assert(entry_named(result, "to", "Heating"))
   assert_deep_eq(range_lines(heating), { 3, 6 }, "both of Step's calls, continuation included:")
 end)
 
@@ -362,7 +419,8 @@ test("outgoing excludes array subscripts and self-referencing headers", function
   end
   ch.reset()
   local item = prepare("solver.f90", SOLVER, 1, "Step")[1]
-  local result = await(function(cb)
+  ---@param cb FortranLspCallhierarchyCallback
+  local result = await(function(cb) ---@type lsp.CallHierarchyOutgoingCall[]|nil
     ch.outgoing({ item = item }, cb)
   end)
   assert_nil(entry_named(result, "to", "arr"), "arr(10) / arr(3) are subscripts:")
@@ -377,10 +435,11 @@ test("outgoing fromRanges are in the CALLER's document", function()
   end
   ch.reset()
   local item = prepare("solver.f90", SOLVER, 1, "Step")[1]
-  local result = await(function(cb)
+  ---@param cb FortranLspCallhierarchyCallback
+  local result = await(function(cb) ---@type lsp.CallHierarchyOutgoingCall[]|nil
     ch.outgoing({ item = item }, cb)
   end)
-  local energy = entry_named(result, "to", "Energy")
+  local energy = assert(entry_named(result, "to", "Energy"))
   -- The callee lives in physics.f90 at line 7...
   assert_eq(energy.to.uri, uri_of("physics.f90"), "`to` is the callee's definition:")
   assert_eq(energy.to.selectionRange.start.line, 6)
@@ -394,14 +453,16 @@ test("outgoing stops at CONTAINS: a contained procedure's calls are its own", fu
   end
   ch.reset()
   local main = prepare("main.f90", MAIN, 1, "Main")[1]
-  local result = await(function(cb)
+  ---@param cb FortranLspCallhierarchyCallback
+  local result = await(function(cb) ---@type lsp.CallHierarchyOutgoingCall[]|nil
     ch.outgoing({ item = main }, cb)
   end)
   -- Inner is inside Main's line range and calls Report. It is not Main's call.
   assert_deep_eq(endpoints(result, "to"), { "Step" }, "only the program's own calls:")
 
   local inner = prepare("main.f90", MAIN, 6, "Inner")[1]
-  local inner_result = await(function(cb)
+  ---@param cb FortranLspCallhierarchyCallback
+  local inner_result = await(function(cb) ---@type lsp.CallHierarchyOutgoingCall[]|nil
     ch.outgoing({ item = inner }, cb)
   end)
   assert_deep_eq(endpoints(inner_result, "to"), { "Report" }, "the contained unit owns its call:")
@@ -413,16 +474,18 @@ test("outgoing keeps a callee the project does not define", function()
   end
   ch.reset()
   local item = prepare("solver.f90", SOLVER, 10, "Drive")[1]
-  local result = await(function(cb)
+  ---@param cb FortranLspCallhierarchyCallback
+  local result = await(function(cb) ---@type lsp.CallHierarchyOutgoingCall[]|nil
     ch.outgoing({ item = item }, cb)
   end)
   local mpi = entry_named(result, "to", "MPI_Barrier")
   assert_true(mpi ~= nil, "`call MPI_Barrier` is a call even with no definition:")
+  ---@cast mpi -nil
   assert_eq(mpi.to.detail, "external", "and is labelled as unresolved:")
   assert_eq(mpi.to.uri, uri_of("solver.f90"), "positioned at the only place it is known:")
 
   -- `call Heating` and `call HEATING` are one callee with two ranges.
-  local heating = entry_named(result, "to", "Heating")
+  local heating = assert(entry_named(result, "to", "Heating"))
   assert_deep_eq(range_lines(heating), { 11, 12 }, "case-insensitive grouping:")
   assert_eq(heating.to.name, "Heating", "the callee keeps its DEFINITION's spelling:")
 end)
@@ -439,14 +502,18 @@ test("the project cache is built once and dropped on reset", function()
 
   local real_defs, real_calls = scan.project_definitions, scan.project_calls
   local n_defs, n_calls = 0, 0
-  scan.project_definitions = function(r, cb)
+  ---@type fun(root: string, cb: fun(defs: table[]))
+  local counting_definitions = function(r, cb)
     n_defs = n_defs + 1
     return real_defs(r, cb)
   end
-  scan.project_calls = function(r, known, cb)
+  ---@type fun(root: string, known: string[], cb: fun(calls: table[]))
+  local counting_calls = function(r, known, cb)
     n_calls = n_calls + 1
     return real_calls(r, known, cb)
   end
+  scan.project_definitions = counting_definitions
+  scan.project_calls = counting_calls
 
   local ok, err = pcall(function()
     local item = prepare("physics.f90", PHYSICS, 3, "Heating")[1]
@@ -454,9 +521,10 @@ test("the project cache is built once and dropped on reset", function()
     assert_eq(n_defs, 0, "a definition needs no project scan:")
 
     for _ = 1, 3 do
-      local result = await(function(cb)
+      ---@param cb FortranLspCallhierarchyCallback
+      local result = assert(await(function(cb) ---@type lsp.CallHierarchyIncomingCall[]
         ch.incoming({ item = item }, cb)
-      end)
+      end))
       assert_eq(#result, 2, "every expansion answers the same:")
     end
     -- Three expansions of the picker, one ripgrep pass of each kind.
@@ -464,6 +532,7 @@ test("the project cache is built once and dropped on reset", function()
     assert_eq(n_calls, 1, "calls scanned once for three requests:")
 
     ch.reset()
+    ---@param cb FortranLspCallhierarchyCallback
     await(function(cb)
       ch.incoming({ item = item }, cb)
     end)
@@ -485,27 +554,32 @@ test("invalidate rebuilds exactly the root it was given", function()
 
   local real_defs = scan.project_definitions
   local n_defs = 0
-  scan.project_definitions = function(r, cb)
+  ---@type fun(root: string, cb: fun(defs: table[]))
+  local counting_definitions = function(r, cb)
     n_defs = n_defs + 1
     return real_defs(r, cb)
   end
+  scan.project_definitions = counting_definitions
 
   local ok, err = pcall(function()
     local item = prepare("physics.f90", PHYSICS, 3, "Heating")[1]
-    local before = await(function(cb)
+    ---@param cb FortranLspCallhierarchyCallback
+    local before = await(function(cb) ---@type lsp.CallHierarchyIncomingCall[]|nil
       ch.incoming({ item = item }, cb)
     end)
     assert_eq(n_defs, 1, "one scan to build the index:")
 
     -- A root nobody asked about: the live cache must survive it.
     ch.invalidate("/nonexistent-root")
+    ---@param cb FortranLspCallhierarchyCallback
     await(function(cb)
       ch.incoming({ item = item }, cb)
     end)
     assert_eq(n_defs, 1, "invalidating another root leaves this one cached:")
 
     ch.invalidate(root)
-    local after = await(function(cb)
+    ---@param cb FortranLspCallhierarchyCallback
+    local after = await(function(cb) ---@type lsp.CallHierarchyIncomingCall[]|nil
       ch.incoming({ item = item }, cb)
     end)
     assert_eq(n_defs, 2, "invalidating THIS root forces a rebuild:")

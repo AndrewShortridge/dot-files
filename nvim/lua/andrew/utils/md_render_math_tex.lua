@@ -861,7 +861,7 @@ end
 
 ---@param path string
 ---@param content string
----@return boolean
+---@return boolean? is_written nil when the file could not be closed
 local function write_file(path, content)
   local file = io.open(path, "w")
   if not file then
@@ -926,9 +926,11 @@ end
 --- each when they exist; see the top of the file).
 ---@return boolean
 local function make_directories()
-  -- `mkdir()` raises (E739) where it cannot create.
+  -- `mkdir()` raises (E739) where it cannot create. Both paths are set: every
+  -- public function runs M.setup() before anything gets here.
   local is_made, result = pcall(function()
-    return vim.fn.mkdir(masks_directory, "p") == 1 and vim.fn.mkdir(run_directory, "p") == 1
+    return vim.fn.mkdir(masks_directory --[[@as string]], "p") == 1
+      and vim.fn.mkdir(run_directory --[[@as string]], "p") == 1
   end)
   return is_made and result
 end
@@ -1539,7 +1541,7 @@ local function stop_standby()
 end
 
 local function start_idle_timer()
-  idle_timer = vim.uv.new_timer()
+  idle_timer = assert(vim.uv.new_timer())
   idle_timer:start(standby_idle_milliseconds, standby_idle_milliseconds, function()
     vim.schedule(function()
       if has_recent_need then
@@ -1697,7 +1699,7 @@ local function parse_tex_output(output)
     local begun = line:match("^MDMATH BEGIN (%d+)")
     if begun then
       is_in_order = is_in_order and tonumber(begun) == (current or 0) + 1
-      current = tonumber(begun)
+      current = tonumber(begun) --[[@as integer]]
       outcomes[current] = { page = nil, has_error = false, is_dirty = false, is_skipped = false }
       is_context_wanted = false
     elseif line:sub(1, 2) == "! " then
@@ -2328,7 +2330,8 @@ local function maintenance_work(
   remove_tree_code
 )
   local libuv = vim.uv
-  local remove_tree = loadstring(remove_tree_code)
+  -- The bytecode of `remove_tree_work`, dumped by this same Neovim: it loads.
+  local remove_tree = loadstring(remove_tree_code) --[[@as function]]
   --- `for name, kind in entries_of(directory)`; nothing when it is not there.
   local function entries_of(directory)
     local scanner = libuv.fs_scandir(directory)
@@ -2591,6 +2594,7 @@ end
 ---@return MdRenderMathPicture|false|nil
 function M.lookup(equation, look)
   local memory_key, _, tex = identify(equation, look)
+  ---@type MdRenderMathPicture|false|nil
   local known = settled[memory_key]
   if known ~= nil then
     return known

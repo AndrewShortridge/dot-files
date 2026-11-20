@@ -18,20 +18,15 @@ local cleanup = require("andrew.vault.resource_cleanup")
 -- Pool class (metatable-based)
 -- ---------------------------------------------------------------------------
 
----@class CoalescerPool
----@field _in_flight table<string, CoalescerEntry>
----@field _stats CoalescerStats
----@field _config CoalescerPoolConfig
----@field name string
-
 ---@class CoalescerEntry
 ---@field waiters table<integer, {cb: fun(result: any, err: string|nil), cancelled: boolean, id: integer}>
----@field timer userdata|nil
+---@field timer uv.uv_timer_t|nil
 ---@field done boolean
 ---@field result any
 ---@field err string|nil
----@field done_timer userdata|nil  -- cleanup timer for late-arrival window
+---@field done_timer uv.uv_timer_t|nil  -- cleanup timer for late-arrival window
 ---@field next_waiter_id integer  -- monotonic waiter ID counter
+---@field resolved_waiter_count integer|nil  -- waiters notified on resolve (set once done)
 
 ---@class CoalescerHandle
 ---@field cancel fun(): boolean  Cancel this subscriber; auto-cancels operation if last one
@@ -46,11 +41,22 @@ local cleanup = require("andrew.vault.resource_cleanup")
 ---@field timeout_ms integer
 ---@field done_linger_ms integer  -- how long resolved entries remain for late arrivals
 
+---@class CoalescerPool
+---@field _in_flight table<string, CoalescerEntry>
+---@field _stats CoalescerStats
+---@field _config CoalescerPoolConfig
+---@field name string
 local Pool = {}
 Pool.__index = Pool
 
+---@class CoalescerPoolOpts
+---@field max_waiters? integer
+---@field timeout_ms? integer
+---@field done_linger_ms? integer
+---@field name? string
+
 --- Create a new coalescer pool with independent state and configuration.
----@param opts? {max_waiters?: integer, timeout_ms?: integer, done_linger_ms?: integer, name?: string}
+---@param opts? CoalescerPoolOpts
 ---@return CoalescerPool
 function Pool.new(opts)
   opts = opts or {}
@@ -394,7 +400,7 @@ local _pool_configs = {} -- Stored pool configs from configure(), applied to lat
 
 --- Create a new independent coalescer pool.
 --- If configure() was already called with opts for this pool name, applies them.
----@param opts? {max_waiters?: integer, timeout_ms?: integer, done_linger_ms?: integer, name?: string}
+---@param opts? CoalescerPoolOpts
 ---@return CoalescerPool
 function M.new(opts)
   local pool = Pool.new(opts)

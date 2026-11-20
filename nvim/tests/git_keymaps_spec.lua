@@ -39,8 +39,13 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/git_keymaps_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
+
+-- Plugin type libraries for lua_ls (lazydev loads them from these lines):
+---@module "gitsigns"
+---@module "which-key"
 
 local cfg = vim.fn.stdpath("config")
 
@@ -48,15 +53,23 @@ local cfg = vim.fn.stdpath("config")
 -- plugins/git.lua -- global <leader>g keys
 -- ---------------------------------------------------------------------------
 
+---@class GitKeymapsSnacksFragment: LazyPluginSpec
+---@field keys LazyKeysSpec[]  git.lua always lists its keys as a table of key specs
+
+---@class GitKeymapsKey
+---@field modes table<string, boolean>  mode short-name -> true
+---@field desc? string
+
+---@type GitKeymapsSnacksFragment
 local git = dofile(cfg .. "/lua/andrew/plugins/git.lua")
 
-local gkeys = {}
+local gkeys = {} ---@type table<string, GitKeymapsKey>
 for _, k in ipairs(git.keys or {}) do
-  local modes = k.mode or "n"
+  local modes = k.mode or "n" ---@type string|string[]
   if type(modes) == "string" then
     modes = { modes }
   end
-  local set = {}
+  local set = {} ---@type table<string, boolean>
   for _, m in ipairs(modes) do
     set[m] = true
   end
@@ -134,28 +147,53 @@ end)
 -- plugins/gitsigns.lua -- buffer-local hunk keys
 -- ---------------------------------------------------------------------------
 
+---@type LazyPluginSpec
 local gitsigns_spec = dofile(cfg .. "/lua/andrew/plugins/gitsigns.lua")
+
+--- Partial stand-in for the Snacks global: gitsigns' opts() only touches Snacks.toggle.
+---@class GitKeymapsFakeSnacks
+---@field toggle table  a callable table (`__call`) standing in for Snacks.toggle; returns a GitKeymapsNoopToggle
 
 --- Run on_attach against a scratch buffer of the given filetype and collect
 --- every "mode:lhs" -> desc it maps.
 --- gitsigns' `opts` is a function: it registers the <leader>uG "Git Signs"
 --- Snacks.toggle and then returns the options table. Resolve it behind a
 --- stubbed Snacks so these specs keep reaching on_attach.
+---@param spec LazyPluginSpec
+---@return Gitsigns.Config
 local function gitsigns_opts(spec)
   if type(spec.opts) ~= "function" then
-    return spec.opts
+    -- not a function, so it is the options table itself
+    return spec.opts --[[@as Gitsigns.Config]]
   end
-  local prev = _G.Snacks
-  local noop_toggle = {}
+  local prev = _G.Snacks ---@type Snacks?
+  ---@class GitKeymapsNoopToggle
+  ---@field map fun(self: GitKeymapsNoopToggle): GitKeymapsNoopToggle
+  local noop_toggle = {} ---@type GitKeymapsNoopToggle
+  ---@param self GitKeymapsNoopToggle
+  ---@return GitKeymapsNoopToggle
   noop_toggle.map = function(self) return self end
   -- the spec calls Snacks.toggle({...}):map(...), so `toggle` is the callable
-  _G.Snacks = { toggle = setmetatable({}, { __call = function() return noop_toggle end }) }
-  local ok, res = pcall(spec.opts)
+  ---@type GitKeymapsFakeSnacks
+  local fake_snacks = {
+    toggle = setmetatable({}, {
+      ---@return GitKeymapsNoopToggle
+      __call = function() return noop_toggle end,
+    }),
+  }
+  -- Partial fake (see GitKeymapsFakeSnacks): handed to gitsigns' opts() as the Snacks global.
+  _G.Snacks = fake_snacks --[[@as Snacks]]
+  -- gitsigns.lua's opts() takes no arguments and returns the options table
+  local ok, res = pcall(spec.opts --[[@as fun(): Gitsigns.Config]])
   _G.Snacks = prev
   assert(ok, "gitsigns opts() failed: " .. tostring(res))
-  return res
+  return res --[[@as Gitsigns.Config]]
 end
 
+---@param filetype string
+---@return table<string, string|true> maps  "mode:lhs" -> desc (true when the map has none)
+---@return boolean ok
+---@return any err  pcall's error value when on_attach raised
 local function attach(filetype)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].filetype = filetype
@@ -164,7 +202,6 @@ local function attach(filetype)
   package.loaded.gitsigns = {
     nav_hunk = noop,
     stage_buffer = noop,
-    undo_stage_hunk = noop,
     reset_buffer = noop,
     preview_hunk_inline = noop,
     blame_line = noop,
@@ -173,11 +210,16 @@ local function attach(filetype)
     toggle_current_line_blame = noop,
   }
 
-  local maps = {}
+  local maps = {} ---@type table<string, string|true>
   local real_set = vim.keymap.set
+  ---@param mode string|string[]
+  ---@param lhs string|string[]
+  ---@param _ string|function
+  ---@param opts? vim.keymap.set.Opts
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.keymap.set = function(mode, lhs, _, opts)
-    local modes = type(mode) == "string" and { mode } or mode
+    -- a single mode string is wrapped, so this is always a list of modes
+    local modes = (type(mode) == "string" and { mode } or mode) --[[@as string[] ]]
     for _, m in ipairs(modes) do
       maps[m .. ":" .. lhs] = (opts or {}).desc or true
     end
@@ -205,7 +247,7 @@ test("every LazyVim hunk action is under <leader>gh", function()
     ["n:<leader>ghr"] = "Reset Hunk",
     ["x:<leader>ghr"] = "Reset Hunk",
     ["n:<leader>ghS"] = "Stage Buffer",
-    ["n:<leader>ghu"] = "Undo Stage Hunk",
+    ["n:<leader>ghu"] = "Unstage Hunk",
     ["n:<leader>ghR"] = "Reset Buffer",
     ["n:<leader>ghp"] = "Preview Hunk Inline",
     ["n:<leader>ghb"] = "Blame Line",
@@ -285,18 +327,32 @@ end)
 -- diffthis is async, hence the completion callback rather than acting on the
 -- return value.
 
-local diff_calls = {}
-local ghd_rhs, ghD_rhs
+---@class GitKeymapsDiffCall
+---@field base? string  revision diffthis was asked to diff against (nil = index)
+---@field cb? fun(err?: string)  completion callback diffthis was given
+
+local diff_calls = {} ---@type GitKeymapsDiffCall[]
+local ghd_rhs ---@type string|function|nil
+local ghD_rhs ---@type string|function|nil
 do
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].filetype = "lua"
   package.loaded.gitsigns = setmetatable({
+    ---@param base? string
+    ---@param _? Gitsigns.DiffthisOpts
+    ---@param cb? fun(err?: string)
     diffthis = function(base, _, cb)
       diff_calls[#diff_calls + 1] = { base = base, cb = cb }
     end,
-  }, { __index = function() return function() end end })
+  }, {
+    ---@return fun()
+    __index = function() return function() end end,
+  })
 
   local real_set = vim.keymap.set
+  ---@param _ string|string[]
+  ---@param lhs string|string[]
+  ---@param rhs string|function
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.keymap.set = function(_, lhs, rhs)
     if lhs == "<leader>ghd" then
@@ -314,6 +370,8 @@ end
 test("the diff mappings go through a wrapper, not gs.diffthis directly", function()
   assert_true(type(ghd_rhs) == "function", "<leader>ghd must have a function rhs")
   assert_true(type(ghD_rhs) == "function", "<leader>ghD must have a function rhs")
+  ---@cast ghd_rhs function
+  ---@cast ghD_rhs function
 
   diff_calls = {}
   ghd_rhs()
@@ -330,7 +388,7 @@ end)
 test("focus moves to the gitsigns diff window once diffthis completes", function()
   local start_win = vim.api.nvim_get_current_win()
   diff_calls = {}
-  ghd_rhs()
+  assert(ghd_rhs)()
 
   -- The split gitsigns would have made: a NEW window on a gitsigns:// buffer.
   vim.cmd("new")
@@ -339,7 +397,7 @@ test("focus moves to the gitsigns diff window once diffthis completes", function
   vim.api.nvim_buf_set_name(diff_buf, "gitsigns:///tmp/spec/.git//:0:f.txt")
   vim.api.nvim_set_current_win(start_win)
 
-  diff_calls[1].cb()
+  assert(diff_calls[1].cb)()
   vim.wait(200, function()
     return vim.api.nvim_get_current_win() == diff_win
   end)
@@ -361,8 +419,8 @@ test("an already-open diff never yanks the cursor away", function()
   start_win = vim.api.nvim_get_current_win()
 
   diff_calls = {}
-  ghd_rhs()
-  diff_calls[1].cb()
+  assert(ghd_rhs)()
+  assert(diff_calls[1].cb)()
   vim.wait(150)
   assert_eq(vim.api.nvim_get_current_win(), start_win, "a pre-existing gitsigns window must not steal focus")
 
@@ -373,23 +431,29 @@ end)
 -- plugins/which-key.lua -- group labels
 -- ---------------------------------------------------------------------------
 
-local groups = {}
+local groups = {} ---@type table<string, string|fun():string>
 do
+  ---@type wk.Spec[]
   local added = {}
   package.loaded["which-key"] = {
     setup = function() end,
+    ---@param spec wk.Spec
     add = function(spec)
       for _, e in ipairs(spec) do
-        added[#added + 1] = e
+        -- which-key.lua passes a list of specs; each element is one spec
+        added[#added + 1] = e --[[@as wk.Spec]]
       end
     end,
   }
+  ---@type LazyPluginSpec
   local wkspec = dofile(cfg .. "/lua/andrew/plugins/which-key.lua")
-  local ok, err = pcall(wkspec.config, nil, wkspec.opts or {})
+  -- which-key.lua's config is a function (never `true`); it ignores its arguments
+  local ok, err = pcall(wkspec.config --[[@as fun(self: LazyPlugin?, opts: table)]], nil, wkspec.opts or {})
   package.loaded["which-key"] = nil
   for _, e in ipairs(added) do
     if e.group then
-      groups[e[1]] = e.group
+      -- a group spec always carries its lhs at [1]
+      groups[e[1] --[[@as string]]] = e.group
     end
   end
   test("which-key config runs", function()

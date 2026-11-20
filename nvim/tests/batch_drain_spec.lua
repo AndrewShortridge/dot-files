@@ -1,6 +1,7 @@
 -- Unit tests for lua/andrew/vault/batch_drain.lua
 -- Run with: nvim --headless -u NONE -l tests/batch_drain_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -12,13 +13,32 @@ local batch_drain = require("andrew.vault.batch_drain")
 
 print("\n=== batch_drain tests ===\n")
 
+-- The `stats` batch_drain hands on_drain (declared `table` in the module).
+---@class BatchDrainSpecDrainStats
+---@field count integer
+---@field total_bytes integer
+---@field drain_reason "threshold"|"flush"
+
+-- What b:stats() returns (undeclared in the module).
+---@class BatchDrainSpecCumulativeStats
+---@field pushes integer
+---@field drains integer
+---@field total_items integer
+---@field total_bytes integer
+
+---@class BatchDrainSpecDrain  one recorded on_drain call
+---@field items any[]
+---@field stats BatchDrainSpecDrainStats
+
 -- ============================================================================
 -- 1. Threshold correctness: drain fires at exactly max_count
 -- ============================================================================
 test("drain fires at max_count", function()
-  local drained = {}
+  local drained = {} ---@type BatchDrainSpecDrain[]
   local b = batch_drain.new({
     max_count = 5,
+    ---@param items any[]
+    ---@param stats BatchDrainSpecDrainStats
     on_drain = function(items, stats)
       table.insert(drained, { items = items, stats = stats })
     end,
@@ -37,10 +57,12 @@ end)
 -- 2. Threshold correctness: drain fires at max_bytes
 -- ============================================================================
 test("drain fires at max_bytes", function()
-  local drained = {}
+  local drained = {} ---@type BatchDrainSpecDrain[]
   local b = batch_drain.new({
     max_count = 1000, -- won't trigger by count
     max_bytes = 100,
+    ---@param items any[]
+    ---@param stats BatchDrainSpecDrainStats
     on_drain = function(items, stats)
       table.insert(drained, { items = items, stats = stats })
     end,
@@ -78,9 +100,11 @@ end)
 -- 4. Flush completeness
 -- ============================================================================
 test("flush drains remaining items", function()
-  local drained_items = nil
+  local drained_items = nil ---@type any[]?
   local b = batch_drain.new({
     max_count = 100,
+    ---@param items any[]
+    ---@param stats BatchDrainSpecDrainStats
     on_drain = function(items, stats)
       drained_items = items
       assert_eq(stats.drain_reason, "flush")
@@ -92,6 +116,8 @@ test("flush drains remaining items", function()
   assert_eq(b:count(), 2)
   b:flush()
   assert_true(b:is_empty())
+  -- Set by on_drain during flush(); a nil fails on the next line (`#nil` raises).
+  ---@cast drained_items -nil
   assert_eq(#drained_items, 2)
   assert_eq(drained_items[1], "x")
   assert_eq(drained_items[2], "y")
@@ -121,7 +147,8 @@ test("re-entrancy: push inside on_drain goes to next batch", function()
   local b
   b = batch_drain.new({
     max_count = 3,
-    on_drain = function(items)
+    ---@param _ any[]
+    on_drain = function(_)
       drain_calls = drain_calls + 1
       if drain_calls == 1 then
         -- Push during drain — should go to new batch
@@ -155,7 +182,7 @@ test("cumulative stats are accurate", function()
   end
   b:flush() -- drain the remaining 1 item
 
-  local s = b:stats()
+  local s = b:stats() ---@type BatchDrainSpecCumulativeStats
   assert_eq(s.pushes, 10)
   assert_eq(s.drains, 4) -- 3 threshold drains + 1 flush
   assert_eq(s.total_items, 10)
@@ -207,9 +234,10 @@ end)
 -- 10. Multiple drain cycles work correctly
 -- ============================================================================
 test("multiple drain cycles accumulate stats correctly", function()
-  local batch_sizes = {}
+  local batch_sizes = {} ---@type integer[]
   local b = batch_drain.new({
     max_count = 5,
+    ---@param items any[]
     on_drain = function(items)
       table.insert(batch_sizes, #items)
     end,
@@ -248,8 +276,12 @@ test("works inside coroutine with yield in drain callback", function()
   local co = coroutine.create(function()
     local b = batch_drain.new({
       max_count = 3,
+      ---@param items any[]
       on_drain = function(items)
         total_items = total_items + #items
+        -- LuaJIT 2.1 has coroutine.isyieldable; lua_ls's LuaJIT runtime meta
+        -- marks it as 5.2+ only.
+        ---@diagnostic disable-next-line: deprecated
         if coroutine.isyieldable() then
           coroutine.yield()
           yields = yields + 1

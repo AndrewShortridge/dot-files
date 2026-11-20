@@ -31,6 +31,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/pipeline_skip_empty_run_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -44,16 +45,19 @@ local line_parse = require("andrew.vault.line_parse_cache")
 local render = require("andrew.vault.render_diff")
 local config = require("andrew.vault.config")
 
+---@return boolean
 local function code_excl() return false end
 
 -- Build a real markdown buffer in a temp vault with a wikilink/#tag/==hl==/[k:: v].
+---@param n integer
+---@return integer buf
 local function make_buffer(n)
   local vault = vim.fn.tempname()
   vim.fn.mkdir(vault, "p")
   local buf = vim.api.nvim_create_buf(false, false)
   vim.api.nvim_buf_set_name(buf, vault .. "/note.md")
   vim.bo[buf].filetype = "markdown"
-  local lines = {}
+  local lines = {} ---@type string[]
   for i = 1, n do
     lines[#lines + 1] =
       "[[Target" .. i .. "]] #tag" .. i .. " ==hl" .. i .. "== [key" .. i .. ":: val]"
@@ -67,6 +71,7 @@ end
 --   1) attach -> first consume returns nil,nil (state.full) -> full render.
 --   2) one {full=false} run drains; with no edits the following consume yields
 --      {} , nil -- the exact no-op-scroll condition the guard targets.
+---@param buf integer
 local function warm(buf)
   pipeline.attach(buf)
   pipeline.run(buf, code_excl, { full = true })   -- full: nil dirty, renders
@@ -75,16 +80,32 @@ end
 
 -- Counter-wrap line_parse.update and render.apply_diff; returns a restore fn and
 -- a getter for the counts.
+---@return fun() restore
+---@return fun(): integer, integer counts
 local function wrap_counters()
   local n_update, n_diff = 0, 0
   local real_update = line_parse.update
   local real_diff = render.apply_diff
-  line_parse.update = function(...) n_update = n_update + 1; return real_update(...) end
-  render.apply_diff = function(...) n_diff = n_diff + 1; return real_diff(...) end
+  ---@param bufnr number
+  ---@param line_nrs number[]|nil
+  ---@param excl fun(row: number, col: number): boolean
+  ---@return number
+  local function counting_update(bufnr, line_nrs, excl)
+    n_update = n_update + 1; return real_update(bufnr, line_nrs, excl)
+  end
+  ---@param bufnr number
+  ---@param new_specs ExtmarkSpec[]
+  ---@param changed_lines table<number, true>
+  local function counting_apply_diff(bufnr, new_specs, changed_lines)
+    n_diff = n_diff + 1; real_diff(bufnr, new_specs, changed_lines)
+  end
+  line_parse.update = counting_update
+  render.apply_diff = counting_apply_diff
   return function() line_parse.update = real_update; render.apply_diff = real_diff end,
          function() return n_update, n_diff end
 end
 
+---@param buf integer
 local function cleanup(buf)
   vim.api.nvim_buf_delete(buf, { force = true })
   pipeline.detach(buf)
@@ -95,7 +116,7 @@ end
 --    and render.apply_diff.
 -- --------------------------------------------------------------------------
 test("no-op scroll run skips line_parse.update and render.apply_diff", function()
-  local prev = config.pipeline.skip_empty_runs
+  local prev = config.pipeline.skip_empty_runs ---@type boolean
   config.pipeline.skip_empty_runs = true
   local buf = make_buffer(6)
   warm(buf)
@@ -119,7 +140,7 @@ end)
 -- B. Guard is not over-eager: a {full=true} run still renders.
 -- --------------------------------------------------------------------------
 test("full run is NOT skipped by the guard", function()
-  local prev = config.pipeline.skip_empty_runs
+  local prev = config.pipeline.skip_empty_runs ---@type boolean
   config.pipeline.skip_empty_runs = true
   local buf = make_buffer(6)
   warm(buf)
@@ -139,7 +160,7 @@ end)
 -- C. Kill switch: disabling the gate restores the old (always-run) behavior.
 -- --------------------------------------------------------------------------
 test("skip_empty_runs=false restores the full no-op pipeline run", function()
-  local prev = config.pipeline.skip_empty_runs
+  local prev = config.pipeline.skip_empty_runs ---@type boolean
   local buf = make_buffer(6)
   config.pipeline.skip_empty_runs = true
   warm(buf)
@@ -162,7 +183,7 @@ end)
 --    MUST still re-resolve + render so links re-resolve after an index rebuild.
 -- --------------------------------------------------------------------------
 test("semantic-stale (index changed) is NOT short-circuited", function()
-  local prev = config.pipeline.skip_empty_runs
+  local prev = config.pipeline.skip_empty_runs ---@type boolean
   config.pipeline.skip_empty_runs = true
   local buf = make_buffer(6)
   warm(buf)

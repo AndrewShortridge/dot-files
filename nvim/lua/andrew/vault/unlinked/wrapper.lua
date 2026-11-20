@@ -73,7 +73,6 @@ end
 ---@return boolean success
 function M.wrap_in_wikilink(file, lnum, match_text)
   local lines, bufnr = utils.read_lines_prefer_buffer(file)
-  local use_buffer = bufnr ~= nil
 
   if #lines < lnum then return false end
 
@@ -83,6 +82,7 @@ function M.wrap_in_wikilink(file, lnum, match_text)
   local ms, me = line_lower:find(match_lower, 1, true)
 
   while ms do
+    ---@cast me -nil
     if not link_scan.overlaps_range(ms - 1, me, link_scan.get_link_ranges(line)) then
       local before = line:sub(1, ms - 1)
       local matched = line:sub(ms, me)
@@ -92,7 +92,7 @@ function M.wrap_in_wikilink(file, lnum, match_text)
 
       local new_line = before .. replacement .. after
 
-      if use_buffer then
+      if bufnr then
         vim.api.nvim_buf_set_lines(bufnr, lnum - 1, lnum, false, { new_line })
       else
         lines[lnum] = new_line

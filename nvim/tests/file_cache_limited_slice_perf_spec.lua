@@ -9,6 +9,7 @@
 -- and the "limited read served from cache" io.open-count assertion fails
 -- (the count climbs to 2), proving this spec catches the regression.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -20,8 +21,11 @@ print("\n=== file_cache limited-slice perf Tests ===\n")
 local N = 30
 local LIMIT = 20
 
+---@param path string
+---@param n integer
+---@param marker? string
 local function write_file(path, n, marker)
-  local lines = {}
+  local lines = {} ---@type string[]
   for i = 1, n do
     lines[i] = (marker or "line") .. "-" .. i
   end
@@ -34,6 +38,11 @@ write_file(path, N)
 -- io.open counter shim (cited measurement method; no source introspection).
 local real_open = io.open
 local open_count = 0
+-- io.open(filename, mode?) with its real types; the mode is forwarded as-is.
+---@param p string
+---@param ... openmode
+---@return file*?
+---@return string? err
 io.open = function(p, ...)
   if p == path then
     open_count = open_count + 1
@@ -58,7 +67,8 @@ test("limited read is served from cached full entry — no new io.open", functio
 end)
 
 test("slice is the correct prefix of the full content", function()
-  local limited = file_cache.read(path, LIMIT)
+  -- assert: indexing a nil read below would crash anyway; this names the cause.
+  local limited = assert(file_cache.read(path, LIMIT))
   assert_eq(limited[1], "line-1", "limited[1] is first line")
   assert_eq(limited[LIMIT], "line-" .. LIMIT, "limited[LIMIT] is the LIMIT-th line")
   assert_eq(open_count, 1, "second limited read also served from cache")
@@ -80,9 +90,9 @@ end)
 
 test("mtime change invalidates and forces a fresh disk read", function()
   write_file(path, N, "v2")
-  local st = vim.uv.fs_stat(path)
+  local st = assert(vim.uv.fs_stat(path))
   vim.uv.fs_utime(path, st.atime.sec + 5, st.mtime.sec + 5)
-  local after = file_cache.read(path, LIMIT)
+  local after = assert(file_cache.read(path, LIMIT))
   assert_eq(open_count, 2, "mtime change forces a fresh disk read")
   assert_eq(after[1], "v2-1", "re-read reflects new file contents")
 end)

@@ -18,8 +18,9 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/completion_debounce_config_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
-local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
+local test, assert_true = _H.test, _H.assert_true
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
@@ -47,12 +48,15 @@ test("completion_base reads config.completion.debounce_ms", function()
   local SENTINEL = 7
   config.completion.debounce_ms = SENTINEL
 
+  ---@type table?
   package.loaded["andrew.vault.completion_base"] = nil
   local ok, err = pcall(function()
     local completion_base = require("andrew.vault.completion_base")
     -- Create a real source via the build path (no index build required).
     completion_base.create_source({
       name = "debounce_test",
+      ---@param _ string  vault path
+      ---@param cb fun(items: table[])
       build = function(_, cb)
         cb({})
       end,
@@ -68,6 +72,7 @@ test("completion_base reads config.completion.debounce_ms", function()
   -- finally: restore config + reload completion_base with real value so the
   -- shared aggregate-run state is clean for later specs.
   config.completion.debounce_ms = saved
+  ---@type table?
   package.loaded["andrew.vault.completion_base"] = nil
   require("andrew.vault.completion_base")
 

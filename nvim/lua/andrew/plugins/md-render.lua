@@ -411,7 +411,7 @@ local function adapt_preview()
   local upstream_split = preview.split
   local upstream_auto_off = preview.auto_off
 
-  ---@param opts? { mods?: vim.api.keyset.cmd.mods, max_width?: integer }
+  ---@param opts? { mods?: vim.api.keyset.cmd_mods, max_width?: integer }
   preview.split = function(opts)
     opts = opts or {}
     local window = vim.api.nvim_get_current_win()

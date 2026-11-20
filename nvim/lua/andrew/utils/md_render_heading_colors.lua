@@ -66,10 +66,12 @@ local function define_heading_groups()
   local palette = onedark_palette()
   for heading_level, color_level in ipairs(COLOR_LEVEL_OF_HEADING_LEVEL) do
     local group_name = "MdRenderH" .. heading_level
+    -- Read to be changed and given to nvim_set_hl(): typed as what that takes,
+    -- where `fg` may be a "#rrggbb" string too.
     local attributes = vim.api.nvim_get_hl(0, {
       name = "@markup.heading." .. color_level .. ".markdown",
       link = false,
-    })
+    }) --[[@as vim.api.keyset.highlight]]
     local palette_color = palette and palette[onedark_color_of_level[color_level]]
     if palette_color then
       attributes.fg = palette_color

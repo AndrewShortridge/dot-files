@@ -37,7 +37,7 @@ local _cache = lru.new_weighted({
   max_bytes = config.cache.connections_bytes,
   max_items = config.cache.connections_max,
   weigher = weighers.connections,
-  on_evict = function(_key, entry)
+  on_evict = function(_, entry)
     _cache_evictions = _cache_evictions + 1
     release_cache_entry(entry)
   end,
@@ -328,6 +328,20 @@ end
 -- Precompute note data
 -- ---------------------------------------------------------------------------
 
+--- Per-note signals precomputed once and cached, compared pairwise by the scorers.
+---@class ConnectionNoteData
+---@field rel_path string
+---@field rel_path_lower string
+---@field name_lower string
+---@field tags table<string, boolean>
+---@field outlink_targets table<string, true>  resolved rel_paths, lowercased
+---@field outlink_count integer  size of outlink_targets
+---@field inlink_sources table<string, true>
+---@field neighbors table<string, true>  union of outlink_targets and inlink_sources
+---@field fm_fields table<string, string>  key -> normalized value
+---@field ctime number  epoch seconds, 0 when unknown
+---@field mtime number  epoch seconds, 0 when unknown
+
 --- Build a ConnectionNoteData table for a vault index entry.
 ---@param entry VaultIndexEntry
 ---@param vi VaultIndex vault index instance (for inlinks lookup)
@@ -409,6 +423,24 @@ end
 -- ---------------------------------------------------------------------------
 -- Main scoring
 -- ---------------------------------------------------------------------------
+
+--- Weighted score of each signal for one candidate.
+---@class ConnectionBreakdown
+---@field tags number
+---@field fm number
+---@field colink number
+---@field link number
+---@field temporal number
+
+--- One related note, as returned by compute() and compute_async().
+---@class ConnectionResult
+---@field rel_path string
+---@field rel_path_lower string
+---@field name string
+---@field name_lower string
+---@field score number
+---@field reasons string[]
+---@field breakdown ConnectionBreakdown
 
 --- Get connection weights from config with defaults.
 ---@return table
@@ -707,6 +739,7 @@ function M.compute(source_rel_path, max_results, opts_cancel)
     if filter_utils.is_cache_gen_valid(cached, index_gen_check, "index_gen") then
       _cache_hits = _cache_hits + 1
       stop()
+      ---@cast cached -nil  -- is_cache_gen_valid() is false for a nil entry
       return cached.results
     end
   end
@@ -770,7 +803,7 @@ function M.compute_async(source_rel_path, opts)
   opts = opts or {}
   local key = "connections:" .. source_rel_path
 
-  conn_pool:request(key, function(resolve, reject)
+  conn_pool:request(key, function(resolve)
     local yield_iter = require("andrew.vault.yield_iter")
     local batch_size = config.connections.score_batch_size or 200
     local max_results_arg = opts.max_results or config.connections.max_results
@@ -906,8 +939,10 @@ function M.debug_pair(target_name)
     return
   end
 
-  local rel_path = engine.vault_relative(buf_path)
-  local results = M.compute(rel_path, 999)
+  -- is_vault_buf(0) above passed, so this buffer's name is inside the vault
+  local rel_path = engine.vault_relative(buf_path) --[[@as string]]
+  -- compute() returns nil only when a cancel check is passed and fires
+  local results = M.compute(rel_path, 999) --[[@as ConnectionResult[] ]]
 
   local lower_target = target_name:lower()
   for _, r in ipairs(results) do
@@ -941,9 +976,9 @@ end
 
 --- Handle vault index update notifications for targeted cache invalidation.
 --- Supports tiered InvalidationContext from vault_index._notify_update.
----@param _gen number new generation (unused, tracked via get_index)
+---@param _ number new generation (unused, tracked via get_index)
 ---@param ctx? InvalidationContext|table Tiered invalidation context or legacy context
-local function on_index_update(_gen, ctx)
+local function on_index_update(_, ctx)
   if not ctx then
     -- No context = full rebuild (build_async completion or vault switch)
     _pending_full_clear = true

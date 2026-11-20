@@ -103,14 +103,24 @@ end
 --- @field prev WeightedCacheEntry|nil
 --- @field next WeightedCacheEntry|nil
 
+--- @class WeightedCache
+--- @field _entries table<any, WeightedCacheEntry>
+--- @field _head WeightedCacheEntry|nil LRU end (evict from here)
+--- @field _tail WeightedCacheEntry|nil MRU end (insert/promote here)
+--- @field _size integer
+--- @field _total_weight number
+--- @field _max_items number
+--- @field _max_bytes number
+--- @field _weigher fun(key: any, value: any): number
+--- @field _on_evict (fun(key: any, value: any))|nil
 local WeightedCache = {}
 WeightedCache.__index = WeightedCache
 
 --- Create a memory-weighted LRU cache.
 --- Evicts least-recently-used entries when total weight exceeds max_bytes
 --- or item count exceeds max_items.
----@param opts { max_bytes: number, weigher: fun(key: any, value: any): number, max_items?: number }
----@return table cache instance with :get(), :put(), :clear(), :size(), :remove(), :entries(), :stats()
+---@param opts { max_bytes: number, max_items?: number, weigher: (fun(key: any, value: any): number), on_evict?: fun(key: any, value: any) }
+---@return WeightedCache cache instance with :get(), :put(), :clear(), :size(), :remove(), :entries(), :stats()
 function M.new_weighted(opts)
   assert(opts.max_bytes, "new_weighted requires max_bytes")
   assert(opts.weigher, "new_weighted requires weigher function")
@@ -129,6 +139,8 @@ end
 
 --- Get a cached value. Returns nil on miss.
 --- Promotes key to most-recently-used on hit.
+---@param key any
+---@return any value
 function WeightedCache:get(key)
   local entry = self._entries[key]
   if not entry then return nil end

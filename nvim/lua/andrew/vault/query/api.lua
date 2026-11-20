@@ -350,7 +350,7 @@ end
 --- Parse a single atomic source token starting at position `pos`.
 ---@param source string
 ---@param pos number
----@return table node, number new_pos
+---@return table|nil node, number new_pos
 local function parse_atom(source, pos)
   -- Skip whitespace.
   pos = source:find("%S", pos) or (#source + 1)
@@ -436,8 +436,8 @@ end
 
 --- Recursively wrap known array fields in a page so that methods like
 --- `:where()` are available on them (e.g. `page.file.tasks`).
----@param page table
----@return table  the same page, mutated
+---@param page table|nil
+---@return table|nil  the same page, mutated
 local function ensure_wrapped(page)
   if page == nil then
     return page
@@ -664,9 +664,9 @@ function M.create_env(index, current_file_path)
   end
 
   --- Generic element -- treated as a paragraph.
-  ---@param _tag    string  ignored (HTML tag name)
+  ---@param _       string  ignored (HTML tag name)
   ---@param content any
-  function dv.el(_tag, content)
+  function dv.el(_, content)
     output:add({ type = "paragraph", text = tostring(content) })
   end
 

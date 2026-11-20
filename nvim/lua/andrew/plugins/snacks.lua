@@ -247,6 +247,9 @@ return {
         },
       },
       -- Active panel border; snacks' default is MatchParen.
+      -- snacks declares every snacks.lazygit.Theme colour required, but the
+      -- table is merged over its default theme (Snacks.config.get).
+      ---@diagnostic disable-next-line: missing-fields
       theme = {
         activeBorderColor = { fg = "WarningMsg", bold = true },
       },
@@ -290,7 +293,7 @@ return {
         max_width = 80,
         max_height = 40,
         -- Only conceal math expressions, keep image paths visible for editing
-        conceal = function(_lang, type)
+        conceal = function(_, type)
           return type == "math"
         end,
       },

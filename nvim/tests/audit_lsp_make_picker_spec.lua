@@ -29,9 +29,13 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_lsp_make_picker_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_match =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_match
+
+-- lazydev loads fzf-lua's annotations into lua_ls from this line.
+---@module "fzf-lua"
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
@@ -40,30 +44,54 @@ local NBSP = "\xc2\xa0"
 -- ---------------------------------------------------------------------------
 -- Fakes
 -- ---------------------------------------------------------------------------
-local captured_opts
+-- What fortran-build.lua hands fzf.files(), as far as these tests read it: a
+-- plain action function, a plain winopts table.
+---@class AuditLspMakePickerFilesOpts
+---@field actions table<string, fun(selected: string[])>
+---@field cwd_prompt boolean
+---@field winopts { title: string }
+
+---@class AuditLspMakePickerKey  one entry of the spec's `keys`
+---@field [1] string lhs
+---@field [2] fun() rhs
+---@field desc string
+
+---@class AuditLspMakePickerPluginSpec  the lazy.nvim fragment fortran-build.lua returns
+---@field keys AuditLspMakePickerKey[]
+
+local captured_opts ---@type AuditLspMakePickerFilesOpts?
 package.loaded["fzf-lua"] = {
+  ---@param opts fzf-lua.config.Files|{ }?
   files = function(opts)
-    captured_opts = opts
+    -- Narrowed to the shape fortran-build.lua builds; the tests assert it.
+    captured_opts = opts --[[@as AuditLspMakePickerFilesOpts]]
   end,
 }
 -- Stand-in for the real fzf-lua.path: strips everything up to the last NBSP,
 -- which is what entry_to_file does to the icon prefix.
 package.loaded["fzf-lua.path"] = {
+  ---@param entry string
+  ---@return fzf-lua.path.Entry
   entry_to_file = function(entry)
     local stripped = entry:match(".*" .. NBSP .. "(.*)$") or entry
     return { path = stripped }
   end,
 }
 package.loaded["andrew.vault.link_utils"] = {
+  ---@param p string
+  ---@return string
   lua_dirname = function(p)
     return p:match("^(.*)/[^/]*$") or p
   end,
 }
 
+---@type AuditLspMakePickerPluginSpec
 local spec = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/fortran-build.lua")
 assert_true(type(spec) == "table", "fortran-build.lua must return a table")
 assert_true(type(spec.keys) == "table", "spec must carry `keys`")
 
+---@param lhs string
+---@return AuditLspMakePickerKey?
 local function key_for(lhs)
   for _, k in ipairs(spec.keys) do
     if k[1] == lhs then
@@ -73,14 +101,17 @@ local function key_for(lhs)
 end
 
 -- Record what run_make_in_split would hand the shell.
-local last_cmd
+local last_cmd ---@type string?
 local real_cmd = vim.cmd
+---@param fn fun()
 local function with_stubs(fn)
-  vim.cmd = function(c)
+  ---@param c string|table
+  local function fake_cmd(c)
     if type(c) == "string" and c:find("terminal", 1, true) then
       last_cmd = c
     end
   end
+  vim.cmd = fake_cmd
   local ok, err = pcall(fn)
   vim.cmd = real_cmd
   if not ok then
@@ -93,15 +124,18 @@ test("1. picker selection is stripped of the fzf-lua icon prefix", function()
   for _, lhs in ipairs({ "<leader>mb", "<leader>md", "<leader>mc", "<leader>mr", "<leader>ma" }) do
     local k = key_for(lhs)
     assert_true(k ~= nil, lhs .. " must be defined")
+    ---@cast k -nil
     captured_opts, last_cmd = nil, nil
     k[2]()
     assert_true(type(captured_opts) == "table", lhs .. " must open the fzf picker")
+    ---@cast captured_opts AuditLspMakePickerFilesOpts
     local action = captured_opts.actions and captured_opts.actions["default"]
     assert_true(type(action) == "function", lhs .. " must install a default action")
     with_stubs(function()
       action({ "\u{f0673}" .. NBSP .. "./code/Makefile" })
     end)
     assert_true(type(last_cmd) == "string", lhs .. " must open a terminal")
+    ---@cast last_cmd string
     -- The decoration must NOT survive into the shell command.
     assert_true(not last_cmd:find(NBSP, 1, true), lhs .. ": NBSP leaked into: " .. tostring(last_cmd))
     assert_match(last_cmd, "cd '%./code'", lhs .. ": wrong cd target")
@@ -112,23 +146,30 @@ end)
 test("1b. <leader>ml re-runs the stripped path, not the decorated entry", function()
   local mb, ml = key_for("<leader>mb"), key_for("<leader>ml")
   assert_true(mb ~= nil and ml ~= nil, "<leader>mb and <leader>ml must be defined")
+  ---@cast mb -nil
+  ---@cast ml -nil
   captured_opts, last_cmd = nil, nil
   mb[2]()
   with_stubs(function()
-    captured_opts.actions["default"]({ "\u{f0673}" .. NBSP .. "./code/Makefile" })
+    -- `.actions` would raise on a missing picker call anyway; assert names the cause.
+    assert(captured_opts).actions["default"]({ "\u{f0673}" .. NBSP .. "./code/Makefile" })
   end)
   last_cmd = nil
   with_stubs(function()
     ml[2]()
   end)
   assert_true(type(last_cmd) == "string", "<leader>ml must re-run the last Makefile")
+  ---@cast last_cmd string
   assert_true(not last_cmd:find(NBSP, 1, true), "<leader>ml: NBSP leaked into: " .. tostring(last_cmd))
   assert_match(last_cmd, "cd '%./code'", "<leader>ml: wrong cd target")
 end)
 
 test("2. the Makefile picker disables cwd_prompt and carries its name as the title", function()
   captured_opts = nil
-  key_for("<leader>mb")[2]()
+  -- `[2]` would raise on a missing key anyway; assert names the cause.
+  assert(key_for("<leader>mb"))[2]()
+  -- Set by the fzf-lua stub above; a missing picker call fails on the next line.
+  ---@cast captured_opts AuditLspMakePickerFilesOpts
   assert_eq(captured_opts.cwd_prompt, false, "cwd_prompt must be false")
   assert_eq(captured_opts.winopts.title, " Select Makefile ", "the picker must be named")
 end)

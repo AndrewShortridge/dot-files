@@ -25,13 +25,21 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/treesitter_context_lazy_ft_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_true, assert_nil = _H.test, _H.assert_true, _H.assert_nil
 
-local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/treesitter-context.lua")
+-- What lua/andrew/plugins/treesitter-context.lua returns: a lazy.nvim spec
+-- whose `ft` and `keys` are plain lists.
+---@class TreesitterContextLazyFtSpecPlugin: LazyPluginSpec
+---@field ft string[]
+---@field keys LazyKeysSpec[]
 
+local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/treesitter-context.lua") ---@type TreesitterContextLazyFtSpecPlugin
+
+---@return table<string, boolean>
 local function ft_set()
-  local set = {}
+  local set = {} ---@type table<string, boolean>
   for _, ft in ipairs(plug.ft or {}) do
     set[ft] = true
   end
@@ -64,7 +72,7 @@ end)
 
 test("[c keymap still lazy-loads go_to_context on demand", function()
   assert_true(type(plug.keys) == "table", "keys block must exist (on-demand load survives in markdown)")
-  local found
+  local found ---@type boolean?
   for _, entry in ipairs(plug.keys) do
     if entry[1] == "[c" and type(entry[2]) == "function" then
       found = true

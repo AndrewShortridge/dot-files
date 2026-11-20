@@ -39,8 +39,7 @@ end
 --- recursing so typed elements (Link/Date/Duration) format via __tostring.
 ---@param val any
 ---@return string
-local to_str
-to_str = function(val)
+local function to_str(val)
   if val == nil then
     return "\u{2014}" -- em dash
   end

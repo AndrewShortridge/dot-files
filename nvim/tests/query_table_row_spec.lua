@@ -9,27 +9,53 @@
 -- not source-introspection. A counted loop / explicit indices are used instead
 -- of `#row` because a trailing-nil column makes Lua `#` unreliable.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
-local test, assert_eq, assert_true, assert_nil =
-  _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
+local test, assert_eq, assert_nil =
+  _H.test, _H.assert_eq, _H.assert_nil
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 -- Stub the logger so requiring real modules doesn't pull full vault infra.
 package.loaded["andrew.vault.vault_log"] = {
+  ---@return table
   scope = function()
-    return setmetatable({}, { __index = function() return function() end end })
+    return setmetatable({}, {
+      ---@return fun()
+      __index = function() return function() end end,
+    })
   end,
 }
 
 local ER = require("andrew.vault.query.executor_results")
 
+--- A field expression as the DQL parser builds it for `TABLE <name>`.
+---@class QueryTableRowFieldExpr
+---@field type "field"
+---@field path string[]
+
+--- One TABLE column spec (an entry of ast.fields).
+---@class QueryTableRowField
+---@field expr QueryTableRowFieldExpr
+
+--- One TABLE result of ER.build_table_results (a plain `table` in the module).
+---@class QueryTableRowResult
+---@field type "table"
+---@field group? string  set on the GROUP BY path only
+---@field headers string[]
+---@field rows any[][]   one cell per header; a cell may be a nil hole
+
 -- Fake evaluator: read the field value straight off the page table so the spec
 -- controls exactly which cells resolve to nil.
+---@param expr QueryTableRowFieldExpr
+---@param page table<string, any>
+---@return any
 local function eval_expr(expr, page)
   return page[expr.path[1]]
 end
 
+---@param name string
+---@return QueryTableRowField
 local function field(name)
   return { expr = { type = "field", path = { name } } }
 end
@@ -39,7 +65,7 @@ end
 test("nil interior column leaves a hole, rating stays under its header", function()
   local ast = { without_id = true, fields = { field("genre"), field("rating") } }
   local pages = { { file = { link = "NoteA" }, genre = nil, rating = "5" } }
-  local result = ER.build_table_results(ast, pages, nil, nil, eval_expr)[1]
+  local result = ER.build_table_results(ast, pages, nil, nil, eval_expr)[1] ---@type QueryTableRowResult
   local row = result.rows[1]
 
   assert_eq(#result.headers, 2)
@@ -57,7 +83,7 @@ end)
 test("File column preserved when an interior field is nil", function()
   local ast = { without_id = false, fields = { field("genre"), field("rating") } }
   local pages = { { file = { link = "NoteA" }, genre = nil, rating = "5" } }
-  local result = ER.build_table_results(ast, pages, nil, nil, eval_expr)[1]
+  local result = ER.build_table_results(ast, pages, nil, nil, eval_expr)[1] ---@type QueryTableRowResult
   local row = result.rows[1]
 
   assert_eq(#result.headers, 3)
@@ -74,7 +100,7 @@ end)
 test("trailing nil column does not corrupt the first column", function()
   local ast = { without_id = true, fields = { field("rating"), field("genre") } }
   local pages = { { rating = "5", genre = nil } }
-  local result = ER.build_table_results(ast, pages, nil, nil, eval_expr)[1]
+  local result = ER.build_table_results(ast, pages, nil, nil, eval_expr)[1] ---@type QueryTableRowResult
   local row = result.rows[1]
 
   assert_eq(row[1], "5")
@@ -86,7 +112,7 @@ end)
 test("all-present row keeps values aligned (no regression)", function()
   local ast = { without_id = true, fields = { field("genre"), field("rating") } }
   local pages = { { genre = "rock", rating = "5" } }
-  local result = ER.build_table_results(ast, pages, nil, nil, eval_expr)[1]
+  local result = ER.build_table_results(ast, pages, nil, nil, eval_expr)[1] ---@type QueryTableRowResult
   local row = result.rows[1]
 
   assert_eq(row[1], "rock")
@@ -99,7 +125,7 @@ end)
 test("GROUP BY path also keeps nil holes aligned", function()
   local ast = { without_id = true, fields = { field("genre"), field("rating") } }
   local groups = { { key = "k", pages = { { genre = nil, rating = "5" } } } }
-  local results = ER.build_table_results(ast, {}, groups, nil, eval_expr)
+  local results = ER.build_table_results(ast, {}, groups, nil, eval_expr) ---@type QueryTableRowResult[]
   local row = results[1].rows[1]
 
   assert_eq(results[1].group, "k")

@@ -77,6 +77,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_hover_float_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
@@ -93,7 +94,7 @@ local MAX_W, MAX_H = 40, 7
 ---@param n integer
 ---@return string[]
 local function lines(n)
-  local out = {}
+  local out = {} ---@type string[]
   for i = 1, n do
     out[i] = "line " .. i .. " " .. string.rep("w", 30)
   end
@@ -123,9 +124,11 @@ local function title_of(cfg)
   if type(cfg.title) ~= "table" then
     return cfg.title
   end
-  local parts = {}
-  for _, chunk in ipairs(cfg.title) do
-    parts[#parts + 1] = type(chunk) == "table" and chunk[1] or chunk
+  local parts = {} ---@type string[]
+  -- A table title is a list of {text, hl} chunks.
+  for _, chunk in ipairs(cfg.title --[[@as ([string, string?]|string)[] ]]) do
+    -- lua_ls does not narrow `chunk` through the and/or: the result is the chunk text.
+    parts[#parts + 1] = (type(chunk) == "table" and chunk[1] or chunk) --[[@as string]]
   end
   return table.concat(parts)
 end
@@ -218,7 +221,7 @@ test("no title names a language server", function()
   -- Documentation Preview" on every probe.
   for _, kind in ipairs({ "hover", "signature" }) do
     vim.b.lsp_popup_kind = kind
-    local t = title_of(open(lines(3)))
+    local t = assert(title_of(open(lines(3))))
     assert_true(not t:match("PY%-LSP"), kind .. ": no PY-LSP:")
     assert_true(not t:match("^TY "), kind .. ": no TY:")
   end

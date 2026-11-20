@@ -32,8 +32,9 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/query_lazy_stub_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
-local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
+local test, assert_true, assert_nil = _H.test, _H.assert_true, _H.assert_nil
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
@@ -41,12 +42,15 @@ print("\n=== Query Lazy-Stub Perf Tests ===\n")
 
 -- Faithful copy of the lazy_mod helper from andrew.vault.init: builds an
 -- accessor that requires the module (and runs setup() if present) on first call.
+---@param mod_path string
+---@return fun(): table accessor returning the (lazily required) module
 local function lazy_mod(mod_path)
-  local mod, loaded
+  local mod ---@type table
+  local loaded ---@type boolean?
   return function()
     if not loaded then
       loaded = true
-      mod = require(mod_path)
+      mod = require(mod_path) --[[@as table]] -- a dynamic module path: require() is untyped
       if mod.setup then mod.setup() end
     end
     return mod
@@ -54,15 +58,21 @@ local function lazy_mod(mod_path)
 end
 
 --- Install a require-counter shim watching `names`. Returns (counts, restore).
+---@param names string[]
+---@return table<string, integer> counts
+---@return fun() restore
 local function install_shim(names)
-  local counts = {}
-  local watched = {}
+  local counts = {} ---@type table<string, integer>
+  local watched = {} ---@type table<string, true>
   for _, n in ipairs(names) do watched[n] = true end
   local real_require = require
-  _G.require = function(name)
+  ---@param name string
+  ---@return any
+  local function counting_require(name)
     if watched[name] then counts[name] = (counts[name] or 0) + 1 end
     return real_require(name)
   end
+  _G.require = counting_require
   return counts, function() _G.require = real_require end
 end
 

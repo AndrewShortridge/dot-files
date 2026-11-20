@@ -97,6 +97,9 @@ function M.setup()
   end
   _orig_open_floating_preview = vim.lsp.util.open_floating_preview
 
+  -- Replacing Neovim's function is what this module is for; setup() above
+  -- keeps the original and teardown() puts it back.
+  ---@diagnostic disable-next-line: duplicate-set-field
   vim.lsp.util.open_floating_preview = function(contents, syntax, opts, ...)
     opts = opts or {}
 

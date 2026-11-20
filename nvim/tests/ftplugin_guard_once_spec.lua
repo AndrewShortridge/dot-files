@@ -20,6 +20,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/ftplugin_guard_once_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -33,12 +34,17 @@ print("\n=== Ftplugin Guard Once Tests ===\n")
 -- per-buffer block (markdown.lua) sits AFTER the guard, so a buffer-local
 -- wk.add call fires iff the ftplugin body ran for that buffer.
 -- ---------------------------------------------------------------------------
+-- Loads which-key's types for the `wk.Spec` below (which-key is never required).
+---@module "which-key"
+
+---@type { buffer_adds: table<integer, integer> }
 local recorder = { buffer_adds = {} } -- bufnr -> count of wk.add calls carrying buffer-local entries
 
-local current_probe_buf = nil
+local current_probe_buf = nil ---@type integer|nil
 
 local fake_wk = {
   setup = function() end,
+  ---@param specs wk.Spec
   add = function(specs)
     local has_buffer = false
     for _, spec in ipairs(specs) do
@@ -70,6 +76,7 @@ vim.fn.mkdir(vault, "p")
 -- Helper: make `buf` current, mark it markdown, and source the ftplugin as
 -- Neovim would on FileType markdown (dofile evaluates with buffer scope = buf,
 -- so vim.b.__md_ftplugin_done resolves per-buffer exactly as the runtime path).
+---@param buf integer
 local function source_ftplugin(buf)
   current_probe_buf = buf
   vim.api.nvim_set_current_buf(buf)
@@ -139,6 +146,9 @@ test("a fresh buffer runs the full body and registers buffer-local keymaps", fun
   assert_eq(recorder.buffer_adds[b2], 1, "fresh buffer must run the per-buffer body")
 
   -- Expected buffer-local keymaps exist (set by the body, after the guard).
+  ---@param mode string
+  ---@param lhs string
+  ---@return boolean
   local function has_buffer_keymap(mode, lhs)
     for _, m in ipairs(vim.api.nvim_buf_get_keymap(b2, mode)) do
       if m.lhs == lhs then

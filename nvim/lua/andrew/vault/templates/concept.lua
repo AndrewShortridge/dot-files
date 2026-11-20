@@ -33,7 +33,7 @@ local body_template = [==[
 ## Atomic Literature Notes
 ]==]
 
-function M.run(e, p)
+function M.run(e)
   local title = e.input({ prompt = "Concept title (e.g., Groove Angle Effects on Ejection)" })
   if not title then return end
 

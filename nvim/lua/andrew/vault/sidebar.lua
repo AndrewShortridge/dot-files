@@ -7,6 +7,7 @@ local notify = require("andrew.vault.notify")
 local cleanup = require("andrew.vault.resource_cleanup")
 local watch = require("andrew.vault.watch_channel")
 local log = require("andrew.vault.vault_log").scope("sidebar")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 local M = {}
 
@@ -106,7 +107,7 @@ local function create_sidebar()
   vim.api.nvim_win_set_buf(win, buf)
 
   -- Set window options
-  vim.api.nvim_win_set_width(win, config.sidebar.width)
+  nvim_compat.set_window_width(win, config.sidebar.width)
   vim.wo[win].winfixwidth = true
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
@@ -435,7 +436,7 @@ function M.setup()
   vim.api.nvim_create_autocmd("User", {
     group = group,
     pattern = "VaultCacheInvalidate",
-    callback = function(_ev)
+    callback = function()
       -- Sidebar always refreshes regardless of scope (files/file/all)
       -- because sidebar content may depend on any changed file's metadata
       if _state.visible then

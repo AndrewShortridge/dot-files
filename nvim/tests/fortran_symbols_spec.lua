@@ -71,6 +71,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_symbols_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_deep_eq, assert_match = _H.assert_deep_eq, _H.assert_match
@@ -83,9 +84,44 @@ local symbols = require("andrew.fortran.symbols")
 local ROOT = "/proj"
 local SEP = symbols.separator()
 
+--- A scan record as symbols.build_entries takes it (it types them `table[]`).
+---@class FortranSymbolsSpecRecord
+---@field path string
+---@field lnum integer
+---@field col integer
+---@field name string
+---@field lname string
+---@field kind string
+---@field text? string
+---@field depth? integer nesting level under a container
+
+--- The options symbols.lua's picker hands fzf_exec (fzf-lua types the
+--- parameter fzf-lua.config.Base; this is the subset the module builds).
+---@class FortranSymbolsSpecPickerOpts
+---@field cwd string
+---@field previewer string
+---@field actions table<string, function>
+---@field fzf_opts table<string, string|boolean>
+
+--- What the stubbed fzf_exec recorded.
+---@class FortranSymbolsSpecCapture
+---@field entries string[]
+---@field opts FortranSymbolsSpecPickerOpts
+
+--- The part of fzf-lua's `lsp.symbols` config symbols.lua reads, stubbed.
+--- (fzf-lua.config.LspSymbols declares every inherited picker option as
+--- required, so a partial stub cannot claim that class.)
+---@class FortranSymbolsSpecSymbolConfig
+---@field symbol_style integer
+---@field symbol_icons table<string, string>
+---@field symbol_hl fun(s: string): string
+---@field symbol_fmt fun(s: string, ...): string
+---@field child_prefix boolean
+
 --- The full row the reported query used to match: path + source text together
 --- do contain d-i-f-t as a subsequence, which is precisely why matching has to
 --- be scoped to field 1.
+---@return string
 local function entries_line_for_dift()
   return "[function] energy    code/physics.f90:9:20:real(8) function energy(t)"
 end
@@ -95,20 +131,33 @@ end
 ---   2 the location as displayed
 ---   3 the symbol: kind block and name
 ---   4 the source line, on the pickers that show one
+---@param entry string
+---@return string[]
 local function split(entry)
   return vim.split(entry, SEP, { plain = true })
 end
 
 --- The searchable field: the symbol.
+---@param entry string
+---@return string
 local function fields(entry)
   return split(entry)[3]
 end
 
 --- The hidden field entry_to_file reads.
+---@param entry string
+---@return string
 local function location(entry)
   return split(entry)[1]
 end
 
+---@param path string relative to ROOT
+---@param lnum integer
+---@param col integer
+---@param name string
+---@param kind string
+---@param text string
+---@return FortranSymbolsSpecRecord
 local function rec(path, lnum, col, name, kind, text)
   return {
     path = ROOT .. "/" .. path,
@@ -148,11 +197,16 @@ test("the searchable field holds the tag and the name, and nothing else", functi
   assert_nil(searchable:find("/", 1, true), "no path separator:")
 
   -- The reported query, against the entry that used to match it.
+  ---@param needle string
+  ---@param haystack string
+  ---@return boolean
   local subsequence = function(needle, haystack)
-    local i = 1
+    local i = 1 ---@type integer|nil
     for c in needle:gmatch(".") do
       i = haystack:find(c, i, true)
       if not i then return false end
+      -- string.find's type is muddied workspace-wide by specs that stub it.
+      ---@cast i integer
       i = i + 1
     end
     return true
@@ -270,7 +324,7 @@ test("declaration tags survive into the searchable field", function()
     rec("h.h", 1, 22, "dift", "var", "COMMON/DIFFST/ dift"),
     rec("a.f90", 2, 18, "nnode", "arg", "SUBROUTINE Solve(nnode)"),
   }, ROOT)
-  local tags = {}
+  local tags = {} ---@type string[]
   for _, entry in ipairs(entries) do
     tags[#tags + 1] = fields(entry):gsub("%s+$", "")
   end
@@ -301,18 +355,23 @@ test("the picker binds enter to the file action", function()
   local saved_fzf = package.loaded["fzf-lua"]
   local saved_utils = package.loaded["fzf-lua.utils"]
   local jump = function() end
-  local captured
+  local captured ---@type FortranSymbolsSpecCapture|nil
   package.loaded["fzf-lua"] = {
+    ---@param entries string[]
+    ---@param opts FortranSymbolsSpecPickerOpts
     fzf_exec = function(entries, opts) captured = { entries = entries, opts = opts } end,
     actions = { file_edit_or_qf = jump },
   }
   package.loaded["fzf-lua.utils"] = {
     nbsp = SEP,
+    ---@param _ string
+    ---@param str string
+    ---@return string
     ansi_from_hl = function(_, str) return str end,
     ansi_escseq = { clear = "" },
   }
 
-  local cwd = vim.uv.cwd()
+  local cwd = assert(vim.uv.cwd())
   vim.fn.chdir(root .. "/code")
   local ok, err = pcall(function()
     symbols.references("Step")
@@ -326,12 +385,17 @@ test("the picker binds enter to the file action", function()
     error(err, 0)
   end
 
+  -- ok means the wait inside the pcall saw the picker open.
+  ---@cast captured -nil
   assert_eq(type(captured.opts.actions), "table", "actions must be a table, not a function:")
   assert_eq(captured.opts.actions.enter, jump, "and enter must be bound to the file action:")
 end)
 
 --- Open a picker in a throwaway project with fzf-lua stubbed out, and hand
 --- back what it would have passed to fzf.
+---@param source string[] lines of the one project file
+---@param open fun() the picker entry point
+---@return FortranSymbolsSpecCapture
 local function capture_picker(source, open)
   local root = vim.fn.tempname()
   vim.fn.mkdir(root .. "/code", "p")
@@ -339,18 +403,23 @@ local function capture_picker(source, open)
 
   local saved_fzf = package.loaded["fzf-lua"]
   local saved_utils = package.loaded["fzf-lua.utils"]
-  local captured
+  local captured ---@type FortranSymbolsSpecCapture|nil
   package.loaded["fzf-lua"] = {
+    ---@param entries string[]
+    ---@param opts FortranSymbolsSpecPickerOpts
     fzf_exec = function(entries, opts) captured = { entries = entries, opts = opts } end,
     actions = { file_edit_or_qf = function() end },
   }
   package.loaded["fzf-lua.utils"] = {
     nbsp = SEP,
+    ---@param _ string
+    ---@param str string
+    ---@return string
     ansi_from_hl = function(_, str) return str end,
     ansi_escseq = { clear = "" },
   }
 
-  local cwd = vim.uv.cwd()
+  local cwd = assert(vim.uv.cwd())
   vim.fn.chdir(root .. "/code")
   local ok, err = pcall(function()
     open()
@@ -364,6 +433,8 @@ local function capture_picker(source, open)
   if not ok then
     error(err, 0)
   end
+  -- ok means the wait inside the pcall saw the picker open.
+  ---@cast captured -nil
   return captured
 end
 
@@ -391,12 +462,17 @@ end)
 -- LSP-style presentation --------------------------------------------------
 
 --- Run `fn` with a stubbed fzf-lua symbol config in place, then restore.
+---@param cfg FortranSymbolsSpecSymbolConfig
+---@param fn fun()
 local function with_symbol_config(cfg, fn)
   local saved_config = package.loaded["fzf-lua.config"]
   local saved_utils = package.loaded["fzf-lua.utils"]
   package.loaded["fzf-lua.config"] = { globals = { lsp = { symbols = cfg } } }
   package.loaded["fzf-lua.utils"] = {
     nbsp = SEP,
+    ---@param hl string
+    ---@param str string
+    ---@return string
     ansi_from_hl = function(hl, str)
       return hl == "@function" and ("<" .. hl .. ">" .. str .. "</>") or str
     end,
@@ -410,10 +486,15 @@ local function with_symbol_config(cfg, fn)
   end
 end
 
+---@type FortranSymbolsSpecSymbolConfig
 local STUB_CFG = {
   symbol_style = 1,
   symbol_icons = { Function = "F", Variable = "V", Method = "M" },
+  ---@param kind string
+  ---@return string
   symbol_hl = function(kind) return "@" .. kind:lower() end,
+  ---@param str string
+  ---@return string
   symbol_fmt = function(str) return "[" .. str .. "]" end,
   child_prefix = true,
 }
@@ -448,6 +529,9 @@ test("a colorscheme change drops the cached styles", function()
   local icons = { Function = "F", Variable = "V", Method = "M" }
   package.loaded["fzf-lua.utils"] = {
     nbsp = SEP,
+    ---@param _ string
+    ---@param str string
+    ---@return string
     ansi_from_hl = function(_, str) return str end,
     ansi_escseq = { clear = "" },
   }
@@ -484,11 +568,15 @@ test("line and column colours are read from a function-valued hls", function()
   package.loaded["fzf-lua.utils"] = {
     nbsp = SEP,
     -- The second return value is the escape sequence; name it after its group.
+    ---@param hl string
+    ---@param str string
+    ---@return string, string
     ansi_from_hl = function(hl, str) return str, "<" .. hl .. ">" end,
     ansi_escseq = { clear = "</>" },
   }
   package.loaded["fzf-lua.config"] = {
     globals = {
+      ---@return fzf-lua.config.HLS
       hls = function() return { path_linenr = "LookLineNr" } end,
       lsp = { symbols = STUB_CFG },
     },
@@ -519,7 +607,7 @@ test("columns line up under colour and glyphs", function()
       rec("a.f90", 1, 1, "x", "subroutine", "subroutine x"),
       rec("a.f90", 2, 1, "a_much_longer_name", "var", "integer :: a_much_longer_name"),
     }, ROOT, nil, { source_column = true })
-    local widths = {}
+    local widths = {} ---@type integer[]
     for _, entry in ipairs(entries) do
       local searchable = fields(entry)
       -- Measure what is DRAWN: strip the colour, count cells.
@@ -556,7 +644,7 @@ test("entries are sorted by path, then line, then column", function()
     rec("a.f90", 9, 1, "A", "call", "call A"),
     rec("a.f90", 2, 1, "D", "call", "call D"),
   }, ROOT)
-  local order = {}
+  local order = {} ---@type string[]
   for _, entry in ipairs(entries) do
     order[#order + 1] = location(entry):match("^(.-:%d+:%d+):")
   end
@@ -597,7 +685,7 @@ end)
 -- ---------------------------------------------------------------------------
 
 test("the symbol keys use the Fortran picker in Fortran, the LSP picker elsewhere", function()
-  local calls = {}
+  local calls = {} ---@type string[]
   package.loaded["andrew.fortran.symbols"] = {
     is_fortran = symbols.is_fortran,
     document = function() calls[#calls + 1] = "fortran:document" end,
@@ -607,6 +695,7 @@ test("the symbol keys use the Fortran picker in Fortran, the LSP picker elsewher
     lsp_document_symbols = function() calls[#calls + 1] = "lsp:document" end,
     lsp_live_workspace_symbols = function() calls[#calls + 1] = "lsp:workspace" end,
   }
+  ---@type table?
   package.loaded["andrew.fortran"] = nil
   local fortran = require("andrew.fortran")
 
@@ -625,6 +714,7 @@ test("the symbol keys use the Fortran picker in Fortran, the LSP picker elsewher
 
   package.loaded["andrew.fortran.symbols"] = nil
   package.loaded["fzf-lua"] = nil
+  ---@type table?
   package.loaded["andrew.fortran"] = nil
 end)
 

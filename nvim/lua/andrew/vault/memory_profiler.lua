@@ -5,7 +5,6 @@
 --- Dependencies: vault_log (health warnings), config (thresholds),
 --- resource_cleanup (timer teardown). All other modules depend on this
 --- (one-way dependency via register_* calls).
---- @module andrew.vault.memory_profiler
 
 local M = {}
 
@@ -27,9 +26,9 @@ local _gc_sample_max = 720
 ---@field get_hits fun(): number
 ---@field get_misses fun(): number
 ---@field get_evictions fun(): number
----@field get_generation fun(): number|nil
----@field get_bytes fun(): number|nil      Current byte weight (memory-weighted caches)
----@field get_max_bytes fun(): number|nil   Byte budget (memory-weighted caches)
+---@field get_generation? fun(): number|nil
+---@field get_bytes? fun(): number|nil      Current byte weight (memory-weighted caches)
+---@field get_max_bytes? fun(): number|nil   Byte budget (memory-weighted caches)
 
 ---@class ProfilerCounterSpec
 ---@field name string

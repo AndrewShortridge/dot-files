@@ -20,10 +20,19 @@ function F.ensure_dir(abs_path)
   vim.fn.mkdir(abs_path, "p")
 end
 
+---@class VaultJsonStore
+---@field load fun(): table              Read from disk (defaults when missing/corrupt)
+---@field save fun(data: table)          Write to disk
+---@field path fun(): string
+---@field cached_load fun(): table       load(), remembered per vault path
+---@field cached_save fun(data: table)   save(), and remember the data
+---@field cached_invalidate fun()
+---@field cached_get fun(): table|nil    The remembered data, without reading the disk
+
 --- Create a JSON-backed persistent store scoped to the current vault.
 --- @param filename string  The filename (e.g. ".vault-frecency.json")
 --- @param defaults? table  Default value when file missing/corrupt
---- @return { load: fun(): table, save: fun(data: table), path: fun(): string }
+--- @return VaultJsonStore
 function F.json_store(filename, defaults)
   defaults = defaults or {}
 
@@ -119,8 +128,6 @@ function F.read_file(path)
   return content, nil
 end
 
---- Read file as an array of lines. Returns empty table on failure.
---- @param path string
 --- Write content to file, creating parent dirs. Returns success boolean.
 --- @param path string
 --- @param content string

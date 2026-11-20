@@ -191,7 +191,7 @@ local function edit_date_field(field, state, render_fn)
   engine.run(function()
     local default = type_utils.format_display_value(field.value, field.field_type)
     if default == "" then
-      default = os.date("%Y-%m-%d")
+      default = os.date("%Y-%m-%d") --[[@as string]]
     end
     local new_val = engine.input({
       prompt = field.key .. " (YYYY-MM-DD): ",

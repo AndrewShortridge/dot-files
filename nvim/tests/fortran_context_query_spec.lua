@@ -27,6 +27,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_context_query_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
@@ -35,8 +36,12 @@ local lazy_dir = vim.fn.stdpath("data") .. "/lazy"
 
 -- Config dir FIRST so its queries win; the context plugin is added too, so the
 -- precedence claim is actually exercised rather than assumed.
+-- Removed before it is prepended: the config dir is on the default
+-- 'runtimepath' already, and from Neovim 0.13 `:prepend()` leaves an entry
+-- that is already listed where it is.
 vim.opt.runtimepath:prepend(lazy_dir .. "/nvim-treesitter-context")
 vim.opt.runtimepath:prepend(lazy_dir .. "/nvim-treesitter")
+vim.opt.runtimepath:remove(config_dir)
 vim.opt.runtimepath:prepend(config_dir)
 
 local SAMPLE = table.concat({
@@ -95,7 +100,7 @@ test("it actually matches -- compiling is not enough", function()
   local root = parser:parse()[1]:root()
   local q = assert(vim.treesitter.query.get("fortran", "context"))
 
-  local seen, total = {}, 0
+  local seen, total = {}, 0 ---@type table<string, true>, integer
   for id, node in q:iter_captures(root, buf, 0, -1) do
     if q.captures[id] == "context" then
       seen[node:type()] = true

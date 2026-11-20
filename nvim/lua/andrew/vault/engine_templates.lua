@@ -49,7 +49,7 @@ local OBSIDIAN_UNPADDED = {
   h = function() return tostring(tonumber(os.date("%I"))) end,   -- 12h hour
   m = function() return tostring(tonumber(os.date("%M"))) end,   -- minutes
   s = function() return tostring(tonumber(os.date("%S"))) end,   -- seconds
-  a = function() return os.date("%p"):lower() end,               -- am/pm
+  a = function() return (os.date("%p") --[[@as string]]):lower() end, -- am/pm
 }
 
 --- Convert an Obsidian/Moment.js format string to a Lua os.date()-compatible
@@ -108,7 +108,7 @@ end
 ---@return string
 function T.format_obsidian(obsidian_fmt)
   local strftime_fmt = T.obsidian_to_strftime(obsidian_fmt)
-  return os.date(strftime_fmt)
+  return os.date(strftime_fmt) --[[@as string]]
 end
 
 -- ---------------------------------------------------------------------------
@@ -132,11 +132,11 @@ end
 --- at substitution time, after T.setup() has been called.
 --- @type table<string, fun(vars: table): string>
 local BUILTIN_VARS = {
-  date = function(_vars)
+  date = function()
     local cfg = require("andrew.vault.config")
     return T.format_obsidian(cfg.template_vars.date_format)
   end,
-  time = function(_vars)
+  time = function()
     local cfg = require("andrew.vault.config")
     return T.format_obsidian(cfg.template_vars.time_format)
   end,
@@ -146,13 +146,13 @@ local BUILTIN_VARS = {
     if bufname ~= "" then return link_utils.get_basename(bufname) end
     return "Untitled"
   end,
-  vault = function(_vars)
+  vault = function()
     for name, path in pairs(_engine.vaults) do
       if path == _engine.vault_path then return name end
     end
     return link_utils.get_tail(_engine.vault_path)
   end,
-  vault_path = function(_vars)
+  vault_path = function()
     return _engine.vault_path
   end,
   folder = function(vars)
@@ -163,15 +163,15 @@ local BUILTIN_VARS = {
     end
     return ""
   end,
-  date_long = function(_vars) return _engine.today_long() end,
-  date_weekday = function(_vars) return _engine.today_weekday() end,
-  week = function(_vars) return _engine.week_number() end,
-  year = function(_vars) return os.date("%Y") end,
-  month = function(_vars) return os.date("%m") end,
-  day = function(_vars) return os.date("%d") end,
-  yesterday = function(_vars) return _engine.date_offset(-1) end,
-  tomorrow = function(_vars) return _engine.date_offset(1) end,
-  timestamp = function(_vars) return os.date("%Y-%m-%dT%H:%M:%S") end,
+  date_long = function() return _engine.today_long() end,
+  date_weekday = function() return _engine.today_weekday() end,
+  week = function() return _engine.week_number() end,
+  year = function() return os.date("%Y") --[[@as string]] end,
+  month = function() return os.date("%m") --[[@as string]] end,
+  day = function() return os.date("%d") --[[@as string]] end,
+  yesterday = function() return _engine.date_offset(-1) end,
+  tomorrow = function() return _engine.date_offset(1) end,
+  timestamp = function() return os.date("%Y-%m-%dT%H:%M:%S") --[[@as string]] end,
 }
 
 --- Perform Obsidian-compatible template variable substitution.

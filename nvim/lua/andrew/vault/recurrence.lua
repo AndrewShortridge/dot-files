@@ -73,12 +73,12 @@ function M.next_date(from_date_str, rule)
     -- Fallback to today if date is unparseable
     return engine.today()
   end
-  y, m, d = tonumber(y), tonumber(m), tonumber(d)
+  y, m, d = tonumber(y) --[[@as integer]], tonumber(m) --[[@as integer]], tonumber(d) --[[@as integer]]
 
   if rule.type == "days" then
     local t = os.time({ year = y, month = m, day = d, hour = 12 })
     t = t + rule.n * date_utils.SECS_PER_DAY
-    return os.date("%Y-%m-%d", t)
+    return os.date("%Y-%m-%d", t) --[[@as string]]
   end
 
   if rule.type == "weekday" then
@@ -91,13 +91,13 @@ function M.next_date(from_date_str, rule)
     elseif wday == 6 then
       t = t + 2 * date_utils.SECS_PER_DAY -- Sat -> Mon
     end
-    return os.date("%Y-%m-%d", t)
+    return os.date("%Y-%m-%d", t) --[[@as string]]
   end
 
   if rule.type == "months" then
     -- os.time normalizes overflow (e.g. month 13 -> Jan next year, day 31 in a 30-day month)
     local t = os.time({ year = y, month = m + rule.n, day = d, hour = 12 })
-    return os.date("%Y-%m-%d", t)
+    return os.date("%Y-%m-%d", t) --[[@as string]]
   end
 
   if rule.type == "monthly_on" then
@@ -105,12 +105,12 @@ function M.next_date(from_date_str, rule)
     local new_y = y
     -- Normalize month overflow
     local t = os.time({ year = new_y, month = new_m, day = rule.day, hour = 12 })
-    return os.date("%Y-%m-%d", t)
+    return os.date("%Y-%m-%d", t) --[[@as string]]
   end
 
   if rule.type == "years" then
     local t = os.time({ year = y + rule.n, month = m, day = d, hour = 12 })
-    return os.date("%Y-%m-%d", t)
+    return os.date("%Y-%m-%d", t) --[[@as string]]
   end
 
   -- Fallback

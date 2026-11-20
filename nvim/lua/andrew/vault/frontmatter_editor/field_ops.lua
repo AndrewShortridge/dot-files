@@ -75,7 +75,7 @@ function M.set_list_field(source_buf, key, items)
         new_lines[#new_lines + 1] = "  - " .. type_utils.format_yaml_value(item)
       end
       new_lines[#new_lines + 1] = "---"
-      local ok, err = pcall(vim.cmd, "undojoin")
+      local ok, err = pcall(vim.cmd --[[@as function]], "undojoin")
       if not ok then log.debug("undojoin before list insert: %s", err) end
       vim.api.nvim_buf_set_lines(source_buf, 0, 0, false, new_lines)
       return
@@ -88,9 +88,11 @@ function M.set_list_field(source_buf, key, items)
       new_lines[#new_lines + 1] = "  - " .. type_utils.format_yaml_value(item)
     end
 
-    local ok, err = pcall(vim.cmd, "undojoin")
+    local ok, err = pcall(vim.cmd --[[@as function]], "undojoin")
     if not ok then log.debug("undojoin before list field write: %s", err) end
     if field_start then
+      -- find_field_extent() sets both ends or neither
+      ---@cast field_end -nil
       vim.api.nvim_buf_set_lines(source_buf, field_start - 1, field_end, false, new_lines)
     else
       vim.api.nvim_buf_set_lines(source_buf, fm.end_line - 1, fm.end_line - 1, false, new_lines)
@@ -118,7 +120,9 @@ function M.delete_field(source_buf, key)
       return
     end
 
-    local ok, err = pcall(vim.cmd, "undojoin")
+    -- find_field_extent() sets both ends or neither
+    ---@cast field_end -nil
+    local ok, err = pcall(vim.cmd --[[@as function]], "undojoin")
     if not ok then log.debug("undojoin before field delete: %s", err) end
     vim.api.nvim_buf_set_lines(source_buf, field_start - 1, field_end, false, {})
     notify.info("deleted " .. key)

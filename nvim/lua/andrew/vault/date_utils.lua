@@ -40,7 +40,7 @@ end
 ---@return number 1-7 (Mon-Sun)
 function M.first_weekday(year, month)
   local t = os.time({ year = year, month = month, day = 1 })
-  local wday = tonumber(os.date("%w", t)) -- 0=Sun, 1=Mon, ..., 6=Sat
+  local wday = tonumber(os.date("%w", t)) --[[@as integer]] -- 0=Sun, 1=Mon, ..., 6=Sat
   -- Convert to ISO: Mon=1 .. Sun=7
   if wday == 0 then
     return 7
@@ -83,13 +83,13 @@ function M.same_day(ts, ref)
   return a.year == b.year and a.month == b.month and a.day == b.day
 end
 
+local _parse_cache = lru.new(config.cache.date_parse_max)
+
 --- Parse an ISO datetime string into a Unix timestamp.
 --- Handles "YYYY-MM-DDTHH:MM:SS" and "YYYY-MM-DD".
 ---@param s string|nil
 ---@param default_hour number|nil hour to use when time is absent (default 0)
 ---@return number|nil
-local _parse_cache = lru.new(config.cache.date_parse_max)
-
 function M.parse_iso_datetime(s, default_hour)
   if not s or type(s) ~= "string" then return nil end
   default_hour = default_hour or 0
@@ -104,15 +104,15 @@ function M.parse_iso_datetime(s, default_hour)
   local y, m, d, h, mi, se = s:match(pat.ISO_DATETIME_FULL)
   if y then
     ts = os.time({
-      year = tonumber(y), month = tonumber(m), day = tonumber(d),
-      hour = tonumber(h), min = tonumber(mi), sec = tonumber(se),
+      year = tonumber(y) --[[@as integer]], month = tonumber(m) --[[@as integer]], day = tonumber(d) --[[@as integer]],
+      hour = tonumber(h) --[[@as integer]], min = tonumber(mi) --[[@as integer]], sec = tonumber(se) --[[@as integer]],
     })
   else
     -- Date only: YYYY-MM-DD
     y, m, d = s:match(pat.ISO_DATETIME_SHORT)
     if y then
       ts = os.time({
-        year = tonumber(y), month = tonumber(m), day = tonumber(d),
+        year = tonumber(y) --[[@as integer]], month = tonumber(m) --[[@as integer]], day = tonumber(d) --[[@as integer]],
         hour = default_hour, min = 0, sec = 0,
       })
     end
@@ -147,7 +147,7 @@ end
 --- Use resolve_date_range() to get both start and end for = comparisons.
 ---
 ---@param value string|nil the date value to resolve
----@return number|nil timestamp, or nil for unrecognized formats
+---@return number|nil timestamp nil for unrecognized formats
 function M.resolve_date(value)
   if not value or value == "" then return nil end
   local lower = value:lower()
@@ -155,42 +155,42 @@ function M.resolve_date(value)
   -- Relative: Nd (start of day N days ago)
   local n = lower:match(pat.RELATIVE_DURATION)
   if n then
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as osdate]]
     t.day = t.day - tonumber(n)
     return M.start_of_day(t)
   end
 
   -- Keywords
   if lower == "today" then
-    return M.start_of_day(os.date("*t"))
+    return M.start_of_day(os.date("*t") --[[@as osdate]])
   end
 
   if lower == "yesterday" then
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as osdate]]
     t.day = t.day - 1
     return M.start_of_day(t)
   end
 
   if lower == "this-week" then
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as osdate]]
     t.day = t.day - M.days_since_monday(t.wday)
     return M.start_of_day(t)
   end
 
   if lower == "last-week" or lower == "previous-week" then
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as osdate]]
     t.day = t.day - M.days_since_monday(t.wday) - 7
     return M.start_of_day(t)
   end
 
   if lower == "this-month" then
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as osdate]]
     t.day = 1
     return M.start_of_day(t)
   end
 
   if lower == "last-month" or lower == "previous-month" then
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as osdate]]
     t.day = 1
     t.month = t.month - 1
     return M.start_of_day(t)
@@ -200,7 +200,7 @@ function M.resolve_date(value)
   local y, m, d = value:match("^(%d%d%d%d)-(%d%d)-(%d%d)$")
   if y then
     return os.time({
-      year = tonumber(y), month = tonumber(m), day = tonumber(d),
+      year = tonumber(y) --[[@as integer]], month = tonumber(m) --[[@as integer]], day = tonumber(d) --[[@as integer]],
       hour = 0, min = 0, sec = 0,
     })
   end
@@ -209,7 +209,7 @@ function M.resolve_date(value)
   local ym, mm = value:match("^(%d%d%d%d)-(%d%d)$")
   if ym then
     return os.time({
-      year = tonumber(ym), month = tonumber(mm), day = 1,
+      year = tonumber(ym) --[[@as integer]], month = tonumber(mm) --[[@as integer]], day = 1,
       hour = 0, min = 0, sec = 0,
     })
   end
@@ -240,17 +240,17 @@ local function resolve_date_range(value)
   -- last-Nd (e.g. last-7d, last-30d): from N days ago to end of today
   local n = lower:match("^last%-(%d+)d$")
   if n then
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as osdate]]
     t.day = t.day - tonumber(n)
     local start_ts = M.start_of_day(t)
-    local t2 = os.date("*t")
+    local t2 = os.date("*t") --[[@as osdate]]
     t2.day = t2.day + 1
     local end_ts = M.start_of_day(t2)
     return start_ts, end_ts
   end
 
   if lower == "this-week" then
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as osdate]]
     t.day = t.day - M.days_since_monday(t.wday)
     local start_ts = M.start_of_day(t)
     t.day = t.day + 7
@@ -259,7 +259,7 @@ local function resolve_date_range(value)
   end
 
   if lower == "last-week" or lower == "previous-week" then
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as osdate]]
     t.day = t.day - M.days_since_monday(t.wday)
     local this_monday = M.start_of_day(t)
     t.day = t.day - 7
@@ -268,7 +268,7 @@ local function resolve_date_range(value)
   end
 
   if lower == "this-month" then
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as osdate]]
     t.day = 1
     local start_ts = M.start_of_day(t)
     t.month = t.month + 1
@@ -277,7 +277,7 @@ local function resolve_date_range(value)
   end
 
   if lower == "last-month" or lower == "previous-month" then
-    local t = os.date("*t")
+    local t = os.date("*t") --[[@as osdate]]
     t.day = 1
     local this_month = M.start_of_day(t)
     t.month = t.month - 1
@@ -296,7 +296,7 @@ end
 function M.resolve_date_string(value)
   local ts = M.resolve_date(value)
   if not ts then return nil end
-  return os.date("%Y-%m-%d", ts)
+  return os.date("%Y-%m-%d", ts) --[[@as string]]
 end
 
 --- Calculate the number of days between two YYYY-MM-DD date strings.
@@ -307,8 +307,8 @@ function M.days_between(from_str, to_str)
   local fy, fm, fd = from_str:match(pat.ISO_DATE_PARTS)
   local ty, tm, td = to_str:match(pat.ISO_DATE_PARTS)
   if not fy or not ty then return 0 end
-  local from_ts = os.time({ year = tonumber(fy), month = tonumber(fm), day = tonumber(fd), hour = 12 })
-  local to_ts = os.time({ year = tonumber(ty), month = tonumber(tm), day = tonumber(td), hour = 12 })
+  local from_ts = os.time({ year = tonumber(fy) --[[@as integer]], month = tonumber(fm) --[[@as integer]], day = tonumber(fd) --[[@as integer]], hour = 12 })
+  local to_ts = os.time({ year = tonumber(ty) --[[@as integer]], month = tonumber(tm) --[[@as integer]], day = tonumber(td) --[[@as integer]], hour = 12 })
   return math.floor((to_ts - from_ts) / M.SECS_PER_DAY)
 end
 
@@ -319,9 +319,9 @@ end
 function M.date_add(date_str, days)
   local y, m, d = date_str:match(pat.ISO_DATE_PARTS)
   if not y then return date_str end
-  local t = os.time({ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 })
+  local t = os.time({ year = tonumber(y) --[[@as integer]], month = tonumber(m) --[[@as integer]], day = tonumber(d) --[[@as integer]], hour = 12 })
   t = t + days * M.SECS_PER_DAY
-  return os.date("%Y-%m-%d", t)
+  return os.date("%Y-%m-%d", t) --[[@as string]]
 end
 
 --- Format "YYYY-MM-DD" as "Mon DD" (e.g., "Mar 01").
@@ -330,8 +330,8 @@ end
 function M.format_date_short(date_str)
   local y, m, d = date_str:match(pat.ISO_DATE_PARTS)
   if not y then return date_str end
-  local t = os.time({ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 })
-  return os.date("%b %d", t)
+  local t = os.time({ year = tonumber(y) --[[@as integer]], month = tonumber(m) --[[@as integer]], day = tonumber(d) --[[@as integer]], hour = 12 })
+  return os.date("%b %d", t) --[[@as string]]
 end
 
 --- Truncate a string to max characters, appending ellipsis if truncated.

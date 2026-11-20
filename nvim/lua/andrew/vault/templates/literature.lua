@@ -127,7 +127,7 @@ local body_template = [==[
 
 ]==]
 
-function M.run(e, p)
+function M.run(e)
   local title = e.input({ prompt = "Paper title" })
   if not title then return end
 

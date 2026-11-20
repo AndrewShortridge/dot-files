@@ -8,11 +8,16 @@
 -- Run with: nvim --headless -u NONE -l tests/graph_traversal_spec.lua
 
 local _SRCDIR = (debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]")
+---@type SpecHelper
 local _H = dofile(_SRCDIR .. "/spec_helper.lua")
+---@type SpecFixtures
 local _F = dofile(_SRCDIR .. "/fixtures.lua")
 local test, assert_eq, assert_true, assert_false, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_false, _H.assert_nil
 
+---@param got any
+---@param expected number
+---@param msg? string
 local function assert_close(got, expected, msg)
   if type(got) ~= "number" or math.abs(got - expected) > 1e-9 then
     error((msg or "") .. " expected ~" .. tostring(expected) .. ", got: " .. vim.inspect(got))
@@ -20,16 +25,21 @@ local function assert_close(got, expected, msg)
 end
 
 --- Compare the sorted keys of a set against an expected sorted list.
+---@param set table<string, boolean>
+---@param expected string[]
+---@param msg? string
 local function assert_set_keys(set, expected, msg)
-  local keys = {}
+  local keys = {} ---@type string[]
   for k in pairs(set) do keys[#keys + 1] = k end
   table.sort(keys)
   assert_eq(table.concat(keys, ","), table.concat(expected, ","), msg)
 end
 
 --- Extract .name fields from a node list, sorted.
+---@param nodes table[]  node records with a .name field
+---@return string
 local function sorted_names(nodes)
-  local names = {}
+  local names = {} ---@type string[]
   for _, n in ipairs(nodes) do names[#names + 1] = n.name end
   table.sort(names)
   return table.concat(names, ",")
@@ -58,6 +68,10 @@ print("\n=== Graph Traversal Tests ===\n")
 --    Graph: A -> B -> C -> D, plus A -> E
 -- ============================================================================
 
+---@class GraphTraversalStubEntry
+---@field outlinks { path: string }[]
+
+---@type table<string, GraphTraversalStubEntry>
 local stub_entries = {
   ["A.md"] = { outlinks = { { path = "B" }, { path = "E" } } },
   ["B.md"] = { outlinks = { { path = "C" } } },
@@ -66,6 +80,7 @@ local stub_entries = {
   ["E.md"] = { outlinks = {} },
 }
 
+---@type table<string, { path: string }[]>
 local stub_inlinks = {
   ["B.md"] = { { path = "A" } },
   ["C.md"] = { { path = "B" } },
@@ -74,10 +89,18 @@ local stub_inlinks = {
 }
 
 local stub_idx = {
+  ---@param _ table
+  ---@param rel string
+  ---@return GraphTraversalStubEntry?
   get_entry = function(_, rel) return stub_entries[rel] end,
+  ---@param _ table
+  ---@param rel string
+  ---@return { path: string }[]
   get_inlinks = function(_, rel) return stub_inlinks[rel] or {} end,
 }
 
+---@param link_path string
+---@return string|nil
 local function stub_resolve(link_path)
   if link_path ~= "" and stub_entries[link_path .. ".md"] then
     return link_path .. ".md"
@@ -96,6 +119,7 @@ test("bfs.traverse forward-only depth 2 reaches A,B,C,E (D at depth 3 excluded)"
     visited = visited,
     initial_count = 1,
     process_inlinks = false,
+    ---@return true
     on_discover = function() return true end,
   }))
   assert_set_keys(visited, { "A.md", "B.md", "C.md", "E.md" }, "visited set")
@@ -114,6 +138,7 @@ test("bfs.traverse forward depth 1 limits to direct neighbors", function()
     visited = visited,
     initial_count = 1,
     process_inlinks = false,
+    ---@return true
     on_discover = function() return true end,
   }))
   assert_set_keys(visited, { "A.md", "B.md", "E.md" }, "visited set")
@@ -131,6 +156,7 @@ test("bfs.traverse honors max_nodes cap (inclusive of initial_count) and truncat
     visited = visited,
     initial_count = 1,
     process_inlinks = false,
+    ---@return true
     on_discover = function() return true end,
   }))
   assert_set_keys(visited, { "A.md", "B.md" }, "visited set (center + 1 discovery)")
@@ -150,6 +176,7 @@ test("bfs.traverse backward (inlinks only) from leaf D reaches all ancestors", f
     initial_count = 1,
     process_outlinks = false,
     process_inlinks = true,
+    ---@return true
     on_discover = function() return true end,
   }))
   assert_set_keys(visited, { "A.md", "B.md", "C.md", "D.md" }, "visited set")
@@ -167,6 +194,8 @@ test("bfs.traverse on_discover rejection prunes a branch", function()
     visited = visited,
     initial_count = 1,
     process_inlinks = false,
+    ---@param rel string
+    ---@return true|nil
     on_discover = function(rel)
       if rel == "B.md" then return nil end
       return true
@@ -236,7 +265,7 @@ test("precompute_graph_sets resolves center by note NAME (not current_path)", fu
 end)
 
 test("precompute_graph_sets caps at config.graph.max_nodes and truncates", function()
-  local save = config.graph.max_nodes
+  local save = config.graph.max_nodes ---@type integer
   config.graph.max_nodes = 2
   local ok, err = pcall(function()
     local sets = gt.precompute_graph_sets(
@@ -272,14 +301,22 @@ test("collect_at_depth_async returns forward nodes at depth 2 (async)", function
   engine.vault_path = tmp1
   trav.invalidate_bfs_cache()
   local done = false
-  local FWD, BK, TR
+  local FWD ---@type table[]?
+  local BK ---@type table[]?
+  local TR ---@type boolean?
   trav.collect_at_depth_async(tmp1 .. "/A.md", 2, function() return true end, "st1",
+    ---@param fwd table[]
+    ---@param bk table[]
+    ---@param trunc boolean
     function(fwd, bk, trunc)
       FWD, BK, TR = fwd, bk, trunc
       done = true
     end)
   vim.wait(3000, function() return done end)
   assert_true(done, "async callback fired")
+  -- the callback fired (asserted above), so it set all three
+  ---@cast FWD -nil
+  ---@cast BK -nil
   assert_eq(sorted_names(FWD), "B,C,E", "forward names (center A excluded)")
   assert_eq(#BK, 0, "no backlinks for A")
   assert_false(TR, "not truncated")
@@ -289,18 +326,24 @@ test("collect_at_depth_async BFS cache: miss then exact hit", function()
   trav.invalidate_bfs_cache()
   local h0, m0 = trav.bfs_cache_counters()
 
-  local done1, fwd1 = false, nil
+  local done1 = false
+  local fwd1 = nil ---@type table[]?
   trav.collect_at_depth_async(tmp1 .. "/A.md", 2, function() return true end, "s1",
+    ---@param fwd table[]
     function(fwd) fwd1 = fwd; done1 = true end)
   vim.wait(3000, function() return done1 end)
   assert_true(done1, "first call completed")
+  ---@cast fwd1 -nil
   assert_true(trav.bfs_cache_size() >= 1, "cache populated after first call")
 
-  local done2, fwd2 = false, nil
+  local done2 = false
+  local fwd2 = nil ---@type table[]?
   trav.collect_at_depth_async(tmp1 .. "/A.md", 2, function() return true end, "s1",
+    ---@param fwd table[]
     function(fwd) fwd2 = fwd; done2 = true end)
   vim.wait(3000, function() return done2 end)
   assert_true(done2, "second call completed")
+  ---@cast fwd2 -nil
 
   local h1, m1 = trav.bfs_cache_counters()
   assert_eq(m1, m0 + 1, "exactly one miss (the first call)")
@@ -325,14 +368,15 @@ engine.vault_path = tmp2
 local idx2 = vault_index.get(tmp2)
 idx2:build_sync()
 
-local conn_results
+local conn_results ---@type ConnectionResult[]|nil
 
 test("connections.compute deterministic breakdown, ordering, and self-exclusion", function()
   conn_results = connections.compute("A.md", 30)
   assert_true(conn_results ~= nil, "results returned")
+  ---@cast conn_results -nil
   assert_eq(#conn_results, 3, "three candidates (B, C, Iso)")
 
-  local by_name = {}
+  local by_name = {} ---@type table<string, ConnectionResult>
   for _, r in ipairs(conn_results) do
     assert_true(r.rel_path ~= "A.md", "source excluded from its own results")
     by_name[r.name] = r
@@ -369,9 +413,13 @@ end)
 
 test("connections.compute reasons include human-readable link/colink labels", function()
   assert_true(conn_results ~= nil, "previous compute results available")
-  local by_name = {}
+  ---@cast conn_results -nil
+  local by_name = {} ---@type table<string, ConnectionResult>
   for _, r in ipairs(conn_results) do by_name[r.name] = r end
 
+  ---@param r ConnectionResult
+  ---@param needle string
+  ---@return boolean
   local function has_reason(r, needle)
     for _, reason in ipairs(r.reasons) do
       if reason:find(needle, 1, true) then return true end
@@ -415,9 +463,13 @@ test("filter_utils.parse_tag_filter splits includes/excludes", function()
 end)
 
 test("filter_utils.matches_include_exclude logic", function()
-  assert_true(fu.matches_include_exclude({ "a" }, { "b" }, function(x) return x == "a" end),
+  assert_true(fu.matches_include_exclude({ "a" }, { "b" },
+    ---@param x string
+    function(x) return x == "a" end),
     "include matches, exclude does not")
-  assert_false(fu.matches_include_exclude({ "a" }, { "b" }, function(x) return x == "b" end),
+  assert_false(fu.matches_include_exclude({ "a" }, { "b" },
+    ---@param x string
+    function(x) return x == "b" end),
     "exclude match rejects")
   assert_true(fu.matches_include_exclude(nil, nil, function() return false end),
     "no constraints passes")
@@ -425,13 +477,23 @@ test("filter_utils.matches_include_exclude logic", function()
     "include present but none match")
 end)
 
+---@class GraphTraversalResolverStub
+---@field resolve_calls integer  how many times resolve_name ran
+---@field files table<string, { rel_path: string }>
+---@field vault_path string
+---@field resolve_name fun(self: GraphTraversalResolverStub, lower: string): string[]|nil
+
 -- Stub VaultIndex for resolve_in_index: only files / vault_path / resolve_name used.
+---@return GraphTraversalResolverStub
 local function make_resolver_stub()
   local stub = {
     resolve_calls = 0,
     files = { ["notes/beta.md"] = { rel_path = "notes/beta.md" } },
     vault_path = "/v",
   }
+  ---@param self GraphTraversalResolverStub
+  ---@param lower string
+  ---@return string[]|nil
   stub.resolve_name = function(self, lower)
     self.resolve_calls = self.resolve_calls + 1
     if lower == "gamma" then return { "/v/g/Gamma.md" } end

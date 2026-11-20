@@ -57,6 +57,7 @@ local lsp = require("andrew.fortran.lsp")
 local registry = require("andrew.fortran.registry")
 local render = require("andrew.fortran.render")
 local scan = require("andrew.fortran.scan")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 -- ---------------------------------------------------------------------------
 -- The word under the cursor
@@ -105,6 +106,8 @@ end
 -- The "fortls owns it" oracle
 -- ---------------------------------------------------------------------------
 
+local locals_cache = {}
+
 --- Names defined or declared in one buffer, lowercase.
 ---
 --- Both halves matter. `defs` carries the procedures the file defines, which
@@ -119,7 +122,6 @@ end
 --- elsewhere.
 ---@param bufnr integer
 ---@return table<string, true>
-local locals_cache = {}
 function M.buffer_locals(bufnr)
   if not (bufnr and vim.api.nvim_buf_is_loaded(bufnr)) then
     return {}
@@ -265,10 +267,11 @@ function M.answer(line, col, opts)
   if not word then
     return nil
   end
-  local range = lsp.name_range(opts.lnum or 1, scol, ecol - scol + 1)
+  -- word_at answers a word only for a string line, and always with its columns.
+  local range = lsp.name_range(opts.lnum or 1, scol --[[@as integer]], ecol - scol + 1)
 
   -- Step 2: a directive line is a closed world.
-  if require("andrew.fortran.openmp").is_directive(line) then
+  if require("andrew.fortran.openmp").is_directive(line --[[@as string]]) then
     local entry = registry.directive(word)
     if not entry then
       return nil
@@ -329,7 +332,7 @@ function M.hover(params, cb)
   if not (uri and pos) then
     return cb(nil, nil)
   end
-  local bufnr = vim.uri_to_bufnr(uri)
+  local bufnr = nvim_compat.uri_to_buffer(uri)
   if not vim.api.nvim_buf_is_loaded(bufnr) then
     return cb(nil, nil)
   end

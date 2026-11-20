@@ -30,6 +30,13 @@ return {
         library = {
           -- Load luvit types when vim.uv is referenced
           { path = "${3rd}/luv/library", words = { "vim%.uv" } },
+          -- Load a plugin's types when a file names its global or its
+          -- classes, not only when it require()s the plugin: specs annotate
+          -- fakes as `Snacks` / `LazyPluginSpec` without requiring them, and
+          -- those names were undefined unless another open buffer happened
+          -- to require the plugin.
+          { path = "snacks.nvim", words = { "Snacks" } },
+          { path = "lazy.nvim", words = { "Lazy%u" } },
         },
       },
     },

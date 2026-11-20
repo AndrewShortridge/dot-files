@@ -24,6 +24,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/link_scan_first_word_index_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_true = _H.test, _H.assert_true
 
@@ -33,6 +34,9 @@ local link_scan = require("andrew.vault.link_scan")
 
 print("\n=== link_scan first-word inverted index Tests ===\n")
 
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -42,6 +46,8 @@ local function write_file(dir, rel, lines)
   f:close()
 end
 
+---@param files table<string, string[]>  relative path -> file lines
+---@return string dir, VaultIndex idx
 local function make_indexed_vault(files)
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -54,14 +60,19 @@ local function make_indexed_vault(files)
   return dir, idx
 end
 
+---@param lines string[]
+---@return integer
 local function make_buffer(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   return buf
 end
 
+---@param buf integer
+---@param opts? { start_line?: number, end_line?: number, min_name_length?: number, exclude_names?: string[] }  link_scan.scan_buffer_names' opts
+---@return table<string, boolean>
 local function matched_names(buf, opts)
-  local set = {}
+  local set = {} ---@type table<string, boolean>
   for _, m in ipairs(link_scan.scan_buffer_names(buf, opts)) do
     set[m.note_name] = true
   end

@@ -53,6 +53,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_registry_render_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -60,6 +61,25 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 local registry = require("andrew.fortran.registry")
 local render = require("andrew.fortran.render")
+
+--- The fields of a committed data/{mpi,openmp}.lua entry this spec reads.
+---@class FortranRegistryRenderSpecEntry
+---@field kind string
+---@field summary? string
+---@field description? string
+---@field result? string
+---@field binding_note? string
+---@field params? table<string, string> dummy name -> prose
+
+--- The lsp.ParameterInformation render.signature builds: the label is always
+--- a `[start, end)` byte-offset pair and the documentation always markdown.
+---@class FortranRegistryRenderSpecParameter: lsp.ParameterInformation
+---@field label [uinteger, uinteger]
+---@field documentation lsp.MarkupContent
+
+--- The lsp.SignatureInformation render.signature builds (annotated `table` there).
+---@class FortranRegistryRenderSpecSignature: lsp.SignatureInformation
+---@field parameters FortranRegistryRenderSpecParameter[]
 
 --- Byte-for-byte comparison that reports the first differing LINE, because a
 --- 40-line float diffed as one string is unreadable.
@@ -241,12 +261,14 @@ MPI_Comm_split.
 test("A1: hover on MPI_Comm_rank is byte-for-byte the shipped float", function()
   local e = registry.get("MPI_Comm_rank")
   assert_true(e ~= nil, "the entry resolves:")
+  ---@cast e -nil
   assert_same_text(render.hover(e).value, fixture(FX_A1), "hover(MPI_Comm_rank)")
 end)
 
 test("A2: hover on the PRIVATE clause is byte-for-byte the shipped float", function()
   local e = registry.directive("PRIVATE")
   assert_true(e ~= nil, "the clause resolves through the directive door:")
+  ---@cast e -nil
   assert_eq(e.kind, "clause", "kind:")
   assert_same_text(render.hover(e).value, fixture(FX_A2), "hover(PRIVATE)")
 end)
@@ -254,23 +276,26 @@ end)
 test("A3: hover on omp_get_wtime is byte-for-byte the shipped float", function()
   local e = registry.get("omp_get_wtime")
   assert_true(e ~= nil, "the entry resolves:")
+  ---@cast e -nil
   assert_same_text(render.hover(e).value, fixture(FX_A3), "hover(omp_get_wtime)")
 end)
 
 test("A4: hover on the allocatable keyword equals the design block verbatim", function()
   local e = registry.get("allocatable")
   assert_true(e ~= nil, "the keyword resolves:")
+  ---@cast e -nil
   assert_same_text(render.hover(e).value, fixture(FX_A4), "hover(allocatable)")
 end)
 
 test("A5: hover on MPI_COMM_WORLD is byte-for-byte the shipped float", function()
   local e = registry.get("MPI_COMM_WORLD")
   assert_true(e ~= nil, "the constant resolves:")
+  ---@cast e -nil
   assert_same_text(render.hover(e).value, fixture(FX_A5), "hover(MPI_COMM_WORLD)")
 end)
 
 test("A8: the signature label is compact and its offsets index it exactly", function()
-  local sig = render.signature(registry.get("MPI_Comm_rank"), 1)
+  local sig = render.signature(assert(registry.get("MPI_Comm_rank")), 1) --[[@as FortranRegistryRenderSpecSignature]]
   assert_eq(sig.label, "MPI_Comm_rank(comm, rank, ierror)", "label:")
   assert_eq(sig.activeParameter, 1, "activeParameter:")
   local want = { { 14, 18 }, { 20, 24 }, { 26, 32 } }
@@ -296,6 +321,7 @@ end)
 
 --- Fields holding human prose. `example` is excluded: it is code, and its
 --- indentation is meaning.
+---@type ("summary"|"description"|"result"|"binding_note")[]
 local PROSE_TEXT = { "summary", "description", "result", "binding_note" }
 
 --- Is this line a markdown list item? Under one, an indent is continuation and
@@ -343,12 +369,13 @@ local function reflow_indent(s)
 end
 
 test("no prose field carries a reflow indent", function()
-  local bad = {}
+  local bad = {} ---@type string[]
   for _, file in ipairs({ "mpi", "openmp" }) do
-    local tbl = require("andrew.fortran.data." .. file)
+    -- A dynamic require lua_ls cannot resolve; `_meta` is skipped below.
+    local tbl = require("andrew.fortran.data." .. file) --[[@as table<string, FortranRegistryRenderSpecEntry>]]
     for key, e in pairs(tbl) do
       if key ~= "_meta" and type(e) == "table" then
-        local fields = {}
+        local fields = {} ---@type table<string, string>
         for _, f in ipairs(PROSE_TEXT) do
           if type(e[f]) == "string" then
             fields[f] = e[f]
@@ -379,7 +406,8 @@ test("the hygiene sweep actually looks at something", function()
   -- a check that never inspects anything passes for the wrong reason
   local n = 0
   for _, file in ipairs({ "mpi", "openmp" }) do
-    for key, e in pairs(require("andrew.fortran.data." .. file)) do
+    -- A dynamic require lua_ls cannot resolve; `_meta` is skipped below.
+    for key, e in pairs(require("andrew.fortran.data." .. file) --[[@as table<string, FortranRegistryRenderSpecEntry>]]) do
       if key ~= "_meta" and type(e) == "table" and type(e.description) == "string" then
         n = n + 1
       end

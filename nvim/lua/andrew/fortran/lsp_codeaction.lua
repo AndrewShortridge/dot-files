@@ -34,6 +34,7 @@ local M = {}
 local scan = require("andrew.fortran.scan")
 local IH = require("andrew.fortran.lsp_inlayhint")
 local D = require("andrew.fortran.lsp_diagnostics")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 M.KIND = "quickfix"
 
@@ -126,7 +127,8 @@ end
 --- but never become the target, so the insertion lands against code.
 ---@param lines string[]
 ---@param buf_scan table
----@return integer lnum 1-based, integer header 1-based (0 when there is none)
+---@return integer lnum 1-based
+---@return integer header 1-based (0 when there is none)
 function M.insert_point(lines, buf_scan)
   local header = 0
   for _, d in ipairs(buf_scan.defs) do
@@ -344,7 +346,7 @@ function M.actions(params, cb)
   if not uri then
     return cb(nil, nil)
   end
-  local bufnr = vim.uri_to_bufnr(uri)
+  local bufnr = nvim_compat.uri_to_buffer(uri)
   if not vim.api.nvim_buf_is_loaded(bufnr) then
     return cb(nil, nil)
   end

@@ -14,6 +14,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/vault_index_wal_async_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true =
   _H.test, _H.assert_eq, _H.assert_true
@@ -23,6 +24,14 @@ local vi = require("andrew.vault.vault_index")
 
 print("\n=== Vault Index WAL Async/Batched Tests ===\n")
 
+---@class VaultIndexWalAsyncSpecWalRecord  one decoded line of changes.jsonl
+---@field op "set"|"del"
+---@field path string
+---@field entry? table  the stripped entry, on "set" records
+
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -32,6 +41,7 @@ local function write_file(dir, rel, lines)
   f:close()
 end
 
+---@return string dir  absolute path of the temp vault
 local function make_vault()
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -57,9 +67,21 @@ local GAMMA = "notes/gamma.md"
 local DELTA = "notes/delta.md"
 
 -- Wrap vim.uv.fs_open and count opens that target the given WAL path.
+---@param wal_path string
+---@param fn fun(get_count: fun(): integer)
+---@return integer count  fs_open calls on wal_path while fn ran
 local function with_wal_open_counter(wal_path, fn)
   local orig = vim.uv.fs_open
   local count = 0
+  --- Counts, then delegates. Typed exactly as `vim.uv.fs_open` (luv's meta):
+  --- lua_ls merges a stub assigned to it into `vim.uv.fs_open` for the WHOLE
+  --- workspace, and a wider return type leaked into the config's own calls.
+  ---@param path string
+  ---@param ... any  flags, mode, callback: passed through untouched
+  ---@return integer|nil fd
+  ---@return uv.error.message|nil err
+  ---@return uv.error.name|nil err_name
+  ---@overload fun(path: string, flags: uv.fs_open.flags, mode: integer, callback: uv.fs_open.callback): uv.uv_fs_t
   vim.uv.fs_open = function(path, ...)
     if path == wal_path then count = count + 1 end
     return orig(path, ...)
@@ -71,6 +93,9 @@ local function with_wal_open_counter(wal_path, fn)
 end
 
 -- Poll the loop until `pred()` is true or timeout (writes are now async).
+---@param pred fun(): boolean
+---@param timeout_ms? integer
+---@return boolean
 local function wait_until(pred, timeout_ms)
   local deadline = vim.uv.now() + (timeout_ms or 500)
   while vim.uv.now() < deadline do
@@ -81,12 +106,14 @@ local function wait_until(pred, timeout_ms)
   return pred()
 end
 
+---@param wal_path string
+---@return string[] lines
 local function read_wal_lines(wal_path)
   local f = io.open(wal_path, "r")
   if not f then return {} end
-  local raw = f:read("*a")
+  local raw = f:read("*a") ---@type string
   f:close()
-  local lines = {}
+  local lines = {} ---@type string[]
   for line in (raw):gmatch("([^\n]+)\n") do
     lines[#lines + 1] = line
   end
@@ -106,8 +133,10 @@ test("WAL append opens the file once per batch and writes one record per path", 
   local wal_path = idx:_wal_path()
   assert_eq(#read_wal_lines(wal_path), 0, "WAL empty after persist_now")
 
-  local open_count
-  with_wal_open_counter(wal_path, function(get_count)
+  local open_count ---@type integer?
+  with_wal_open_counter(wal_path,
+    ---@param get_count fun(): integer
+    function(get_count)
     -- One batch covering 3 changed paths + 1 deleted path.
     idx:_persist_delta({ ALPHA, BETA, GAMMA }, { DELTA })
     -- Pump the loop so the async open fires and the write/close complete.
@@ -123,10 +152,11 @@ test("WAL append opens the file once per batch and writes one record per path", 
   assert_eq(#lines, 4, "WAL holds exactly 4 newline-terminated records")
 
   -- Every record decodes to a complete WAL op (byte format unchanged).
-  local ops = {}
+  local ops = {} ---@type table<string, "set"|"del">
   for _, line in ipairs(lines) do
     local ok, rec = pcall(vim.json.decode, line)
     assert_true(ok and type(rec) == "table", "WAL record decodes to a table")
+    ---@cast rec VaultIndexWalAsyncSpecWalRecord
     ops[rec.path] = rec.op
   end
   assert_eq(ops[ALPHA], "set", "alpha is a set op")

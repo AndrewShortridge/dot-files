@@ -38,6 +38,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/memo_cleanups_pass_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil, deep_equal =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil, _H.deep_equal
@@ -54,8 +55,16 @@ local config = require("andrew.vault.config")
 
 local tag_hl = require("andrew.vault.tag_highlights")
 
+--- One entry of config.tag_highlights.categories (what find_tag_category returns).
+---@class MemoCleanupsSpecTagCategory
+---@field prefix string
+---@field highlight string
+
 -- Reference (non-memoized) computation against the LIVE categories table, so we
 -- can prove the memoized result is identical for arbitrary inputs.
+---@param tag string
+---@param categories MemoCleanupsSpecTagCategory[]
+---@return MemoCleanupsSpecTagCategory|nil
 local function ref_find_category(tag, categories)
   local lower = tag:lower()
   for _, cat in ipairs(categories) do
@@ -129,10 +138,19 @@ end)
 local parse_cache = require("andrew.vault.line_parse_cache")
 local semantic = require("andrew.vault.semantic_resolution")
 
+---@return boolean
 local function code_excl() return false end
+
+--- Stands in for a vault_index instance: semantic.resolve only reads `_generation`.
+---@class MemoCleanupsSpecFakeIndex
+---@field _generation integer
+
+---@param gen integer
+---@return MemoCleanupsSpecFakeIndex
 local function fake_index(gen) return { _generation = gen } end
 
 -- Buffer with the SAME wikilink appearing on multiple lines, plus a distinct one.
+---@return integer bufnr
 local function make_link_buffer()
   local vault = vim.fn.tempname()
   vim.fn.mkdir(vault, "p")
@@ -147,6 +165,9 @@ local function make_link_buffer()
   return buf
 end
 
+---@param buf integer
+---@param ln integer 0-indexed
+---@return ResolvedToken|nil
 local function metadata_of(buf, ln)
   local list = semantic.get_resolved(buf, ln)
   for _, rt in ipairs(list) do
@@ -167,6 +188,9 @@ test("FIX2: same link on different lines shares one payload object within a gene
   local r2 = metadata_of(buf, 2) -- [[Other Note]]
 
   assert_true(r0 ~= nil and r1 ~= nil and r2 ~= nil, "all three wikilinks resolved")
+  ---@cast r0 -nil
+  ---@cast r1 -nil
+  ---@cast r2 -nil
   -- Same link text => the memo serves ONE payload, so metadata tables (and
   -- status/target) are the SAME object for both occurrences.
   assert_eq(r0.status, r1.status, "same link resolves to same status")
@@ -187,14 +211,15 @@ test("FIX2: generation bump invalidates the resolve memo (no stale payload serve
   parse_cache.update(buf, nil, code_excl)
 
   semantic.resolve(buf, nil, parse_cache, fake_index(1))
-  local before = metadata_of(buf, 0)
+  -- A nil here would crash on `.metadata` anyway; assert names the cause.
+  local before = assert(metadata_of(buf, 0))
   local meta_before = before.metadata
 
   -- Bump generation; token arrays unchanged. The semantic wrapper-reuse layer
   -- rebuilds wikilink lines on a gen bump, and the resolve memo is dropped, so
   -- the payload must be a FRESH object (proving the memo did not serve stale).
   semantic.resolve(buf, nil, parse_cache, fake_index(2))
-  local after = metadata_of(buf, 0)
+  local after = assert(metadata_of(buf, 0))
 
   assert_true(after.metadata ~= meta_before,
     "gen bump produced a fresh payload object (memo dropped, not stale-served)")
@@ -217,6 +242,8 @@ local estate = require("andrew.vault.embed_state")
 local lpc = require("andrew.vault.line_parse_cache")
 local resolver = require("andrew.vault.embed_resolver")
 
+---@param lines string[]
+---@return integer bufnr
 local function make_embed_buffer(lines)
   local vault = vim.fn.tempname()
   vim.fn.mkdir(vault, "p")
@@ -260,14 +287,21 @@ test("FIX3-P4: a memoized resolver wrapper resolves each distinct name once acro
   -- invoked at most ONCE per distinct name regardless of how many times the
   -- wrapper is called — the cross-pass dedup property the stashed memo provides.
   local orig = resolver.resolve_embed
-  local calls = {}
-  resolver.resolve_embed = function(name, _bufpath)
+  local calls = {} ---@type table<string, integer>
+  -- Fake of embed_resolver.resolve_embed(name: string, bufpath: string): string|nil.
+  ---@param name string
+  ---@param _ string
+  ---@return string|nil
+  local function fake_resolve_embed(name, _)
     calls[name] = (calls[name] or 0) + 1
     return "/fake/" .. name .. ".md"
   end
+  resolver.resolve_embed = fake_resolve_embed
 
   -- Reconstruct the same wrapper shape used in embed.lua (cache + false-for-miss).
-  local cache = {}
+  local cache = {} ---@type table<string, string|false>
+  ---@param name string
+  ---@return string|nil
   local function memo_resolve(name)
     local cached = cache[name]
     if cached ~= nil then return cached or nil end

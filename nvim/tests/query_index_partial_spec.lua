@@ -19,6 +19,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/query_index_partial_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -32,6 +33,15 @@ print("\n=== Query Index Partial Update Tests ===\n")
 -- ---------------------------------------------------------------------------
 -- Temp vault helpers.
 -- ---------------------------------------------------------------------------
+
+--- The part of a query page (a plain `table` in andrew.vault.query.index) this
+--- spec reads: the inlinks whose source paths it collects.
+---@class QueryIndexPartialPage
+---@field file { inlinks: { path: string }[] }
+
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -43,6 +53,7 @@ end
 
 -- A links to B (only). C is unlinked. Plus a frontmatter/inline field on A so we
 -- can confirm the touched page's scalars are re-parsed correctly after partial.
+---@return string dir
 local function make_vault()
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -63,6 +74,8 @@ end
 
 -- Build a fresh vault index over `dir`, set it as the current instance (so
 -- query/index's vault_index.current() resolves to it), and return it.
+---@param dir string
+---@return VaultIndex
 local function fresh_vi(dir)
   vault_index._instance = nil
   local idx = vault_index.get(dir)
@@ -71,8 +84,10 @@ local function fresh_vi(dir)
 end
 
 -- Collect the set of inlink source stems on a query page.
+---@param page QueryIndexPartialPage
+---@return table<string, true>
 local function inlink_stems(page)
-  local out = {}
+  local out = {} ---@type table<string, true>
   for _, l in ipairs(page.file.inlinks) do
     out[l.path] = true
   end
@@ -81,16 +96,21 @@ end
 
 -- Build a full query index and a partially-updated one over the same post-change
 -- vault index, then assert their inlink sets match for each page.
+---@param vi VaultIndex
+---@param partial_idx QueryIndex
+---@param rel_paths string[]
 local function assert_inlinks_match_full(vi, partial_idx, rel_paths)
   local full = QI.Index.new(vi.vault_path)
   full:build_from_vault_index()
   for _, rp in ipairs(rel_paths) do
-    local fp, pp = full.pages[rp], partial_idx.pages[rp]
+    local fp, pp = full.pages[rp], partial_idx.pages[rp] ---@type QueryIndexPartialPage?, QueryIndexPartialPage?
     if fp == nil and pp == nil then
       -- both absent: consistent
     else
       assert_true(fp ~= nil, "full build missing page " .. rp)
       assert_true(pp ~= nil, "partial build missing page " .. rp)
+      ---@cast fp -nil
+      ---@cast pp -nil
       local fset, pset = inlink_stems(fp), inlink_stems(pp)
       for k in pairs(fset) do
         assert_true(pset[k], "partial page " .. rp .. " missing inlink from " .. k)
@@ -133,6 +153,7 @@ test("partial update: new link target gains an inlink, identical to full build",
   -- The vault index must have produced a non-full partial context.
   local ctx = vi._last_inv_ctx
   assert_true(ctx ~= nil, "update produced an invalidation context")
+  ---@cast ctx -nil
   assert_true(ctx.tier ~= "full", "single-file edit is a non-full tier (was: " .. tostring(ctx.tier) .. ")")
 
   q:update_incremental(vi, ctx)
@@ -200,7 +221,7 @@ test("a target-skipping partial would leave a stale inlink (proves the guard)", 
     "Links to [[B]] and [[C]].",
   })
   vi:update_file(dir .. "/A.md")
-  local ctx = vi._last_inv_ctx
+  local ctx = assert(vi._last_inv_ctx)
 
   -- Simulate the WRONG (naive) partial: re-convert only touched pages and
   -- refresh inlinks ONLY for those same touched paths, never the targets.

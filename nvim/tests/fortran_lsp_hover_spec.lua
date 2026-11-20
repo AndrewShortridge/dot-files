@@ -71,6 +71,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_lsp_hover_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil = _H.assert_nil
@@ -81,19 +82,40 @@ local hover = require("andrew.fortran.lsp_hover")
 local lsp = require("andrew.fortran.lsp")
 local registry = require("andrew.fortran.registry")
 local render = require("andrew.fortran.render")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 -- Helpers -------------------------------------------------------------------
+
+--- What `hover.answer` returns when it answers: lsp.Hover with the two fields
+--- the module always sets narrowed to the shapes it builds (render.hover and
+--- the legacy prose are both MarkupContent; the range is lsp.name_range).
+---@class FortranLspHoverSpecHover: lsp.Hover
+---@field contents lsp.MarkupContent
+---@field range lsp.Range
+
+--- The options `hover.answer` takes (its inline `opts` table, named).
+---@class FortranLspHoverSpecOpts
+---@field lnum? integer
+---@field fixed? boolean
+---@field filetype? string
+---@field locals? table<string, true>
+---@field project? table<string, table>
+---@field fortls? boolean
 
 --- Answer for the first occurrence of `word` in `line`.
 ---@param line string
 ---@param word string
----@param opts table|nil
+---@param opts FortranLspHoverSpecOpts|nil
+---@return FortranLspHoverSpecHover|nil
 local function at(line, word, opts)
   local col = assert(line:find(word, 1, true), "fixture does not contain " .. word)
-  return hover.answer(line, col, opts or {})
+  -- hover.answer is annotated `table|nil`; it builds a FortranLspHoverSpecHover.
+  return hover.answer(line, col, opts or {}) --[[@as FortranLspHoverSpecHover|nil]]
 end
 
 --- The markdown value of an answer, or nil.
+---@param res FortranLspHoverSpecHover|nil
+---@return string|nil
 local function value(res)
   return res and res.contents and res.contents.value or nil
 end
@@ -140,6 +162,7 @@ test("a clause on a directive line is answered", function()
   local line = "!$OMP PARALLEL DO PRIVATE(i)"
   local v = value(at(line, "PRIVATE"))
   assert_true(v ~= nil, "PRIVATE is answered:")
+  ---@cast v -nil
   assert_eq(v:sub(1, #"```fortran\n(clause) PRIVATE(list)\n```\n---\n"), "```fortran\n(clause) PRIVATE(list)\n```\n---\n")
   -- PRIVATE is reachable ONLY through registry.directive(). The general index
   -- holds a DIFFERENT `private` -- the Fortran accessibility keyword -- so a
@@ -218,10 +241,13 @@ test("MPI_Comm_rank renders design A1", function()
   local res = at(line, "MPI_Comm_rank", { lnum = 12 })
   local v = value(res)
   assert_true(v ~= nil, "the call site is answered:")
+  -- v is res.contents.value, so a non-nil v means res answered.
+  ---@cast v -nil
+  ---@cast res -nil
 
   -- The whole payload is render.hover of the registry entry and nothing else:
   -- no second string builder, no cursor-spelling label.
-  assert_eq(v, render.hover(registry.get("MPI_Comm_rank")).value, "hover delegates wholly to render:")
+  assert_eq(v, render.hover(assert(registry.get("MPI_Comm_rank"))).value, "hover delegates wholly to render:")
   assert_eq(res.contents.kind, "markdown", "markdown, not plaintext:")
 
   -- Design A1, asserted where it is most fragile: the `(kind) ` prefix inside
@@ -239,7 +265,7 @@ end)
 
 test("the range covers exactly the word", function()
   local line = "      call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)"
-  local res = at(line, "MPI_Comm_rank", { lnum = 12 })
+  local res = assert(at(line, "MPI_Comm_rank", { lnum = 12 }))
   local r = res.range
   assert_eq(r.start.line, 11, "0-based line:")
   assert_eq(r["end"].line, 11, "one line only:")
@@ -251,7 +277,7 @@ end)
 
 test("the cursor spelling does not become the label", function()
   local line = "      call mpi_comm_rank(mpi_comm_world, rank, ierr)"
-  local v = value(at(line, "mpi_comm_rank"))
+  local v = assert(value(at(line, "mpi_comm_rank")))
   assert_true(v:find("(subroutine) MPI_Comm_rank(", 1, true) ~= nil, "the canonical case is shown:")
 end)
 
@@ -259,6 +285,7 @@ test("a keyword is answered where fortls returns null", function()
   local line = "      real, allocatable :: a(:)"
   local v = value(at(line, "allocatable"))
   assert_true(v ~= nil, "a keyword is answered:")
+  ---@cast v -nil
   assert_eq(v:sub(1, #"```fortran\n(keyword) allocatable\n```\n---\n"), "```fortran\n(keyword) allocatable\n```\n---\n")
 end)
 
@@ -266,6 +293,7 @@ test("a constant carries its parameter declaration", function()
   local line = "      call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)"
   local v = value(at(line, "MPI_COMM_WORLD"))
   assert_true(v ~= nil, "the constant is answered:")
+  ---@cast v -nil
   assert_true(v:find("```fortran\n(constant) MPI_COMM_WORLD\n  integer, parameter :: MPI_COMM_WORLD = 0\n```", 1, true) == 1,
     "the value as installed here is in the fence:")
 end)
@@ -275,6 +303,7 @@ test("the legacy prose needs the name to be an intrinsic", function()
   -- where fortls is not there to answer it first (see the fortls tests below).
   local v = value(at("      n = size(a)", "size"))
   assert_true(v ~= nil, "size gets the legacy prose with no fortls:")
+  ---@cast v -nil
   assert_true(v:find("size", 1, true) ~= nil, "and it is about size:")
   assert_nil(registry.get("size"), "which did not come from the registry:")
   assert_nil(at("      n = size(a)", "size", { fortls = true }), "and nothing at all with fortls:")
@@ -302,7 +331,7 @@ test("no intrinsic is answered while fortls is attached", function()
   -- every one of them, not just to the project's own symbols.
   local intrinsics = require("andrew.fortran.intrinsics")
   local docs = require("andrew.fortran.docs")
-  local checked, leaked = 0, {}
+  local checked, leaked = 0, {} ---@type integer, string[]
   for _, name in ipairs(intrinsics.names) do
     local prose = docs.get(name)
     if type(prose) == "string" and prose ~= "" then
@@ -359,11 +388,14 @@ test("hover marks fortls from the attached clients", function()
   local buf = vim.fn.bufadd(path)
   vim.fn.bufload(buf)
   vim.bo[buf].filetype = "fortran"
-  local got, done = nil, false
+  local got, done = nil, false ---@type FortranLspHoverSpecHover|nil, boolean
   hover.hover({
-    textDocument = { uri = vim.uri_from_bufnr(buf) },
-    position = lsp.to_pos(1, src:find("size", 1, true)),
-  }, function(_, result)
+    textDocument = { uri = nvim_compat.uri_from_buffer(buf) },
+    position = lsp.to_pos(1, assert(src:find("size", 1, true))),
+  },
+  ---@param _ lsp.ResponseError|nil
+  ---@param result FortranLspHoverSpecHover|nil
+  function(_, result)
     got, done = result, true
   end)
   assert_true(vim.wait(10000, function()
@@ -395,12 +427,18 @@ test("hover over the wire answers a real buffer", function()
   vim.fn.bufload(buf)
   vim.bo[buf].filetype = "fortran"
 
+  ---@param lnum integer
+  ---@param col integer
+  ---@return FortranLspHoverSpecHover|nil
   local function request(lnum, col)
-    local got, done = nil, false
+    local got, done = nil, false ---@type FortranLspHoverSpecHover|nil, boolean
     lsp.dispatch("textDocument/hover", {
-      textDocument = { uri = vim.uri_from_bufnr(buf) },
+      textDocument = { uri = nvim_compat.uri_from_buffer(buf) },
       position = lsp.to_pos(lnum, col),
-    }, function(_, result)
+    },
+    ---@param _ lsp.ResponseError|nil
+    ---@param result FortranLspHoverSpecHover|nil
+    function(_, result)
       got, done = result, true
     end)
     assert_true(vim.wait(10000, function()
@@ -410,14 +448,15 @@ test("hover over the wire answers a real buffer", function()
   end
 
   local call_line = lines[5]
-  local res = request(5, call_line:find("MPI_Comm_rank", 1, true))
+  local res = request(5, assert(call_line:find("MPI_Comm_rank", 1, true)))
   assert_true(res ~= nil, "the server answered for MPI_Comm_rank:")
-  assert_eq(res.contents.value, render.hover(registry.get("MPI_Comm_rank")).value, "with design A1:")
+  ---@cast res -nil
+  assert_eq(res.contents.value, render.hover(assert(registry.get("MPI_Comm_rank"))).value, "with design A1:")
   assert_eq(res.range.start.line, 4, "on the call line:")
 
   -- `rank` is declared on line 3 of this very buffer, so fortls owns it and
   -- the double-hover banner can never appear for it.
-  assert_nil(request(5, call_line:find("rank,", 1, true)), "a declared local is fortls's:")
+  assert_nil(request(5, assert(call_line:find("rank,", 1, true))), "a declared local is fortls's:")
 
   vim.api.nvim_buf_delete(buf, { force = true })
   vim.fn.delete(dir, "rf")
@@ -427,11 +466,14 @@ test("hover refuses a non-Fortran buffer", function()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "real, allocatable :: a(:)" })
   vim.bo[buf].filetype = "python"
-  local got, done = nil, false
+  local got, done = nil, false ---@type FortranLspHoverSpecHover|nil, boolean
   hover.hover({
-    textDocument = { uri = vim.uri_from_bufnr(buf) },
+    textDocument = { uri = nvim_compat.uri_from_buffer(buf) },
     position = { line = 0, character = 8 },
-  }, function(_, result)
+  },
+  ---@param _ lsp.ResponseError|nil
+  ---@param result FortranLspHoverSpecHover|nil
+  function(_, result)
     got, done = result, true
   end)
   assert_true(done, "answered synchronously:")

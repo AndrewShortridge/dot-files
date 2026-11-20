@@ -8,6 +8,7 @@
 -- which is covered by link_utils_spec.lua, so it is intentionally not retested
 -- here.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
@@ -101,6 +102,7 @@ end)
 -- whenever the image cache was non-empty.
 local engine = require("andrew.vault.engine")
 
+---@return number
 local function image_cache_entries()
   local stats = engine.cache_stats()
   return stats.image_paths and stats.image_paths.entries or 0

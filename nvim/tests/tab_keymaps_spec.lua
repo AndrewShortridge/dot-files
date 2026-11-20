@@ -56,19 +56,34 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/tab_keymaps_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
+
+-- Lets lazydev load which-key's type library (wk.Spec, used below).
+---@module "which-key"
 
 local cfg = vim.fn.stdpath("config")
 
 print("\n=== Tabs (<leader><Tab>) Port Tests ===\n")
 
+---@class TabKeymapsSpecMapping
+---@field mode string|string[]
+---@field rhs string|function
+---@field desc? string
+
 -- Execute the real core/keymaps.lua against a recorder.
+---@return table<string, TabKeymapsSpecMapping>
 local function load_keymaps()
-  local seen = {}
+  local seen = {} ---@type table<string, TabKeymapsSpecMapping>
   local real_set = vim.keymap.set
+  ---@param mode string|string[]
+  ---@param lhs string|string[]
+  ---@param rhs string|function
+  ---@param opts? vim.keymap.set.Opts
   vim.keymap.set = function(mode, lhs, rhs, opts)
-    seen[lhs] = { mode = mode, rhs = rhs, desc = opts and opts.desc }
+    -- core/keymaps.lua maps a single lhs string per call.
+    seen[lhs --[[@as string]]] = { mode = mode, rhs = rhs, desc = opts and opts.desc }
   end
   local ok, err = pcall(dofile, cfg .. "/lua/andrew/core/keymaps.lua")
   vim.keymap.set = real_set
@@ -126,13 +141,21 @@ test("<leader><Tab>f and <leader>tf stay different commands", function()
   local tf = seen["<leader>tf"]
   assert_true(type(tf.rhs) == "function", "<leader>tf must be a function (E499 guard), got " .. type(tf.rhs))
 
+  ---@param bufname string
+  ---@return string
   local function commands_for(bufname)
-    local issued = {}
+    local issued = {} ---@type (string|table)[]
     local real_cmd = vim.cmd
-    local real_name = vim.api.nvim_buf_get_name
-    vim.cmd = function(c) issued[#issued + 1] = c end
-    vim.api.nvim_buf_get_name = function() return bufname end
-    local ok, err = pcall(tf.rhs)
+    local real_name = vim.api.nvim_buf_get_name ---@type fun(buf: integer): string
+    ---@param c string|table
+    local function fake_cmd(c) issued[#issued + 1] = c end
+    ---@param _ integer
+    ---@return string
+    local function fake_buf_get_name(_) return bufname end
+    vim.cmd = fake_cmd
+    vim.api.nvim_buf_get_name = fake_buf_get_name
+    -- Checked to be a function just above.
+    local ok, err = pcall(tf.rhs --[[@as function]])
     vim.cmd = real_cmd
     vim.api.nvim_buf_get_name = real_name
     assert_true(ok, "<leader>tf raised: " .. tostring(err))
@@ -146,17 +169,22 @@ test("<leader><Tab>f and <leader>tf stay different commands", function()
 end)
 
 test("which-key registers the Tabs group on <leader><Tab>", function()
-  local groups = {}
+  local groups = {} ---@type table<string, wk.Spec>
   package.loaded["which-key"] = {
+    ---@param entries wk.Spec
     add = function(entries)
       for _, e in ipairs(entries) do
-        if e.group then groups[e[1]] = e end
+        -- which-key.lua hands add() a flat list of entry tables.
+        ---@cast e wk.Spec
+        -- Group entries always carry their lhs in [1].
+        if e.group then groups[e[1] --[[@as string]]] = e end
       end
     end,
     setup = function() end,
   }
-  local wk = dofile(cfg .. "/lua/andrew/plugins/which-key.lua")
-  if type(wk.config) == "function" then pcall(wk.config, nil, wk.opts or {}) end
+  local wk = dofile(cfg .. "/lua/andrew/plugins/which-key.lua") ---@type LazyPluginSpec
+  -- Only called when type() confirms it is a function.
+  if type(wk.config) == "function" then pcall(wk.config --[[@as fun(self: LazyPlugin, opts: table)]], nil, wk.opts or {}) end
 
   local g = groups["<leader><Tab>"]
   assert_true(g ~= nil, "<leader><Tab> must be registered as a which-key group")

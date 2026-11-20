@@ -55,6 +55,7 @@ local M = {}
 local scan = require("andrew.fortran.scan")
 local keywords = require("andrew.fortran.keywords")
 local lsp = require("andrew.fortran.lsp")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 -- LSP DocumentHighlightKind.
 local TEXT, WRITE, READ = 1, 2, 3
@@ -305,7 +306,7 @@ function M.highlight(params)
     return nil
   end
 
-  local bufnr = vim.uri_to_bufnr(uri)
+  local bufnr = nvim_compat.uri_to_buffer(uri)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return nil
   end
@@ -322,6 +323,8 @@ function M.highlight(params)
   if not masked then
     return nil
   end
+  -- A nil line (a position from_pos rejected) indexes no masked line.
+  ---@cast lnum integer
 
   -- The token under the cursor, taken from the MASKED line so a comment or a
   -- string literal holds no identifiers at all.

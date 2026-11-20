@@ -168,7 +168,7 @@ table_pool.register("embed_descriptor", _desc_pool)
 --- Pattern matching only — no I/O or file resolution.
 --- When the pipeline parse cache is warm, uses cached tokens instead of
 --- re-scanning lines (avoids duplicate regex work).
----@param lines string[]
+---@param lines string[]|nil  buffer lines; nil reads them from bufnr when needed
 ---@param bufnr number|nil  buffer number (needed for pipeline cache lookup)
 ---@return table[]
 local function build_descriptors(lines, bufnr, range_start, range_end)
@@ -479,6 +479,7 @@ local function gc_distant_placements(bufnr)
   local gc_bst = state.try_get_buf_state(bufnr)
   local handles = gc_bst and gc_bst.placements
   if not handles or #handles == 0 then return end
+  ---@cast gc_bst -nil  -- handles is only truthy when gc_bst exists
 
   local ds = gc_bst.descriptors
 
@@ -531,8 +532,12 @@ local function gc_distant_placements(bufnr)
 end
 
 
+---@class EmbedRenderOpts
+---@field silent? boolean suppress the summary notification
+---@field force? boolean re-render ranges already marked valid
+
 --- Render all ![[...]] embeds in the current buffer as virtual text.
----@param opts? { silent?: boolean, force?: boolean } options
+---@param opts? EmbedRenderOpts options
 function M.render_embeds(opts)
   opts = opts or {}
   local stop = require("andrew.vault.memory_profiler").start_timer("embed.render_embeds")
@@ -603,7 +608,7 @@ function M.render_embeds(opts)
   -- Mark render as in-flight. The resolve callback is a no-op — the
   -- coalescer entry exists solely so concurrent callers can detect it
   -- via is_pending() and skip the duplicate render.
-  embed_pool:request(coalesce_key, function(resolve)
+  embed_pool:request(coalesce_key, function()
     -- Resolve synchronously at end of render
     local arena_scope = render_arena.begin_scope()
 
@@ -846,6 +851,7 @@ function M.on_prefetch(bufnr, start_line, end_line)
   local pf_bst = state.try_get_buf_state(bufnr)
   local ds = pf_bst and pf_bst.descriptors
   if not ds then return end
+  ---@cast pf_bst -nil  -- ds is only truthy when pf_bst exists
 
   -- Avoid prefetching while a full render is in-flight
   local coalesce_key = "embed_render:" .. bufnr
@@ -1113,7 +1119,7 @@ end
 --- on next BufEnter (rendering a non-visible buffer is wasteful since
 --- lazy mode needs a visible window range).
 ---@param bufnr number
----@param opts? { silent?: boolean }
+---@param opts? EmbedRenderOpts
 function M.render_embeds_buf(bufnr, opts)
   if vim.api.nvim_get_current_buf() == bufnr then
     M.render_embeds(opts)

@@ -80,7 +80,6 @@ function M.new(initial)
     end
   end
 
-  ---@type WatchChannelHandle
   local handle = {}
 
   --- Register a callback that fires once per coalesced batch of sends.

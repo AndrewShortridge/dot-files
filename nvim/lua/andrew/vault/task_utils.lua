@@ -1,6 +1,5 @@
 --- Shared task utilities for vault task UI modules.
 --- Provides task iteration, generation-based caching, and checkbox display.
---- @module andrew.vault.task_utils
 
 local vault_index = require("andrew.vault.vault_index")
 local gen_cache = require("andrew.vault.gen_cache")
@@ -8,6 +7,7 @@ local gen_cache = require("andrew.vault.gen_cache")
 local M = {}
 
 --- Canonical task item fields:
+--- @class VaultTaskItem
 --- @field text string        Task description
 --- @field status string      Status mark character (" ", "x", "/", "-", ">")
 --- @field due string|nil     Due date (YYYY-MM-DD)
@@ -21,9 +21,9 @@ local M = {}
 --- @field repeat_rule string|nil Recurrence rule
 ---
 --- Module-specific derived fields (not shared):
---- @field days_overdue number   (task_notify only)
---- @field children table[]      (task_hierarchy only)
---- @field parent_line number    (task_hierarchy only)
+--- @field days_overdue? number   (task_notify only)
+--- @field children? table[]      (task_hierarchy only)
+--- @field parent_line? number    (task_hierarchy only)
 
 -- ---------------------------------------------------------------------------
 -- Task iteration
@@ -162,17 +162,12 @@ end
 -- Generation-based cache factory (delegates to gen_cache module)
 -- ---------------------------------------------------------------------------
 
---- Create a generation-based cache.
---- @param build_fn fun(idx: table, ...): any  Builder called on cache miss.
---- @param opts? { key_fn: fun(...): string }  Optional composite key extractor.
---- @return { get: fun(...): any, invalidate: fun() }
+--- Create a generation-based cache (see gen_cache.gen_cache for the signature).
 M.gen_cache = gen_cache.gen_cache
 
---- Create a multi-key generation-based cache.
+--- Create a multi-key generation-based cache (see gen_cache.keyed_gen_cache).
 --- Unlike gen_cache which stores one value, this caches multiple keyed entries
 --- and invalidates all of them when the vault index generation changes.
---- @param build_fn fun(idx: table, key: string, ...): any  Builder for a single key.
---- @return { get: fun(key: string, ...): any, invalidate: fun() }
 M.keyed_gen_cache = gen_cache.keyed_gen_cache
 
 -- ---------------------------------------------------------------------------

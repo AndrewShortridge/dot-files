@@ -93,7 +93,7 @@ function M.setup()
         breadcrumbs.on_buf_enter(ctx)
         embed.on_buf_enter(ctx)
         frecency.on_buf_enter(ctx)
-        task_notify.on_buf_enter(ctx)
+        task_notify.on_buf_enter()
 
         -- sidebar is lazy: only dispatch if already loaded
         local sb = package.loaded["andrew.vault.sidebar"]

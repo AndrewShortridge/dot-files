@@ -7,7 +7,7 @@ local M = {}
 --- Match a has: node against an entry.
 ---@param node table has AST node { target = string }
 ---@param entry table VaultIndexEntry
----@param index table VaultIndex instance (for _inlinks lookup)
+---@param index table|nil VaultIndex instance (for _inlinks lookup)
 ---@return boolean
 function M.match_has(node, entry, index)
   local target = node.target

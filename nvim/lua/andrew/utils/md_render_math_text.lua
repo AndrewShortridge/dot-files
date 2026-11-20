@@ -853,7 +853,7 @@ local function read_raw_argument(parser)
   parser.position = parser.position + 1
   local parts, depth = {}, 1
   while peek(parser) do
-    local token = peek(parser)
+    local token = peek(parser) --[[@as MdRenderMathTextToken]]
     parser.position = parser.position + 1
     if token.kind == "open" then
       depth = depth + 1
@@ -898,7 +898,7 @@ local function read_text_argument(parser)
   end
   local parts, depth, pending_accent = {}, 1, nil
   while peek(parser) do
-    local token = peek(parser)
+    local token = peek(parser) --[[@as MdRenderMathTextToken]]
     parser.position = parser.position + 1
     if pending_accent and token.kind == "close" then
       parts[#parts + 1], pending_accent = accent_source(pending_accent), nil
@@ -1198,10 +1198,10 @@ local function read_delimiter(parser)
   parser.position = parser.position + 1
   if token.kind == "command" then
     return SYMBOLS[token.value] or ("\\" .. token.value)
-  elseif token.kind == "symbol" then
-    return token.value == "|" and "‖" or token.value
+  elseif token.kind == "symbol" then -- has a value, as a character has (`tokenize`)
+    return token.value == "|" and "‖" or token.value --[[@as string]]
   elseif token.kind == "character" then
-    return token.value == "." and "" or token.value
+    return token.value == "." and "" or token.value --[[@as string]]
   end
   return ""
 end
@@ -1488,6 +1488,7 @@ end
 ---@return MdRenderMathTextBox
 local function parse_extensible_arrow(parser, is_right)
   local below = parse_optional_argument(parser)
+  ---@type string?
   local above = parse_flat_argument(parser)
   below, above = below ~= "" and below or nil, above ~= "" and above or nil
   if parser.is_display and parser.depth == 0 then
@@ -1535,7 +1536,7 @@ end
 ---@return boolean? has_limits
 ---@return boolean? should_skip_scripts a spacing or invisible command takes no scripts
 local function parse_command(parser, token)
-  local name = token.value
+  local name = token.value --[[@as string]] -- a command token has its name
   if SYMBOLS[name] then
     local result = text_box(SYMBOLS[name])
     result.needs_space_before_word = SPACED_OPERATORS[name]
@@ -1658,12 +1659,12 @@ parse_atom = function(parser, is_bare)
   elseif kind == "space" then
     return text_box(" ")
   elseif kind == "character" then
-    result = text_box(value == "-" and "−" or value == "'" and "′" or value)
+    result = text_box(value == "-" and "−" or value == "'" and "′" or value --[[@as string]])
   elseif kind == "symbol" then
     if SPACING_WIDTHS[value] then
       return text_box(string.rep(" ", SPACING_WIDTHS[value]))
     end
-    result = text_box(value == "|" and "‖" or value)
+    result = text_box(value == "|" and "‖" or value --[[@as string]])
   elseif kind == "command" then
     result, has_limits, should_skip_scripts = parse_command(parser, token)
     if should_skip_scripts then
@@ -1688,7 +1689,7 @@ parse_sequence = function(parser, should_stop)
     error("md_render_math_text: nested too deeply")
   end
   local result = text_box("")
-  while peek(parser) and not should_stop(peek(parser)) do
+  while peek(parser) and not should_stop(peek(parser) --[[@as MdRenderMathTextToken]]) do
     local token = peek(parser) --[[@as MdRenderMathTextToken]]
     if
       token.kind == "command"

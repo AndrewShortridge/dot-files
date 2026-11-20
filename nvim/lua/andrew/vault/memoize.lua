@@ -134,7 +134,7 @@ end
 
 --- Version function: vault index generation.
 ---@return number
-function M.index_generation(_key)
+function M.index_generation()
   local vault_index = require("andrew.vault.vault_index")
   local idx = vault_index.current()
   return idx and idx._generation or 0

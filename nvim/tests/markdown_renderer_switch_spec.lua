@@ -33,8 +33,8 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/markdown_renderer_switch_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
@@ -64,6 +64,9 @@ local render_markdown = require("render-markdown")
 local scratch_dir = vim.fn.tempname()
 vim.fn.mkdir(scratch_dir, "p")
 
+---@param name string
+---@param lines string[]
+---@return string
 local function scratch_file(name, lines)
   local path = scratch_dir .. "/" .. name
   vim.fn.writefile(lines, path)
@@ -76,6 +79,8 @@ local second_note = scratch_file("second.md", { "# Second", "", "- item" })
 local lua_file = scratch_file("code.lua", { "return 1" })
 
 --- Let scheduled callbacks run until `condition` holds.
+---@param condition fun(): boolean
+---@return boolean met, nil|-1|-2 reason  vim.wait's results
 local function settle(condition)
   return vim.wait(2000, condition, 10)
 end
@@ -87,14 +92,19 @@ local function settle_briefly()
   end, 10)
 end
 
+---@param bufnr integer
+---@return boolean
 local function is_rendered_view(bufnr)
   return vim.b[bufnr].md_render == true
 end
 
+---@return string
 local function current_name()
   return vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":t")
 end
 
+---@param bufnr integer
+---@return integer
 local function render_markdown_extmark_count(bufnr)
   local namespace =
     assert(vim.api.nvim_get_namespaces()["render-markdown.nvim"], "render-markdown's namespace")
@@ -110,11 +120,14 @@ local first_bufnr = vim.api.nvim_get_current_buf()
 vim.wo.number = true
 
 --- Columns of gutter left of the text in the current window, as drawn.
+---@return integer
 local function gutter_width()
   vim.cmd.redraw()
   return vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].textoff
 end
 
+---@param expected_width integer
+---@return boolean
 local function settles_on_gutter_width(expected_width)
   return settle(function()
     return gutter_width() == expected_width
@@ -292,12 +305,14 @@ test(":MdRender split is side by side unless the command says otherwise", functi
 end)
 
 test("a split has the source on the left and the view on the right, from either", function()
+  ---@param window integer
+  ---@return integer
   local function column_of(window)
     return vim.fn.win_screenpos(window)[2]
   end
   ---@return integer source_window, integer view_window
   local function split_windows()
-    local source_window, view_window
+    local source_window, view_window ---@type integer, integer
     for _, window in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       if is_rendered_view(vim.api.nvim_win_get_buf(window)) then
         view_window = window

@@ -9,9 +9,9 @@ local _prefix_index = nil
 local flat_filter = base.new_charbag_filter()
 
 --- Build tag completion items from the vault index.
----@param vault_path string
+---@param _ string  vault path, unused: tags come from the ready index
 ---@param callback fun(items: table[])
-local function build(_vault_path, callback)
+local function build(_, callback)
   _prefix_index = nil -- clear stale index before every rebuild
   local idx = base.get_ready_index()
   if not idx then
@@ -96,11 +96,11 @@ local function build(_vault_path, callback)
 end
 
 --- Prefix-aware tag completion with hierarchical drill-down.
----@param self table
+---@param _ table  the source, unused
 ---@param ctx table
 ---@param items table[]
 ---@param callback fun(response: table)
-local function get_completions(self, ctx, items, callback)
+local function get_completions(_, ctx, items, callback)
   local before = ctx.line:sub(1, ctx.cursor[2])
 
   -- Cheap pre-gate: a tag completion is impossible unless a '#' is present.

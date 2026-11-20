@@ -61,7 +61,9 @@ local function get_or_reset_date_memo()
     _date_memo_day = today
     _date_memo = {}
   end
-  return _date_memo
+  -- Never nil here: os.date() never equals the initial nil _date_memo_day, so
+  -- the first call always takes the branch above.
+  return _date_memo --[[@as table<string, number|false>]]
 end
 
 -- =============================================================================
@@ -326,20 +328,9 @@ end
 -- evaluate
 -- =============================================================================
 
---- Evaluate a metadata AST against the entire vault index.
----
---- Iterates all files in the index, testing each entry against the AST.
---- Returns a table mapping rel_path to the matching entry.
----
----@param ast table|nil metadata AST node (nil matches everything)
----@param index table VaultIndex instance
----@param graph_sets table|nil pre-computed graph reachable sets
----@param restrict_to table<string, table>|nil optional subset to filter (rel_path -> entry)
----@return table<string, table> matches: rel_path -> VaultIndexEntry
----@return boolean limit_reached true if max_result_files cap was hit
 --- Extract cheap pre-check predicates from the AST.
 --- Only collects from AND-reachable leaves (OR/NOT subtrees are silently skipped).
---- @param ast table Metadata AST node
+--- @param ast table|nil Metadata AST node
 --- @param index table VaultIndex instance
 --- @param ctx table FilterContext — bloom_pre_checked set is populated here
 --- @return function[]|nil pre_checks Array of (entry, rel_path) -> bool functions
@@ -438,8 +429,8 @@ end
 ---@param graph_sets table|nil pre-computed graph reachable sets
 ---@param restrict_to table|nil optional subset to filter
 ---@return table|nil files to iterate (nil if index invalid)
----@return function predicate (rel_path, entry) -> boolean
----@return number max_files result cap
+---@return function|nil predicate (rel_path, entry) -> boolean; nil only when files is nil
+---@return number|nil max_files result cap; nil when files is nil
 local function prepare_evaluate(ast, index, graph_sets, restrict_to, arena_scope)
   match_field_mod.invalidate_section_cache(index, index and index._last_inv_ctx or nil)
   if not index or not index.files then return nil end
@@ -496,6 +487,18 @@ local function prepare_evaluate(ast, index, graph_sets, restrict_to, arena_scope
   return files, predicate, max_files
 end
 
+--- Evaluate a metadata AST against the entire vault index.
+---
+--- Iterates all files in the index, testing each entry against the AST.
+--- Returns a table mapping rel_path to the matching entry.
+---
+---@param ast table|nil metadata AST node (nil matches everything)
+---@param index table VaultIndex instance
+---@param graph_sets table|nil pre-computed graph reachable sets
+---@param restrict_to table<string, table>|nil optional subset to filter (rel_path -> entry)
+---@param cancelled? fun(): boolean polled every 200 files; true aborts the scan
+---@return table<string, table>|nil matches rel_path -> VaultIndexEntry; nil when cancelled() fired
+---@return boolean|string limit_reached true if max_result_files cap was hit; "cancelled" when cancelled() fired
 function M.evaluate(ast, index, graph_sets, restrict_to, cancelled)
   local stop = require("andrew.vault.memory_profiler").start_timer("search.evaluate")
   local arena_scope = render_arena.begin_scope()
@@ -504,6 +507,7 @@ function M.evaluate(ast, index, graph_sets, restrict_to, cancelled)
     if not files then
       return {}, false
     end
+    ---@cast predicate -nil
 
     local matches = {}  -- escapes scope, NOT from arena
     local count = 0
@@ -555,7 +559,7 @@ function M.evaluate_async(ast, index, opts)
 
   local batch_size = config.search.evaluate_batch_size or 500
 
-  search_pool:request(key, function(resolve, reject)
+  search_pool:request(key, function(resolve)
     yield_iter.run_async(function()
       local arena_scope = render_arena.begin_scope()
       local ok, r1, r2 = pcall(function()
@@ -564,6 +568,7 @@ function M.evaluate_async(ast, index, opts)
         if not files then
           return {}, false
         end
+        ---@cast predicate -nil
 
         local matches, limit_reached = yield_iter.filter_yielding(
           files,

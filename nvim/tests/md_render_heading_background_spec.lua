@@ -26,8 +26,8 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/md_render_heading_background_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
@@ -36,11 +36,12 @@ vim.cmd("filetype on")
 vim.cmd("runtime plugin/md-render.lua")
 
 -- Everything md-render sends to the terminal goes through this one function.
-local sent_to_terminal = {}
----@diagnostic disable-next-line: duplicate-set-field
-vim.api.nvim_ui_send = function(data)
-  sent_to_terminal[#sent_to_terminal + 1] = data
+local sent_to_terminal = {} ---@type string[]
+---@param content string
+local function record_ui_send(content)
+  sent_to_terminal[#sent_to_terminal + 1] = content
 end
+vim.api.nvim_ui_send = record_ui_send
 
 -- md-render probes the terminal once and caches the answer, which with no UI
 -- attached is "no". There is no switch for it.
@@ -83,10 +84,11 @@ local function heading_backgrounds()
   sent_to_terminal = {}
   let_run(800)
 
-  local colours = {}
+  local colours = {} ---@type table<string, boolean>
   -- The background is the last attribute set before a scaled run.
+  -- Cast: string.gmatch is annotated with one capture; this pattern has three.
   for red, green, blue in
-    table.concat(sent_to_terminal):gmatch("\27%[48;2;(%d+);(%d+);(%d+)m\27%]66;")
+    table.concat(sent_to_terminal):gmatch("\27%[48;2;(%d+);(%d+);(%d+)m\27%]66;") --[[@as fun(): string, string, string]]
   do
     colours[("#%02x%02x%02x"):format(red, green, blue)] = true
   end
@@ -104,6 +106,8 @@ vim.fn.writefile({
   "Some text that is long enough to make the float wider than the heading.",
 }, note)
 vim.cmd.edit(vim.fn.fnameescape(note))
+-- md-render's `preview` field is loaded on first access (init.lua's __index).
+---@module "md-render.preview"
 local preview = require("md-render").preview
 preview.toggle()
 

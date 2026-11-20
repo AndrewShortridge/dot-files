@@ -1,6 +1,7 @@
 -- Test suite for vault bug fixes
 -- Run with: nvim --headless -u NONE -l tests/test_vault_fixes.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false, assert_match =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_false, _H.assert_match
@@ -18,11 +19,13 @@ vim.fn.mkdir(tmp_vault .. "/Areas/Career", "p")
 vim.fn.mkdir(tmp_vault .. "/.obsidian", "p")
 
 -- Write test files
+---@param rel string
+---@param content string
 local function write_file(rel, content)
   local path = tmp_vault .. "/" .. rel
   local dir = vim.fn.fnamemodify(path, ":h")
   vim.fn.mkdir(dir, "p")
-  local f = io.open(path, "w")
+  local f = assert(io.open(path, "w"))
   f:write(content)
   f:close()
 end
@@ -227,7 +230,7 @@ print("\n=== 2. WIKILINKS: Cache stores lists, proximity resolution ===")
 -- Directly test the cache data structure by simulating what build_cache does
 test("wikilink cache stores multiple paths per basename", function()
   -- Simulate the new cache logic with two files sharing the same basename "Alpha"
-  local cache = {}
+  local cache = {} ---@type table<string, string[]>
   local test_files = {
     tmp_vault .. "/Projects/Alpha/Alpha.md",
     tmp_vault .. "/Archive/Alpha.md",
@@ -312,7 +315,7 @@ test("new note location logic uses buffer dir when inside vault", function()
   local buf_dir = tmp_vault .. "/Projects/Alpha/Tasks"
   local link = "NewNote"
 
-  local new_path
+  local new_path ---@type string
   if vim.startswith(buf_dir, vault_path) then
     new_path = buf_dir .. "/" .. link .. ".md"
   else
@@ -328,7 +331,7 @@ test("new note location falls back to vault root when outside vault", function()
   local buf_dir = "/tmp/somewhere-else"
   local link = "NewNote"
 
-  local new_path
+  local new_path ---@type string
   if vim.startswith(buf_dir, vault_path) then
     new_path = buf_dir .. "/" .. link .. ".md"
   else
@@ -342,11 +345,6 @@ end)
 -- ============================================================================
 print("\n=== 4. BACKLINKS: Regex matches aliased and heading links ===")
 -- ============================================================================
-
--- Test ripgrep regex patterns (simulate matching)
-local function rg_escape(str)
-  return str:gsub("([%(%)%.%%%+%-%*%?%[%]%^%${}|\\])", "\\%1")
-end
 
 -- Convert the ripgrep regex to Lua pattern for testing
 -- The backlink regex: \[\[name([#|][^\]]*)?]]
@@ -441,6 +439,7 @@ test("frontmatter parsing reads fields beyond the old 30-line cap", function()
   table.insert(lines, "---")
   local fm = fm_parser.parse_lines(lines, #lines)
   assert_true(fm ~= nil, "should parse frontmatter")
+  ---@cast fm -nil
   assert_eq(fm.fields.field_1, "value_1", "reads field_1")
   assert_true(fm.fields.field_40 ~= nil, "reads field_40, beyond old 30-line cap")
 end)
@@ -450,16 +449,17 @@ test("completion parse_frontmatter reads all fields from long frontmatter", func
   local path = tmp_vault .. "/Projects/Alpha/Dashboard.md"
   local f = io.open(path, "r")
   assert_true(f ~= nil, "Test file should exist")
+  ---@cast f -nil
 
   local first = f:read("*l")
   assert_eq(first, "---", "First line should be ---")
 
-  local fm = {}
-  local cur_key = nil
-  local cur_list = nil
+  local fm = {} ---@type table<string, string>
+  local cur_key = nil ---@type string?
+  local cur_list = nil ---@type string[]?
 
   while true do
-    local line = f:read("*l")
+    local line = f:read("*l") ---@type string?
     if not line or line == "---" then break end
 
     local list_item = line:match("^%s+-%s+(.+)$")
@@ -473,7 +473,7 @@ test("completion parse_frontmatter reads all fields from long frontmatter", func
         cur_key = key
         cur_list = nil
         if val and val ~= "" then
-          val = val:gsub("^%[", ""):gsub("%]$", ""):gsub("^'", ""):gsub("'$", ""):gsub('^"', ""):gsub('"$', "")
+          val = val:gsub("^%[", ""):gsub("%]$", ""):gsub("^'", ""):gsub("'$", ""):gsub('^"', ""):gsub('"$', "") --[[@as string]]
           fm[key] = val
         end
       end
@@ -491,16 +491,17 @@ test("completion parse_frontmatter handles long frontmatter (40+ fields)", funct
   local path = tmp_vault .. "/long_fm.md"
   local f = io.open(path, "r")
   assert_true(f ~= nil, "Long frontmatter test file should exist")
+  ---@cast f -nil
 
   local first = f:read("*l")
   assert_eq(first, "---", "First line should be ---")
 
-  local fm = {}
-  local cur_key = nil
-  local cur_list = nil
+  local fm = {} ---@type table<string, string>
+  local cur_key = nil ---@type string?
+  local cur_list = nil ---@type string[]?
 
   while true do
-    local line = f:read("*l")
+    local line = f:read("*l") ---@type string?
     if not line or line == "---" then break end
 
     local list_item = line:match("^%s+-%s+(.+)$")
@@ -628,7 +629,7 @@ test("contains_value plain find rejects Lua pattern metacharacters", function()
 
   for _, tc in ipairs(test_cases) do
     -- Old behavior would crash or match incorrectly
-    local ok, _ = pcall(function()
+    pcall(function()
       return tc.path:match(tc.search)
     end)
     -- New behavior: plain find always works
@@ -645,8 +646,8 @@ test("executor applies LIMIT before GROUP BY in pipeline", function()
   local src = io.open(vim.fn.expand("~/.config/nvim/lua/andrew/vault/query/executor.lua"), "r"):read("*a")
 
   -- Find the pipeline step comments (numbered steps in the execute function)
-  local limit_pos = src:find("%-%- 5%. LIMIT")
-  local group_pos = src:find("%-%- 6%. GROUP BY")
+  local limit_pos = src:find("%-%- 5%. LIMIT") ---@type integer?
+  local group_pos = src:find("%-%- 6%. GROUP BY") ---@type integer?
 
   assert_true(limit_pos ~= nil, "Should have step 5 LIMIT comment")
   assert_true(group_pos ~= nil, "Should have step 6 GROUP BY comment")
@@ -661,15 +662,32 @@ test("executor LIMIT is not conditional on groups", function()
   )
 end)
 
+-- Render items executor.execute returns (declared there as a bare table).
+---@class TestVaultFixesTableResult
+---@field type string
+---@field rows table[]
+
+---@class TestVaultFixesTaskGroup
+---@field tasks table[]
+
+---@class TestVaultFixesTaskListResult
+---@field type string
+---@field groups TestVaultFixesTaskGroup[]
+
 -- Functional test: LIMIT + GROUP BY
 test("LIMIT caps total results even with GROUP BY", function()
   local types = require("andrew.vault.query.types")
   local executor = require("andrew.vault.query.executor")
 
+  ---@class TestVaultFixesMockPage
+  ---@field file { name: string, path: string, link: table, tags: string[] }
+  ---@field group_field string
+
   -- Create a minimal index mock
   local mock_index = {
+    ---@return TestVaultFixesMockPage[]
     all_pages = function()
-      local pages = {}
+      local pages = {} ---@type TestVaultFixesMockPage[]
       for i = 1, 10 do
         local group = (i <= 5) and "A" or "B"
         pages[i] = {
@@ -684,9 +702,13 @@ test("LIMIT caps total results even with GROUP BY", function()
       end
       return pages
     end,
-    resolve_source = function(self, node)
+    ---@param self { all_pages: fun(self: table): TestVaultFixesMockPage[] }
+    ---@param _ table  the FROM source node (ignored: every page matches)
+    ---@return TestVaultFixesMockPage[]
+    resolve_source = function(self, _)
       return self:all_pages()
     end,
+    ---@return nil
     current_page = function() return nil end,
   }
 
@@ -699,10 +721,10 @@ test("LIMIT caps total results even with GROUP BY", function()
     without_id = false,
   }
 
-  local results = executor.execute(ast, mock_index, "")
+  local results = executor.execute(ast, mock_index, "") ---@type TestVaultFixesTableResult[]
 
   -- Count total rows across all groups
-  local total_rows = 0
+  local total_rows = 0 ---@type integer
   for _, result in ipairs(results) do
     if result.rows then
       total_rows = total_rows + #result.rows
@@ -765,6 +787,12 @@ end)
 print("\n=== 14. INDEX: Date parsing for YYYY-MM-DDTHH:MM:SS ===")
 -- ============================================================================
 
+-- The part of a query index page these tests read (QueryIndex:get_page is
+-- declared as returning a bare table).
+---@class TestVaultFixesQueryPage
+---@field file { tags: string[], outlinks: { path: string }[], inlinks: { path: string }[], tasks: { status: string }[] }
+---@field [string] any  frontmatter fields, parsed by _parse_scalar
+
 test("_parse_scalar parses YYYY-MM-DD date", function()
   local Index = require("andrew.vault.query.index").Index
   local idx = Index.new(tmp_vault)
@@ -808,9 +836,6 @@ test("_parse_scalar does not parse numbers as dates", function()
 end)
 
 test("_parse_scalar parses date with space separator (YYYY-MM-DD HH:MM:SS)", function()
-  local Index = require("andrew.vault.query.index").Index
-  local idx = Index.new(tmp_vault)
-
   -- The Date.parse function handles ISO format, let's check if our gate lets it through
   -- text:match("^%d%d%d%d%-%d%d%-%d%d[T ]") should match space-separated datetimes
   local text = "2026-02-18T14:00:00"
@@ -826,8 +851,9 @@ test("index builds and parses datetime fields in frontmatter", function()
   local idx = Index.new(tmp_vault)
   idx:build_sync()
 
-  local page = idx:get_page("Projects/Alpha/Dashboard.md")
+  local page = idx:get_page("Projects/Alpha/Dashboard.md") ---@type TestVaultFixesQueryPage?
   assert_true(page ~= nil, "Dashboard page should be indexed")
+  ---@cast page -nil
   assert_eq(page.type, "project", "type field should be parsed")
   assert_eq(page.status, "active", "status field should be parsed")
 
@@ -856,10 +882,11 @@ test("index extracts tags from both frontmatter and body", function()
   local idx = Index.new(tmp_vault)
   idx:build_sync()
 
-  local page = idx:get_page("Domains/Physics/Concepts.md")
+  local page = idx:get_page("Domains/Physics/Concepts.md") ---@type TestVaultFixesQueryPage?
   assert_true(page ~= nil, "Concepts page should be indexed")
+  ---@cast page -nil
 
-  local tag_set = {}
+  local tag_set = {} ---@type table<string, boolean>
   for _, tag in ipairs(page.file.tags) do
     tag_set[tag] = true
   end
@@ -873,8 +900,9 @@ test("index does not extract tags from inside code blocks", function()
   local idx = Index.new(tmp_vault)
   idx:build_sync()
 
-  local page = idx:get_page("Domains/Physics/Concepts.md")
+  local page = idx:get_page("Domains/Physics/Concepts.md") ---@type TestVaultFixesQueryPage?
   assert_true(page ~= nil, "Concepts page should be indexed")
+  ---@cast page -nil
 
   -- The file has [[fake link]] inside a code block - check it's not in outlinks
   local has_fake = false
@@ -891,12 +919,13 @@ test("index extracts tasks with inline fields", function()
   local idx = Index.new(tmp_vault)
   idx:build_sync()
 
-  local page = idx:get_page("Projects/Alpha/Tasks/Task1.md")
+  local page = idx:get_page("Projects/Alpha/Tasks/Task1.md") ---@type TestVaultFixesQueryPage?
   assert_true(page ~= nil, "Task1 page should be indexed")
+  ---@cast page -nil
   assert_true(#page.file.tasks > 0, "Should have tasks extracted")
 
   -- Check task statuses
-  local statuses = {}
+  local statuses = {} ---@type table<string, boolean>
   for _, task in ipairs(page.file.tasks) do
     statuses[task.status] = true
   end
@@ -917,8 +946,9 @@ test("index resolves inlinks correctly", function()
   -- note whose name is "Alpha" is Archive/Alpha.md, so the inlink lands there.
   -- (Projects/Alpha/Dashboard.md has basename "Dashboard"; its alias is
   -- "Alpha Project", which would only be hit by a link whose TARGET is the alias.)
-  local alpha_archive = idx:get_page("Archive/Alpha.md")
+  local alpha_archive = idx:get_page("Archive/Alpha.md") ---@type TestVaultFixesQueryPage?
   assert_true(alpha_archive ~= nil, "Archive/Alpha page should exist")
+  ---@cast alpha_archive -nil
 
   local has_beta_inlink = false
   for _, link in ipairs(alpha_archive.file.inlinks) do
@@ -948,7 +978,6 @@ print("\n=== 16. EXECUTOR: Functional query tests ===")
 -- ============================================================================
 
 test("executor TABLE query with WHERE", function()
-  local types = require("andrew.vault.query.types")
   local executor = require("andrew.vault.query.executor")
   local Index = require("andrew.vault.query.index").Index
 
@@ -969,7 +998,8 @@ test("executor TABLE query with WHERE", function()
     without_id = false,
   }
 
-  local results, err = executor.execute(ast, idx, "")
+  -- A TABLE query renders table items, each with its rows.
+  local results, err = executor.execute(ast, idx, "") ---@type TestVaultFixesTableResult[], string|nil
   assert_true(err == nil, "Should not error: " .. tostring(err))
   assert_true(#results > 0, "Should have results")
   assert_true(results[1].rows ~= nil, "Should have rows")
@@ -977,7 +1007,6 @@ test("executor TABLE query with WHERE", function()
 end)
 
 test("executor TASK query extracts tasks", function()
-  local types = require("andrew.vault.query.types")
   local executor = require("andrew.vault.query.executor")
   local Index = require("andrew.vault.query.index").Index
 
@@ -990,13 +1019,14 @@ test("executor TASK query extracts tasks", function()
     without_id = false,
   }
 
-  local results, err = executor.execute(ast, idx, "")
+  -- A TASK query renders task_list items only.
+  local results, err = executor.execute(ast, idx, "") ---@type TestVaultFixesTaskListResult[], string|nil
   assert_true(err == nil, "Should not error: " .. tostring(err))
   assert_true(#results > 0, "Should have results")
   assert_true(results[1].type == "task_list", "Should be a task_list result")
   assert_true(#results[1].groups > 0, "Should have task groups")
 
-  local total_tasks = 0
+  local total_tasks = 0 ---@type integer
   for _, g in ipairs(results[1].groups) do
     total_tasks = total_tasks + #g.tasks
   end
@@ -1202,7 +1232,7 @@ end)
 
 test("multiple bracket fields on one line", function()
   local line = "[a:: b] and [c:: d]"
-  local matches = {}
+  local matches = {} ---@type { key: string, value: string }[]
   local pos = 1
   while pos <= #line do
     local s, e, key, value = line:find("%[([%w_%-]+)::%s*(.-)%]", pos)
@@ -1231,7 +1261,7 @@ end)
 
 test("underscored key is valid", function()
   local line = "[my_key:: value]"
-  local key, value = line:match("%[([%w_%-]+)::%s*(.-)%]")
+  local key = line:match("%[([%w_%-]+)::%s*(.-)%]")
   assert_eq(key, "my_key", "underscored key extracted")
 end)
 
@@ -1402,6 +1432,10 @@ end)
 test("unlinked: link/URL detection (unified)", function()
   local ok, link_scan = pcall(require, "andrew.vault.link_scan")
   if ok and link_scan.overlaps_range and link_scan.get_link_ranges then
+    ---@param line string
+    ---@param ms integer  1-based start column
+    ---@param me integer  1-based end column (inclusive)
+    ---@return boolean
     local function fn(line, ms, me)
       return link_scan.overlaps_range(ms - 1, me, link_scan.get_link_ranges(line))
     end
@@ -1577,6 +1611,7 @@ print("\n--- Alias collision detection ---")
 test("vault_index has _detect_collisions method", function()
   local source = io.open("lua/andrew/vault/vault_index.lua", "r")
   assert_true(source ~= nil, "could not open vault_index.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1610,6 +1645,7 @@ end)
 test("vault_index has show_collisions method", function()
   local source = io.open("lua/andrew/vault/vault_index.lua", "r")
   assert_true(source ~= nil, "could not open vault_index.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1620,6 +1656,7 @@ end)
 test("_rebuild_name_index calls _detect_collisions", function()
   local source = io.open("lua/andrew/vault/vault_index.lua", "r")
   assert_true(source ~= nil, "could not open vault_index.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1634,6 +1671,7 @@ end)
 test("vault_index has _collisions field", function()
   local source = io.open("lua/andrew/vault/vault_index.lua", "r")
   assert_true(source ~= nil, "could not open vault_index.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1657,6 +1695,7 @@ end)
 test("detects basename collisions", function()
   local source = io.open("lua/andrew/vault/vault_index.lua", "r")
   assert_true(source ~= nil, "could not open vault_index.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1675,6 +1714,7 @@ end)
 test("config has warn_collisions setting", function()
   local source = io.open("lua/andrew/vault/config.lua", "r")
   assert_true(source ~= nil, "could not open config.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1691,6 +1731,7 @@ print("\n--- Feature 38: Relative path embeds / wikilinks ---")
 test("wikilinks has is_path_like() function", function()
   local source = io.open("lua/andrew/vault/wikilinks.lua", "r")
   assert_true(source ~= nil, "could not open wikilinks.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1701,6 +1742,7 @@ end)
 test("wikilinks has resolve_relative() function", function()
   local source = io.open("lua/andrew/vault/wikilinks.lua", "r")
   assert_true(source ~= nil, "could not open wikilinks.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1711,6 +1753,7 @@ end)
 test("resolve_link checks path-like names before vault index", function()
   local source = io.open("lua/andrew/vault/wikilinks.lua", "r")
   assert_true(source ~= nil, "could not open wikilinks.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1721,6 +1764,7 @@ end)
 test("uses vim.fs.normalize for path normalization", function()
   local source = io.open("lua/andrew/vault/wikilinks.lua", "r")
   assert_true(source ~= nil, "could not open wikilinks.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1731,6 +1775,7 @@ end)
 test("probes with .md extension for extensionless links", function()
   local source = io.open("lua/andrew/vault/wikilinks.lua", "r")
   assert_true(source ~= nil, "could not open wikilinks.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1741,6 +1786,7 @@ end)
 test("uses vault_path for folder-qualified fallback", function()
   local source = io.open("lua/andrew/vault/wikilinks.lua", "r")
   assert_true(source ~= nil, "could not open wikilinks.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1751,6 +1797,7 @@ end)
 test("new note creation handles path-like links", function()
   local source = io.open("lua/andrew/vault/wikilinks.lua", "r")
   assert_true(source ~= nil, "could not open wikilinks.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1810,6 +1857,7 @@ print("\n=== 39. VAULT_STATS: Module structure ===")
 test("stats module has compute function", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1819,6 +1867,7 @@ end)
 test("stats module has format function", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1828,6 +1877,7 @@ end)
 test("stats module has show function", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1845,6 +1895,7 @@ end)
 test("stats module defines VaultStats command", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1854,6 +1905,7 @@ end)
 test("stats module uses vault_index", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1863,6 +1915,7 @@ end)
 test("stats module uses float display", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1872,6 +1925,7 @@ end)
 test("stats module computes orphans", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1881,6 +1935,7 @@ end)
 test("stats module computes broken links", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1890,6 +1945,7 @@ end)
 test("stats module uses resolve_name for broken link detection", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1899,6 +1955,7 @@ end)
 test("stats module computes most connected notes", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1908,6 +1965,7 @@ end)
 test("stats module computes tag distribution", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1917,6 +1975,7 @@ end)
 test("stats module computes type distribution", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1926,6 +1985,7 @@ end)
 test("stats module computes monthly activity", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1935,6 +1995,7 @@ end)
 test("stats module computes task summary", function()
   local source = io.open("lua/andrew/vault/stats.lua", "r")
   assert_true(source ~= nil, "could not open stats.lua")
+  ---@cast source -nil
   local content = source:read("*a")
   source:close()
 
@@ -1975,7 +2036,7 @@ local WEEKDAYS = {
 --- @param today_wday  number  1-7 (Sunday=1)
 --- @return number  signed day offset from today
 local function weekday_diff(direction, target_wday, today_wday)
-  local diff
+  local diff ---@type number
   if direction == "last" then
     diff = today_wday - target_wday
     if diff <= 0 then diff = diff + 7 end
@@ -2064,9 +2125,12 @@ end)
 -- dir so the returned paths are predictable.
 
 -- Helper: compute expected date string for a day offset from today
+---@param offset integer  days from today (negative = past)
+---@return string
 local function expected_date(offset)
   local date_utils = require("andrew.vault.date_utils")
-  return os.date("%Y-%m-%d", os.time() + offset * date_utils.SECS_PER_DAY)
+  -- A format other than "*t" makes os.date return a string.
+  return os.date("%Y-%m-%d", os.time() + offset * date_utils.SECS_PER_DAY) --[[@as string]]
 end
 
 test("resolve_link: 'today' resolves to today's daily log", function()
@@ -2074,7 +2138,7 @@ test("resolve_link: 'today' resolves to today's daily log", function()
   local cfg = require("andrew.vault.config")
   local wikilinks = require("andrew.vault.wikilinks")
 
-  local saved_vault = engine.vault_path
+  local saved_vault = engine.vault_path ---@type string
   engine.vault_path = "/tmp/test-temporal-vault"
 
   local path = wikilinks.resolve_link("today")
@@ -2091,7 +2155,7 @@ test("resolve_link: 'yesterday' resolves to yesterday's daily log", function()
   local cfg = require("andrew.vault.config")
   local wikilinks = require("andrew.vault.wikilinks")
 
-  local saved_vault = engine.vault_path
+  local saved_vault = engine.vault_path ---@type string
   engine.vault_path = "/tmp/test-temporal-vault"
 
   local path = wikilinks.resolve_link("yesterday")
@@ -2108,7 +2172,7 @@ test("resolve_link: 'tomorrow' resolves to tomorrow's daily log", function()
   local cfg = require("andrew.vault.config")
   local wikilinks = require("andrew.vault.wikilinks")
 
-  local saved_vault = engine.vault_path
+  local saved_vault = engine.vault_path ---@type string
   engine.vault_path = "/tmp/test-temporal-vault"
 
   local path = wikilinks.resolve_link("tomorrow")
@@ -2122,10 +2186,9 @@ end)
 
 test("resolve_link: 'Last Monday' is case-insensitive", function()
   local engine = require("andrew.vault.engine")
-  local cfg = require("andrew.vault.config")
   local wikilinks = require("andrew.vault.wikilinks")
 
-  local saved_vault = engine.vault_path
+  local saved_vault = engine.vault_path ---@type string
   engine.vault_path = "/tmp/test-temporal-vault"
 
   local path_lower = wikilinks.resolve_link("last monday")
@@ -2142,7 +2205,7 @@ test("resolve_link: 'last blurgsday' returns nil (invalid weekday)", function()
   local engine = require("andrew.vault.engine")
   local wikilinks = require("andrew.vault.wikilinks")
 
-  local saved_vault = engine.vault_path
+  local saved_vault = engine.vault_path ---@type string
   engine.vault_path = "/tmp/test-temporal-vault"
 
   local path = wikilinks.resolve_link("last blurgsday")
@@ -2156,8 +2219,8 @@ test("resolve_link: temporal aliases disabled returns nil", function()
   local cfg = require("andrew.vault.config")
   local wikilinks = require("andrew.vault.wikilinks")
 
-  local saved_vault = engine.vault_path
-  local saved_enabled = cfg.temporal_aliases.enabled
+  local saved_vault = engine.vault_path ---@type string
+  local saved_enabled = cfg.temporal_aliases.enabled ---@type boolean
   engine.vault_path = "/tmp/test-temporal-vault"
   cfg.temporal_aliases.enabled = false
 
@@ -2170,37 +2233,39 @@ end)
 
 test("resolve_link: 'next friday' resolves to a date in the future", function()
   local engine = require("andrew.vault.engine")
-  local cfg = require("andrew.vault.config")
   local wikilinks = require("andrew.vault.wikilinks")
 
-  local saved_vault = engine.vault_path
+  local saved_vault = engine.vault_path ---@type string
   engine.vault_path = "/tmp/test-temporal-vault"
 
   local path = wikilinks.resolve_link("next friday")
   engine.vault_path = saved_vault
 
   assert_true(path ~= nil, "next friday should resolve")
+  ---@cast path -nil
   -- Extract the date portion from the path and verify it's in the future
   local date_str = path:match("(%d%d%d%d%-%d%d%-%d%d)%.md$")
   assert_true(date_str ~= nil, "path should contain a date")
+  ---@cast date_str -nil
   local today = os.date("%Y-%m-%d")
   assert_true(date_str > today, "next friday date (" .. date_str .. ") should be after today (" .. today .. ")")
 end)
 
 test("resolve_link: 'last wednesday' resolves to a date in the past", function()
   local engine = require("andrew.vault.engine")
-  local cfg = require("andrew.vault.config")
   local wikilinks = require("andrew.vault.wikilinks")
 
-  local saved_vault = engine.vault_path
+  local saved_vault = engine.vault_path ---@type string
   engine.vault_path = "/tmp/test-temporal-vault"
 
   local path = wikilinks.resolve_link("last wednesday")
   engine.vault_path = saved_vault
 
   assert_true(path ~= nil, "last wednesday should resolve")
+  ---@cast path -nil
   local date_str = path:match("(%d%d%d%d%-%d%d%-%d%d)%.md$")
   assert_true(date_str ~= nil, "path should contain a date")
+  ---@cast date_str -nil
   local today = os.date("%Y-%m-%d")
   assert_true(date_str < today, "last wednesday date (" .. date_str .. ") should be before today (" .. today .. ")")
 end)
@@ -2210,8 +2275,8 @@ test("resolve_link: relative weekdays disabled returns nil for weekday aliases",
   local cfg = require("andrew.vault.config")
   local wikilinks = require("andrew.vault.wikilinks")
 
-  local saved_vault = engine.vault_path
-  local saved_rel = cfg.temporal_aliases.relative_weekdays
+  local saved_vault = engine.vault_path ---@type string
+  local saved_rel = cfg.temporal_aliases.relative_weekdays ---@type boolean
   engine.vault_path = "/tmp/test-temporal-vault"
   cfg.temporal_aliases.relative_weekdays = false
 
@@ -2230,7 +2295,7 @@ test("resolve_link: resolved weekday date actually falls on correct weekday", fu
   local engine = require("andrew.vault.engine")
   local wikilinks = require("andrew.vault.wikilinks")
 
-  local saved_vault = engine.vault_path
+  local saved_vault = engine.vault_path ---@type string
   engine.vault_path = "/tmp/test-temporal-vault"
 
   -- "next thursday" should resolve to a date whose os.date("%A") is "Thursday"
@@ -2238,9 +2303,15 @@ test("resolve_link: resolved weekday date actually falls on correct weekday", fu
   engine.vault_path = saved_vault
 
   assert_true(path ~= nil, "next thursday should resolve")
+  ---@cast path -nil
   local y, m, d = path:match("(%d%d%d%d)%-(%d%d)%-(%d%d)%.md$")
   assert_true(y ~= nil, "path should contain date components")
-  local ts = os.time({ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 })
+  -- y, m and d are captures of one match: all set or all nil.
+  ---@cast y -nil
+  ---@cast m -nil
+  ---@cast d -nil
+  -- The %d captures always convert to integers.
+  local ts = os.time({ year = tonumber(y) --[[@as integer]], month = tonumber(m) --[[@as integer]], day = tonumber(d) --[[@as integer]], hour = 12 })
   local weekday_name = os.date("%A", ts)
   assert_eq(weekday_name, "Thursday",
     "next thursday resolved to " .. y .. "-" .. m .. "-" .. d .. " which is " .. weekday_name)
@@ -2250,16 +2321,22 @@ test("resolve_link: 'last sunday' resolved date is actually a Sunday", function(
   local engine = require("andrew.vault.engine")
   local wikilinks = require("andrew.vault.wikilinks")
 
-  local saved_vault = engine.vault_path
+  local saved_vault = engine.vault_path ---@type string
   engine.vault_path = "/tmp/test-temporal-vault"
 
   local path = wikilinks.resolve_link("last sunday")
   engine.vault_path = saved_vault
 
   assert_true(path ~= nil, "last sunday should resolve")
+  ---@cast path -nil
   local y, m, d = path:match("(%d%d%d%d)%-(%d%d)%-(%d%d)%.md$")
   assert_true(y ~= nil, "path should contain date components")
-  local ts = os.time({ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 })
+  -- y, m and d are captures of one match: all set or all nil.
+  ---@cast y -nil
+  ---@cast m -nil
+  ---@cast d -nil
+  -- The %d captures always convert to integers.
+  local ts = os.time({ year = tonumber(y) --[[@as integer]], month = tonumber(m) --[[@as integer]], day = tonumber(d) --[[@as integer]], hour = 12 })
   local weekday_name = os.date("%A", ts)
   assert_eq(weekday_name, "Sunday",
     "last sunday resolved to " .. y .. "-" .. m .. "-" .. d .. " which is " .. weekday_name)

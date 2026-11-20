@@ -29,6 +29,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/completion_charbag_gate_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -44,9 +45,29 @@ local completion_base = require("andrew.vault.completion_base")
 
 print("\n=== Completion CharBag Gate Perf Tests ===\n")
 
+-- The completion items the vault sources hand back (annotated there as bare
+-- `table`s), as far as this spec reads them.
+---@class CompletionCharbagGateItem: lsp.CompletionItem
+---@field _char_bag? table  char_bag.from_string's {lo, hi} bitset, built only at/above the threshold
+
+-- Loads blink.cmp's type library for this file (lazydev), for blink.cmp.CompletionResponse below.
+---@module "blink.cmp"
+
+-- What a source's get_completions hands its callback.
+---@class CompletionCharbagGateResponse: blink.cmp.CompletionResponse
+---@field items CompletionCharbagGateItem[]
+
+-- What completion_base.build_kv_single_pass returns.
+---@class CompletionCharbagGateKvResult
+---@field names CompletionCharbagGateItem[]
+---@field values table<string, CompletionCharbagGateItem[]>
+
 -- ---------------------------------------------------------------------------
 -- Temp vault helpers
 -- ---------------------------------------------------------------------------
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -57,13 +78,18 @@ local function write_file(dir, rel, lines)
 end
 
 --- Run `fn` with char_bag.from_string spied; returns the call count.
+---@param fn fun()
+---@return integer
 local function count_from_string(fn)
   local orig = char_bag.from_string
   local n = 0
-  char_bag.from_string = function(...)
+  ---@param s string
+  ---@return table bag
+  local function counting_from_string(s)
     n = n + 1
-    return orig(...)
+    return orig(s)
   end
+  char_bag.from_string = counting_from_string
   local ok, err = pcall(fn)
   char_bag.from_string = orig -- finally: always restore
   assert_true(ok, "spied body did not error: " .. tostring(err))
@@ -71,23 +97,34 @@ local function count_from_string(fn)
 end
 
 --- Drive the wikilinks source's get_completions and return the result table.
+---@param line string
+---@return CompletionCharbagGateItem[]
 local function wikilink_items(line)
-  local result = nil
+  local result = nil ---@type CompletionCharbagGateResponse?
   local ctx = { line = line, cursor = { 1, #line } }
-  base:get_completions(ctx, function(r) result = r end)
+  base:get_completions(ctx,
+    ---@param r CompletionCharbagGateResponse
+    function(r) result = r end)
   vim.wait(2000, function() return result ~= nil end, 10)
   return (result or {}).items or {}
 end
 
 --- Drive the tags source's get_completions and return the result table.
+---@param line string
+---@return CompletionCharbagGateItem[]
 local function tag_items(line)
-  local result = nil
+  local result = nil ---@type CompletionCharbagGateResponse?
   local ctx = { line = line, cursor = { 1, #line }, bufnr = vim.api.nvim_get_current_buf() }
-  tags_source:get_completions(ctx, function(r) result = r end)
+  tags_source:get_completions(ctx,
+    ---@param r CompletionCharbagGateResponse
+    function(r) result = r end)
   vim.wait(2000, function() return result ~= nil end, 10)
   return (result or {}).items or {}
 end
 
+---@param dir string
+---@param n_notes integer
+---@return VaultIndex
 local function setup_vault(dir, n_notes)
   vim.fn.mkdir(dir, "p")
   for i = 1, n_notes do
@@ -162,6 +199,7 @@ test("kv fields: no char_bag.from_string per item below threshold", function()
       below_idx, "frontmatter", completion_base.known_field_values(), ": ")
   end)
   assert_eq(count, 0, "char_bag.from_string never called for small kv build")
+  ---@type CompletionCharbagGateKvResult
   local res = completion_base.build_kv_single_pass(
     below_idx, "frontmatter", completion_base.known_field_values(), ": ")
   assert_true(#res.names >= 1, "kv name items were produced")
@@ -203,6 +241,7 @@ test("at threshold: per-item bags built and prefilter narrows", function()
 
     -- kv: name items carry bags and the prefilter still narrows. Build once,
     -- then drive the kv get_completions handler over the >= threshold name list.
+    ---@type CompletionCharbagGateKvResult
     local res = completion_base.build_kv_single_pass(
       below_idx, "frontmatter", completion_base.known_field_values(), ": ")
     local kvwith = 0

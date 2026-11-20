@@ -34,13 +34,24 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_lint_shape_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
+-- nvim-lint's types (lint.Linter, lint.try_lint.Opts) for the annotations below.
+---@module "lint"
+
 -- Fake nvim-lint. try_lint/linters_by_ft are written to by the real config.
-local fake_lint = { linters = {}, linters_by_ft = {}, try_lint = function() end }
+local fake_lint = {
+  ---@type table<string, lint.Linter|fun(): lint.Linter>
+  linters = {},
+  ---@type table<string, string[]>
+  linters_by_ft = {},
+  ---@type fun(names?: string|string[], opts?: lint.try_lint.Opts)
+  try_lint = function() end,
+}
 package.loaded["lint"] = fake_lint
 
 -- gfortran must look installed for the Fortran linter to register.
@@ -49,7 +60,11 @@ local real_executable = vim.fn.executable
 -- linting.lua returns ONE lazy spec, whose [1] is the repo string -- not a list
 -- of specs. Guard that, because `spec[1] or spec` silently yields the string and
 -- every assertion below then skips instead of failing.
-local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/linting.lua")
+-- Its `config` is always a function (LazyPluginSpec also allows `true`).
+---@class FortranLintShapePluginSpec: LazyPluginSpec
+---@field config fun(self: LazyPlugin, opts: table)
+
+local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/linting.lua") ---@type FortranLintShapePluginSpec
 assert_true(type(plug) == "table", "linting.lua must return a table")
 assert_true(type(plug[1]) == "string", "spec[1] must be the repo name")
 assert_true(type(plug.config) == "function", "spec must have a config function")
@@ -57,6 +72,7 @@ assert_true(type(plug.config) == "function", "spec must have a config function")
 local cfg_ok, cfg_err = pcall(plug.config)
 assert_true(cfg_ok, "config() must not error: " .. tostring(cfg_err))
 
+---@return string?
 local function fortran_linter_name()
   local by_ft = fake_lint.linters_by_ft.fortran
   return by_ft and by_ft[1] or nil
@@ -86,12 +102,15 @@ end)
 
 test("the resolved linter has a LIST args and a STRING cwd", function()
   local name = assert(fortran_linter_name())
-  local ok, linter = pcall(fake_lint.linters[name])
+  -- Test 2 pins that the registered linter is a function.
+  local ok, linter = pcall(fake_lint.linters[name] --[[@as fun(): lint.Linter]])
   assert_true(ok, "resolving the linter must not error: " .. tostring(linter))
+  ---@cast linter lint.Linter
   assert_eq(type(linter.args), "table", "args must be a list -- nvim-lint tbl_maps over it")
   assert_eq(type(linter.cmd), "string", "cmd must be a string")
   assert_eq(type(linter.cwd), "string", "cwd must be a string -- it goes straight to uv.spawn")
-  for i, a in ipairs(linter.args) do
+  -- args is asserted to be a table above.
+  for i, a in ipairs(linter.args --[[@as (string|fun(): string)[] ]]) do
     assert_eq(type(a), "string", "arg " .. i .. " must be a string after resolution")
   end
 end)

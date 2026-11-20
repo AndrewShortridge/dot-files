@@ -55,6 +55,7 @@
 -- Run with: nvim --headless -u NONE -l tests/md_render_math_kitty_spec.lua
 
 local spec_directory = (debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]")
+---@type SpecHelper
 local _H = dofile(spec_directory .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -65,7 +66,8 @@ local bit = require("bit")
 vim.opt.runtimepath:prepend(vim.fn.fnamemodify(spec_directory, ":p:h:h"))
 local MODULE_NAME = "andrew.utils.md_render_math_kitty"
 
-local sent_to_terminal = {}
+local sent_to_terminal = {} ---@type string[]
+---@param data string
 ---@diagnostic disable-next-line: duplicate-set-field
 vim.api.nvim_ui_send = function(data)
   sent_to_terminal[#sent_to_terminal + 1] = data
@@ -95,7 +97,7 @@ local DIACRITIC_CODEPOINTS = {
   0x0816, 0x0817, 0x0818, 0x0819, 0x081B, 0x081C, 0x081D, 0x081E, 0x081F, 0x0820, 0x0821, 0x0822,
   0x0823, 0x0825, 0x0826, 0x0827, 0x0829, 0x082A, 0x082B, 0x082C, 0x082D, 0x0951, 0x0953, 0x0954,
 }
-local NUMBER_OF_DIACRITIC = {}
+local NUMBER_OF_DIACRITIC = {} ---@type table<integer, integer>
 for index, codepoint in ipairs(DIACRITIC_CODEPOINTS) do
   NUMBER_OF_DIACRITIC[codepoint] = index - 1
 end
@@ -110,12 +112,16 @@ local TWO_TO_THE_24 = 0x1000000
 ---@field id_byte integer?
 ---@field codepoint_count integer
 
+---@class KittySpecCodepoints
+---@field codepoints integer[] the placeholder, then its diacritics
+
 --- Split a row of placeholder cells into its cells and decode each.
 ---@param row_text string
 ---@return KittySpecCell[]
 local function decode_cells(row_text)
-  local cells = {}
-  for _, codepoint in ipairs(vim.fn.str2list(row_text)) do
+  local cells = {} ---@type (KittySpecCodepoints|KittySpecCell)[]
+  -- vim.fn.str2list is annotated as returning any; it returns codepoints.
+  for _, codepoint in ipairs(vim.fn.str2list(row_text) --[[@as integer[] ]]) do
     if codepoint == PLACEHOLDER_CODEPOINT then
       cells[#cells + 1] = { codepoints = { codepoint } }
     else
@@ -133,7 +139,8 @@ local function decode_cells(row_text)
       codepoint_count = #codepoints,
     }
   end
-  return cells
+  -- The loop above replaced every entry by its decoded cell.
+  return cells --[[@as KittySpecCell[] ]]
 end
 
 ---@class KittySpecCommand
@@ -145,13 +152,14 @@ end
 ---@param sent string
 ---@return KittySpecCommand[]
 local function graphics_commands(sent)
-  local commands = {}
+  local commands = {} ---@type KittySpecCommand[]
   local covered = 0
-  for whole, body in sent:gmatch("(\27_G([^\27]*)\27\\)") do
+  -- string.gmatch is annotated with one capture; these patterns have two.
+  for whole, body in sent:gmatch("(\27_G([^\27]*)\27\\)") --[[@as fun(): string, string]] do
     covered = covered + #whole
     local control, payload = body:match("^([^;]*);?(.*)$")
-    local keys = {}
-    for key, value in control:gmatch("(%w)=([^,]*)") do
+    local keys = {} ---@type table<string, string>
+    for key, value in control:gmatch("(%w)=([^,]*)") --[[@as fun(): string, string]] do
       keys[key] = value
     end
     commands[#commands + 1] = { keys = keys, payload = payload ~= "" and payload or nil }
@@ -164,6 +172,7 @@ end
 ---@param commands KittySpecCommand[]
 ---@return table<string, true>, integer
 local function deleted_ids(commands)
+  ---@type table<string, true>, integer
   local ids, count = {}, 0
   for _, command in ipairs(commands) do
     assert(command.keys.a == "d", "a command other than a delete: a=" .. tostring(command.keys.a))
@@ -256,12 +265,12 @@ local PNG_SIGNATURE = "\137PNG\r\n\26\n"
 
 --- A PNG of `width` x `height`, colour type `colour_type`, `bit_depth`, with
 --- `value(x, y)` (0-based) as every sample of a pixel, and `after` behind IEND.
----@param options { width: integer, height: integer, value: fun(x: integer, y: integer): integer, colour_type?: integer, bit_depth?: integer, after?: string, ancillary?: string }
+---@param options { width: integer, height: integer, value: (fun(x: integer, y: integer): integer), colour_type?: integer, bit_depth?: integer, after?: string, ancillary?: string }
 ---@return string
 local function png_bytes(options)
   local colour_type, bit_depth = options.colour_type or 0, options.bit_depth or 8
   local samples = ({ [0] = 1, [2] = 3, [6] = 4 })[colour_type] * bit_depth / 8
-  local rows = {}
+  local rows = {} ---@type string[]
   for y = 0, options.height - 1 do
     local row = { "\0" }
     for x = 0, options.width - 1 do
@@ -308,7 +317,7 @@ end
 ---@return KittySpecPng
 local function parse_png(bytes)
   assert(bytes:sub(1, 8) == PNG_SIGNATURE, "PNG signature")
-  local png = { kinds = {}, data_of = {} }
+  local png = { kinds = {} --[[@as string[] ]], data_of = {} --[[@as table<string, string>]] }
   local position = 9
   while true do
     local length = uint32_at(bytes, position)
@@ -334,7 +343,7 @@ end
 ---@param zlib string
 ---@return string
 local function inflate_stored(zlib)
-  local parts = {}
+  local parts = {} ---@type string[]
   local position = 3
   while true do
     local final, low, high = zlib:byte(position, position + 2)
@@ -381,6 +390,9 @@ vim.fn.mkdir(scratch_directory, "p")
 
 --- Value of the mask pixel (x, y): full ink at the left, none at the right,
 --- 64 in row 1, so that every value maps to a known alpha.
+---@param x integer
+---@param y integer
+---@return integer
 local function gradient(x, y)
   if y == 1 then
     return 64
@@ -429,18 +441,29 @@ local TALL = picture_of(TALL_PATH, 22, 3)
 
 local FOREGROUND = "ABB2BF"
 
-local kitty = require(MODULE_NAME)
+--- What this spec calls of the module (which declares no class of its
+--- own); signatures as in lua/andrew/utils/md_render_math_kitty.lua.
+---@class KittySpecModule
+---@field MAX_CELLS integer
+---@field is_supported fun(): boolean, string?
+---@field cell_size fun(): integer?, integer?
+---@field cells fun(picture: MdRenderMathPicture, box?: { columns: integer, rows: integer }, foreground: string): string[]?, string
+---@field mark fun(owner: integer, groups: table<string, true>)
+---@field setup fun(options?: { collection_delay_milliseconds?: integer, unmarked_grace_milliseconds?: integer, keep_unshown?: integer })
+
+local kitty = require(MODULE_NAME) ---@type KittySpecModule
 kitty.setup()
 
 -- -----------------------------------------------------------------------------
 -- Sending
 -- -----------------------------------------------------------------------------
 
+---@type string[], string, integer?
 local wide_rows, wide_group, wide_image_id
 
 test("the first use sends the PNG's bytes, then a virtual placement of its cells", function()
   take_sent()
-  wide_rows, wide_group = kitty.cells(WIDE, nil, FOREGROUND)
+  wide_rows, wide_group = assert(kitty.cells(WIDE, nil, FOREGROUND))
   local commands = graphics_commands(take_sent())
   assert_eq(#commands, 2, "graphics commands sent:")
   local transmit, place = commands[1], commands[2]
@@ -489,7 +512,7 @@ end)
 
 test("a second use of the same picture sends nothing", function()
   for _ = 1, 5 do
-    local rows, group = kitty.cells(WIDE, nil, FOREGROUND)
+    local rows, group = assert(kitty.cells(WIDE, nil, FOREGROUND))
     assert_eq(rows[1], wide_rows[1], "same cells:")
     assert_eq(group, wide_group, "same highlight group:")
   end
@@ -497,7 +520,7 @@ test("a second use of the same picture sends nothing", function()
 end)
 
 test("a scaled box is a second image of the same PNG with a placement of the box's size", function()
-  local rows, group = kitty.cells(WIDE, { columns = 6, rows = 1 }, FOREGROUND)
+  local rows, group = assert(kitty.cells(WIDE, { columns = 6, rows = 1 }, FOREGROUND))
   local commands = graphics_commands(take_sent())
   assert_eq(#commands, 2, "graphics commands sent:")
   assert_eq(commands[1].keys.a, "t", "the PNG sent again under a new id:")
@@ -539,7 +562,7 @@ test("a large picture goes in chunks of at most 4096 base64 bytes, the last m=0"
   assert_eq(first.keys.f, "100", "first chunk, PNG:")
   assert_eq(first.keys.m, "1", "first chunk, more follow:")
   assert_eq(first.keys.q, "2", "first chunk, quiet:")
-  local payloads = {}
+  local payloads = {} ---@type string[]
   for index = 1, #commands - 1 do
     local keys = commands[index].keys
     local payload = commands[index].payload
@@ -565,6 +588,8 @@ test("a large picture goes in chunks of at most 4096 base64 bytes, the last m=0"
 end)
 
 --- Sample of the PNGs that are no masks: any value will do.
+---@param x integer
+---@return integer
 local function ramp(x)
   return x
 end
@@ -666,7 +691,7 @@ test("base64 of exactly 4096 bytes is one command, of exactly 8192 two, the last
 end)
 
 test("more colours than are cached still come out in their colour", function()
-  local first_colour
+  local first_colour ---@type string?
   for index = 1, 20 do
     local colour = string.format("%02X%02X%02X", index, 255 - index, 7 * index % 256)
     first_colour = first_colour or colour
@@ -684,6 +709,9 @@ test("a file too big, or a header no decoder takes, is missing", function()
   local start = vim.uv.hrtime()
   assert_missing(bad_path, "over 16 MB", whole .. ("\0"):rep(16 * 1024 * 1024))
   assert_true((vim.uv.hrtime() - start) / 1e6 < 500, "refused without reading it:")
+  ---@param position integer
+  ---@param value integer
+  ---@return string
   local function with_byte(position, value)
     return whole:sub(1, position - 1) .. string.char(value) .. whole:sub(position + 1)
   end
@@ -704,7 +732,7 @@ test("a relative path is read again from where it was, after a :cd", function()
   -- Handed out, never marked: sent again.
   vim.api.nvim_exec_autocmds("VimResume", {})
   local commands = graphics_commands(take_sent())
-  local widths = {}
+  local widths = {} ---@type table<integer, true>
   for index, command in ipairs(commands) do
     if command.keys.a == "t" and command.keys.m == nil then
       widths[transmitted_png(commands, index).width] = true
@@ -761,12 +789,14 @@ end
 
 test("a 12x1 picture is one row of 12 cells, each naming its own column", function()
   assert_eq(#wide_rows, 1, "rows:")
+  -- Set by the first test, whose transmission carried it.
+  ---@cast wide_image_id integer
   assert_cells(wide_rows, wide_image_id, 12)
 end)
 
 test("a 22x3 picture is three rows of 22 cells, each naming its own row and column", function()
-  local rows = kitty.cells(TALL, nil, FOREGROUND)
-  local image_id = tonumber(graphics_commands(take_sent())[1].keys.i)
+  local rows = assert(kitty.cells(TALL, nil, FOREGROUND))
+  local image_id = assert(tonumber(graphics_commands(take_sent())[1].keys.i))
   assert_eq(#rows, 3, "rows:")
   assert_cells(rows, image_id, 22)
 end)
@@ -827,23 +857,33 @@ end)
 -- -----------------------------------------------------------------------------
 
 local real_new_timer = vim.uv.new_timer
-local timers = {}
+local timers = {} ---@type KittySpecFakeTimer[]
+---@return uv.uv_timer_t
 ---@diagnostic disable-next-line: duplicate-set-field
 vim.uv.new_timer = function()
+  ---@class KittySpecFakeTimer
+  ---@field starts integer[] the timeout of every `start`
+  ---@field callback fun()? what the timer would run next
   local timer = { starts = {} }
+  ---@param timeout integer
+  ---@param repeat_timeout integer
+  ---@param callback fun()
+  ---@return 0
   function timer:start(timeout, repeat_timeout, callback)
     assert(repeat_timeout == 0, "a one-shot timer")
     self.starts[#self.starts + 1] = timeout
     self.callback = callback
     return 0
   end
+  ---@return 0
   function timer:stop()
     self.callback = nil
     return 0
   end
   function timer:close() end
   timers[#timers + 1] = timer
-  return timer
+  -- A partial uv_timer_t: start, stop and close only.
+  return timer --[[@as uv.uv_timer_t]]
 end
 
 ---@return boolean
@@ -880,12 +920,16 @@ end
 
 --- `#sent_to_terminal` at each `:redraw` the module asks for; while
 --- `is_redraw_refused`, the redraw fails as it does under a text lock.
-local redraw_positions = {}
+local redraw_positions = {} ---@type integer[]
 local is_redraw_refused = false
 local real_cmd = vim.cmd
 vim.cmd = setmetatable({}, {
+  ---@param _ table
+  ---@param name string
+  ---@return function
   __index = function(_, name)
     if name == "redraw" then
+      ---@param ... any the arguments of `:redraw`, passed on untouched
       return function(...)
         if is_redraw_refused then
           error("E565: Not allowed to change text or change window")
@@ -896,6 +940,9 @@ vim.cmd = setmetatable({}, {
     end
     return real_cmd[name]
   end,
+  ---@param _ table
+  ---@param ... string|vim.api.keyset.cmd
+  ---@return string
   __call = function(_, ...)
     return real_cmd(...)
   end,
@@ -919,7 +966,9 @@ local function take_commands()
 end
 
 take_sent()
+---@type KittySpecModule?
 package.loaded[MODULE_NAME] = nil
+---@type KittySpecModule
 kitty = require(MODULE_NAME)
 kitty.setup()
 
@@ -1021,6 +1070,7 @@ test("a released id is used again, the longest-freed first, its group too", func
   -- A recycled id's group is defined already: no `nvim_set_hl` at all.
   local definitions = 0
   local original_set_hl = vim.api.nvim_set_hl
+  ---@type fun(ns_id: integer, name: string, val: vim.api.keyset.highlight)
   ---@diagnostic disable-next-line: duplicate-set-field
   vim.api.nvim_set_hl = function(...)
     definitions = definitions + 1
@@ -1049,6 +1099,7 @@ test(
     for _, event in ipairs({ "VimResume", "UIEnter" }) do
       vim.api.nvim_exec_autocmds(event, {})
       local commands = take_commands()
+      ---@type table<string, KittySpecPng>, table<string, table<string, string>>
       local png_of_id, place_of_id = {}, {}
       for index = 1, #commands, 2 do
         assert_eq(commands[index].keys.a, "t", event .. ", command " .. index .. ":")
@@ -1130,7 +1181,9 @@ end)
 -- Another fresh module that keeps no unshown picture, so that each rule shows
 -- on a few pictures.
 take_sent()
+---@type KittySpecModule?
 package.loaded[MODULE_NAME] = nil
+---@type KittySpecModule
 kitty = require(MODULE_NAME)
 kitty.setup({
   keep_unshown = 0,
@@ -1158,7 +1211,7 @@ test(
     run_collection()
     deleted_ids(take_commands())
     vim.api.nvim_exec_autocmds("VimResume", {})
-    local sent_ids = {}
+    local sent_ids = {} ---@type table<string, string>
     for _, command in ipairs(take_commands()) do
       sent_ids[command.keys.i] = command.keys.a
     end
@@ -1281,7 +1334,7 @@ local ENVIRONMENT_NAMES = {
   "TERM_PROGRAM",
   "GHOSTTY_RESOURCES_DIR",
 }
-local saved_environment = {}
+local saved_environment = {} ---@type table<string, string>
 for _, name in ipairs(ENVIRONMENT_NAMES) do
   saved_environment[name] = vim.env[name]
 end
@@ -1289,13 +1342,14 @@ end
 --- The module as freshly loaded, and first asked, in an environment of just
 --- `variables`.
 ---@param variables table<string, string>
----@return table
+---@return KittySpecModule
 local function module_in_environment(variables)
   for _, name in ipairs(ENVIRONMENT_NAMES) do
     vim.env[name] = variables[name]
   end
+  ---@type KittySpecModule?
   package.loaded[MODULE_NAME] = nil
-  local fresh_module = require(MODULE_NAME)
+  local fresh_module = require(MODULE_NAME) ---@type KittySpecModule
   fresh_module.is_supported()
   for _, name in ipairs(ENVIRONMENT_NAMES) do
     vim.env[name] = saved_environment[name]
@@ -1305,7 +1359,7 @@ end
 
 local KITTY = { TERM = "xterm-kitty", KITTY_WINDOW_ID = "3", KITTY_PID = "1234" }
 
----@param kitty_module table
+---@param kitty_module KittySpecModule
 ---@param expected boolean
 ---@param what string
 local function assert_supported(kitty_module, expected, what)
@@ -1354,6 +1408,8 @@ test("no pictures without 'termguicolors': the image id is a 24-bit colour", fun
   local is_supported, reason = kitty_module.is_supported()
   vim.o.termguicolors = true
   assert_eq(is_supported, false, "Kitty, 'notermguicolors':")
+  -- is_supported gives a reason with every false.
+  ---@cast reason string
   assert_true(reason:find("termguicolors", 1, true) ~= nil, "the reason names it:")
   assert_eq(kitty_module.is_supported(), true, "Kitty, 'termguicolors' again:")
 end)
@@ -1369,22 +1425,39 @@ end)
 
 -- tmux: `vim.system` is replaced, so no tmux is needed and its answer is ours.
 
-local system_calls = {}
+---@class KittySpecSystemCall
+---@field command string[]
+---@field options vim.SystemOpts?
+---@field on_exit fun(out: vim.SystemCompleted)?
+---@field kills (integer|string)[] the signal of every `kill`
+
+---@class KittySpecFakeSystemObj
+---@field kill fun(self: KittySpecFakeSystemObj, signal: integer|string)
+
+local system_calls = {} ---@type KittySpecSystemCall[]
 local system_error ---@type string? what the replaced `vim.system` raises
 local original_system = vim.system
----@diagnostic disable-next-line: duplicate-set-field
-vim.system = function(command, options, on_exit)
+---@param command string[]
+---@param options vim.SystemOpts?
+---@param on_exit? fun(out: vim.SystemCompleted)
+---@return vim.SystemObj
+local function fake_system(command, options, on_exit)
   if system_error then
     error(system_error)
   end
+  ---@type KittySpecSystemCall
   local call = { command = command, options = options, on_exit = on_exit, kills = {} }
   system_calls[#system_calls + 1] = call
-  return {
+  -- A partial vim.SystemObj: `kill` is all the module calls.
+  return ({
+    ---@param _ KittySpecFakeSystemObj
+    ---@param signal integer|string
     kill = function(_, signal)
       call.kills[#call.kills + 1] = signal
     end,
-  }
+  } --[[@as KittySpecFakeSystemObj]]) --[[@as vim.SystemObj]]
 end
+vim.system = fake_system
 
 local terminal_events = 0
 vim.api.nvim_create_autocmd("User", {
@@ -1401,7 +1474,7 @@ local TMUX_IN_KITTY = vim.tbl_extend(
 )
 
 ---@param answer string|vim.SystemCompleted what tmux answers (stdout of exit code 0, or all)
----@return table kitty_module
+---@return KittySpecModule kitty_module
 local function module_in_tmux(answer)
   system_calls, terminal_events = {}, 0
   local kitty_module = module_in_environment(TMUX_IN_KITTY)
@@ -1446,8 +1519,10 @@ test("in tmux with passthrough on: pictures, every escape wrapped, the event onc
   take_sent()
   kitty_module.cells(picture_of(LARGE_PATH, 20, 3), nil, FOREGROUND)
   local sent = take_sent()
+  ---@type string[], integer
   local unwrapped, covered = {}, 0
-  for whole, body in sent:gmatch("(\27Ptmux;\27\27_G([^\27]*)\27\27\\\27\\)") do
+  -- string.gmatch is annotated with one capture; this pattern has two.
+  for whole, body in sent:gmatch("(\27Ptmux;\27\27_G([^\27]*)\27\27\\\27\\)") --[[@as fun(): string, string]] do
     covered = covered + #whole
     unwrapped[#unwrapped + 1] = "\27_G" .. body .. "\27\\"
   end
@@ -1464,6 +1539,8 @@ test("in tmux with passthrough off, or none to ask: no pictures, a reason, no ev
   local kitty_module = module_in_tmux("off")
   local is_supported, reason = kitty_module.is_supported()
   assert_eq(is_supported, false, "allow-passthrough off:")
+  -- is_supported gives a reason with every false.
+  ---@cast reason string
   assert_true(reason:find("allow-passthrough is off", 1, true) ~= nil, "the reason: " .. reason)
   assert_eq(terminal_events, 0, "User MdRenderMathTerminal fired:")
   system_calls = {}
@@ -1482,6 +1559,8 @@ test("in tmux that fails, prints garbage or cannot be run: no pictures, a short 
   })
   local is_supported, reason = failing.is_supported()
   assert_eq(is_supported, false, "tmux < 3.3 (exit 1):")
+  -- is_supported gives a reason with every false.
+  ---@cast reason string
   assert_true(
     reason:find("invalid option", 1, true) ~= nil,
     "its message in the reason: " .. reason
@@ -1494,6 +1573,7 @@ test("in tmux that fails, prints garbage or cannot be run: no pictures, a short 
   })
   is_supported, reason = noisy.is_supported()
   assert_eq(is_supported, false, "garbage:")
+  ---@cast reason string
   assert_true(#reason <= 200, "a short reason: " .. #reason .. " bytes")
   assert_eq(terminal_events, 0, "User MdRenderMathTerminal fired:")
   system_error = "ENOENT: no such file or directory"
@@ -1545,9 +1625,11 @@ if vim.fn.isdirectory(md_render_directory) == 1 then
     assert_eq(kitty.cell_size(), nil, "zero:")
     md_render_image._test_cell_size = nil
     local original_get_cell_size = md_render_image.get_cell_size
-    md_render_image.get_cell_size = function()
+    ---@return { cell_w: number, cell_h: number }?
+    local function no_cell_size()
       return nil
     end
+    md_render_image.get_cell_size = no_cell_size
     local cell_width = kitty.cell_size()
     md_render_image.get_cell_size = original_get_cell_size
     assert_eq(cell_width, nil, "no size at all:")

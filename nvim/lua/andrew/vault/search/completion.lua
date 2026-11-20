@@ -19,7 +19,6 @@ function M._complete_advanced(lead)
   local completion_base = require("andrew.vault.completion_base")
   local candidates = {}
   local idx = completion_base.get_ready_index()
-  local idx_ready = idx ~= nil
 
   -- Field names (builtin + aliases + special prefixes)
   for _, f in ipairs(stats.get_known_fields()) do
@@ -100,7 +99,7 @@ function M._complete_advanced(lead)
   end
 
   -- After tag: or task-tag: suggest tags from index; also tag exclusions
-  if idx_ready then
+  if idx then
     local all_tags = idx:all_tags()
 
     for _, tag_prefix in ipairs({ "tag:", "task-tag:" }) do
@@ -137,7 +136,7 @@ function M._complete_advanced(lead)
     local pat = "^" .. link_prefix:gsub("%-", "%%-")
     if lead:match(pat) then
       local rest_lower = lead:sub(#link_prefix + 1):lower()
-      local names = idx_ready and idx:sorted_names() or {}
+      local names = idx and idx:sorted_names() or {}
       for _, n in ipairs(names) do
         if vim.startswith(n.name_lower, rest_lower) then
           candidates[#candidates + 1] = quoted_candidate(link_prefix, n.name)
@@ -158,7 +157,7 @@ function M._complete_advanced(lead)
         -- Extract partial heading text after # for filtering
         local partial_heading = lead:match("#(.*)$") or ""
         local partial_lower = partial_heading:lower()
-        if idx_ready then
+        if idx then
           local abs_paths = idx:resolve_name(note_name)
           if abs_paths and #abs_paths > 0 then
             local heading_entry = idx:get_entry_by_abs(abs_paths[1])
@@ -186,7 +185,7 @@ function M._complete_advanced(lead)
   if lead:match("^alias:") then
     local prefix = "alias:"
     local rest = lead:sub(#prefix + 1):lower()
-    if idx_ready then
+    if idx then
       for _, a in ipairs(idx:all_aliases()) do
         if vim.startswith(a, rest) then
           candidates[#candidates + 1] = quoted_candidate(prefix, a)

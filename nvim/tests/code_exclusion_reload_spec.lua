@@ -27,6 +27,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/code_exclusion_reload_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_true, assert_eq = _H.test, _H.assert_true, _H.assert_eq
 
@@ -36,6 +37,9 @@ local link_scan = require("andrew.vault.link_scan")
 print("\n=== Code-Exclusion Reload Regression ===\n")
 
 -- Assert two closures agree on every row (and representative cols) of the buffer.
+---@param buf integer
+---@param got fun(row: number, col: number): boolean
+---@param want fun(row: number, col: number): boolean
 local function assert_closures_agree(buf, got, want)
   local n = vim.api.nvim_buf_line_count(buf)
   for row = 0, n - 1 do
@@ -51,6 +55,8 @@ local function assert_closures_agree(buf, got, want)
   end
 end
 
+---@param path string
+---@param lines string[]
 local function write_file(path, lines)
   local fh = assert(io.open(path, "w"))
   fh:write(table.concat(lines, "\n") .. "\n")
@@ -84,7 +90,7 @@ test("rebuild after autoread reload does not crash and matches recompute", funct
 
   vim.cmd.edit(vim.fn.fnameescape(path))
   local buf = vim.api.nvim_get_current_buf()
-  vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
+  vim.bo[buf].filetype = "markdown"
   pcall(vim.treesitter.get_parser, buf, "markdown")
 
   -- Seed the incremental cache (records entry.tick).

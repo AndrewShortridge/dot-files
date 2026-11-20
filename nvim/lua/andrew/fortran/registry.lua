@@ -136,6 +136,7 @@ function M.get(name)
     return nil
   end
   M.load()
+  ---@cast index -nil
   return index[l]
 end
 
@@ -147,6 +148,7 @@ function M.mpi(name)
     return nil
   end
   M.load()
+  ---@cast files -nil
   local t = files.mpi[l]
   return (l ~= "_meta") and t or nil
 end
@@ -159,6 +161,7 @@ function M.openmp(name)
     return nil
   end
   M.load()
+  ---@cast files -nil
   local t = files.openmp[l]
   return (l ~= "_meta") and t or nil
 end
@@ -171,6 +174,7 @@ function M.keyword(name)
     return nil
   end
   M.load()
+  ---@cast files -nil
   local t = files.keywords[l]
   return (l ~= "_meta") and t or nil
 end
@@ -195,6 +199,7 @@ function M.directive(word)
     return nil
   end
   M.load()
+  ---@cast directives -nil
   if l == "omp" then
     local e = directives.omp_lib
     return (e and e.kind == "module") and e or nil
@@ -207,6 +212,7 @@ end
 ---@return table[]
 function M.entries(kind_filter)
   M.load()
+  ---@cast index -nil
   local keys = {}
   for lname in pairs(index) do
     if kind_filter == nil or kind_filter[index[lname].kind] then
@@ -226,7 +232,8 @@ end
 function M.names()
   M.load()
   local out = {}
-  for lname, src in pairs(origin) do
+  -- M.load() sets `origin` together with `files`, so it is a table here.
+  for lname, src in pairs(origin --[[@as table<string, string>]]) do
     out[lname] = src
   end
   return out
@@ -263,6 +270,7 @@ end
 ---@return table<string, table>
 function M.meta()
   M.load()
+  ---@cast files -nil
   return {
     mpi = files.mpi._meta or {},
     openmp = files.openmp._meta or {},

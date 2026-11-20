@@ -10,6 +10,7 @@
 -- Drives the REAL module (M._compute_change_types / M._diff_entry are exported).
 -- Run with: nvim --headless -u NONE -l tests/compute_change_types_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -20,7 +21,27 @@ local cct = vi._compute_change_types
 
 local ALL_KEYS = { "frontmatter", "tags", "headings", "outlinks", "tasks", "aliases", "block_ids" }
 
+---@class ComputeChangeTypesEntry  the VaultIndexEntry fields _compute_change_types compares
+---@field frontmatter table<string, any>
+---@field tags string[]
+---@field headings table[]
+---@field outlinks table[]
+---@field tasks table[]
+---@field aliases string[]
+---@field block_ids table[]
+
+---@class ComputeChangeTypesEntryOpts  per-field overrides for entry()
+---@field frontmatter? table<string, any>
+---@field tags? string[]
+---@field headings? table[]
+---@field outlinks? table[]
+---@field tasks? table[]
+---@field aliases? string[]
+---@field block_ids? table[]
+
 --- Build a fully-specified entry; override any field via opts.
+---@param opts? ComputeChangeTypesEntryOpts
+---@return ComputeChangeTypesEntry
 local function entry(opts)
   opts = opts or {}
   return {
@@ -35,11 +56,15 @@ local function entry(opts)
 end
 
 --- Assert change_types has exactly `expected_true` keys set to true.
+---@param ct ChangeTypes|nil  what _compute_change_types returned
+---@param expected_true string[]
+---@param msg? string
 local function assert_only_true(ct, expected_true, msg)
-  local want = {}
+  local want = {} ---@type table<string, true>
   for _, k in ipairs(expected_true) do want[k] = true end
   for _, k in ipairs(ALL_KEYS) do
-    assert_eq(ct[k], want[k] == true, (msg or "") .. " key=" .. k)
+    -- assert: indexing a nil change set would crash here anyway; this names it.
+    assert_eq(assert(ct, "change_types is nil")[k], want[k] == true, (msg or "") .. " key=" .. k)
   end
 end
 

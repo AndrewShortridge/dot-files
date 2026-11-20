@@ -36,8 +36,9 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/winscrolled_merge_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
-local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
+local test, assert_eq = _H.test, _H.assert_eq
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
@@ -54,6 +55,7 @@ local ok_setup, err_setup = pcall(event_dispatch.setup)
 assert(ok_setup, "event_dispatch.setup() must load headless: " .. tostring(err_setup))
 
 -- Create a markdown buffer inside a temp "vault" so engine.is_vault_buf is true.
+---@return integer buf
 local function make_vault_buf()
   local vault = vim.fn.tempname()
   vim.fn.mkdir(vault, "p")
@@ -63,39 +65,56 @@ local function make_vault_buf()
   vim.api.nvim_buf_set_name(buf, vault .. "/note.md")
   vim.bo[buf].filetype = "markdown"
   vim.api.nvim_set_current_buf(buf)
-  local lines = {}
+  local lines = {} ---@type string[]
   for i = 1, 200 do lines[i] = "line " .. i end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   return buf
 end
 
+---@class WinscrolledMergePerfSpecCounts
+---@field is_vault integer  engine.is_vault_buf calls
+---@field coord integer  highlight_coordinator.on_win_scrolled calls
+---@field embed integer  embed.on_win_scrolled calls
+---@field order string[]  "coord"/"embed", in call order
+
 -- Fire a single WinScrolled tick deterministically while counting the seams.
 -- Headless WinScrolled does not reliably fire on programmatic scroll, so we use
 -- nvim_exec_autocmds for a deterministic dispatch through the real autocmd.
+---@return WinscrolledMergePerfSpecCounts
 local function fire_and_count()
   local is_vault_calls = 0
   local coord_calls = 0
   local embed_calls = 0
-  local order = {}
+  local order = {} ---@type string[]
 
   local orig_is_vault = engine.is_vault_buf
   local orig_coord = highlight_coordinator.on_win_scrolled
   local orig_embed = embed.on_win_scrolled
 
-  engine.is_vault_buf = function(b)
+  -- Counting wrappers, with the real signatures of the functions they replace.
+  ---@param b? number
+  ---@return boolean
+  local function counting_is_vault_buf(b)
     is_vault_calls = is_vault_calls + 1
     return orig_is_vault(b)
   end
-  highlight_coordinator.on_win_scrolled = function(ctx)
+  ---@param ctx { bufnr: number, winid: number }
+  ---@return nil
+  local function counting_coord(ctx)
     coord_calls = coord_calls + 1
     order[#order + 1] = "coord"
     return orig_coord(ctx)
   end
-  embed.on_win_scrolled = function(ctx)
+  ---@param ctx { bufnr: number, winid: number }
+  ---@return nil
+  local function counting_embed(ctx)
     embed_calls = embed_calls + 1
     order[#order + 1] = "embed"
     return orig_embed(ctx)
   end
+  engine.is_vault_buf = counting_is_vault_buf
+  highlight_coordinator.on_win_scrolled = counting_coord
+  embed.on_win_scrolled = counting_embed
 
   local ok, err = pcall(vim.api.nvim_exec_autocmds, "WinScrolled", {})
 

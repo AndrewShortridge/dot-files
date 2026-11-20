@@ -64,6 +64,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_inlay_hints_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
@@ -116,13 +117,35 @@ vim.fn.writefile(DIFFUSE, root .. "/code/diffuse.f")
 vim.fn.writefile(ENERGY, root .. "/code/energy.f")
 vim.fn.writefile(MAIN, root .. "/code/main.f")
 
+-- A signature-index entry as lsp_inlayhint.build_signatures builds it (it
+-- annotates the index as `table<string, table>`).
+---@class FortranInlayHintsSig
+---@field name string      original casing
+---@field args string[]    dummy argument names
+---@field path? string
+---@field lnum? integer
+---@field builtin? boolean registry builtins only
+
+-- A hint as lsp_inlayhint.build_hints builds it: an LSP InlayHint whose label
+-- is always a plain string (the module annotates the list as `table[]`).
+---@class FortranInlayHintsHint
+---@field position lsp.Position
+---@field label string
+---@field kind integer       lsp.InlayHintKind
+---@field paddingLeft? boolean
+---@field paddingRight? boolean
+---@field textEdits? lsp.TextEdit[]
+
 --- Block until the async signature build finishes.
+---@return table<string, FortranInlayHintsSig>
 local function signatures()
-  local result = nil
+  local result = nil ---@type table<string, FortranInlayHintsSig>?
   IH.invalidate()
-  IH.build_signatures(root, function(sigs)
-    result = sigs
-  end)
+  IH.build_signatures(root,
+    ---@param sigs table<string, FortranInlayHintsSig>
+    function(sigs)
+      result = sigs
+    end)
   vim.wait(20000, function()
     return result ~= nil
   end, 20)
@@ -131,6 +154,9 @@ end
 
 local sigs = signatures()
 
+---@param lines string[]
+---@param ft string
+---@return integer
 local function buf_for(lines, ft)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -139,12 +165,15 @@ local function buf_for(lines, ft)
 end
 
 --- Hints for `lines`, rendered as "lnum:col label" for readable assertions.
+---@param lines string[]
+---@param ft string
+---@return string[]
 local function hints_for(lines, ft)
   local buf = buf_for(lines, ft)
   local fixed = ft == "fortran_fixed"
   local bs = scan.scan_lines(lines, { fixed = fixed })
-  local hs = IH.build_hints(bs, sigs, fixed, 1, #lines)
-  local out = {}
+  local hs = IH.build_hints(bs, sigs, fixed, 1, #lines) ---@type FortranInlayHintsHint[]
+  local out = {} ---@type string[]
   for _, h in ipairs(hs) do
     out[#out + 1] = ("%d:%d %s"):format(h.position.line + 1, h.position.character + 1, h.label)
   end
@@ -153,6 +182,9 @@ local function hints_for(lines, ft)
   return out
 end
 
+---@param list string[]
+---@param entry string
+---@return boolean
 local function has(list, entry)
   for _, v in ipairs(list) do
     if v == entry then
@@ -260,7 +292,7 @@ test("nested parens do not split an argument", function()
   -- ENERGY(ENERGY(M, V), V) is TWO arguments; a depth-blind comma split reads
   -- three and labels the wrong things.
   local masked = scan.mask(MAIN[11], true)
-  local open = masked:find("%(")
+  local open = assert(masked:find("%("))
   local slots, closed = IH.arg_slots({ [1] = masked }, 1, open, true)
   assert_true(closed, "the list closed:")
   assert_eq(#slots, 2, "argument count:")
@@ -273,7 +305,7 @@ end)
 
 test("an unclosed list produces nothing", function()
   local masked = scan.mask("      CALL DIFFUSE(N, D, F", true)
-  local open = masked:find("%(")
+  local open = assert(masked:find("%("))
   local slots, closed = IH.arg_slots({ [1] = masked }, 1, open, true)
   assert_false(closed, "not reported as closed:")
   -- build_hints requires `closed`, so an unbalanced statement is silent
@@ -285,7 +317,7 @@ end)
 
 test("an empty argument list yields no slots", function()
   local masked = scan.mask("      CALL DIFFUSE()", true)
-  local slots, closed = IH.arg_slots({ [1] = masked }, 1, masked:find("%("), true)
+  local slots, closed = IH.arg_slots({ [1] = masked }, 1, assert(masked:find("%(")), true)
   assert_true(closed, "closed:")
   assert_eq(#slots, 0, "no slots for F():")
 end)
@@ -321,7 +353,7 @@ test("a call opening above the range still labels its in-range arguments", funct
   -- SITES by the range would drop these; the hints are filtered instead.
   local buf_scan = scan.scan_lines(MAIN, { fixed = true })
   local hs = IH.build_hints(buf_scan, sigs, true, 7, 7)
-  local labels = {}
+  local labels = {} ---@type string[]
   for _, h in ipairs(hs) do
     labels[#labels + 1] = h.label
   end
@@ -353,12 +385,16 @@ local MIXED = {
 }
 
 --- Every hint for MIXED, free form, whatever the current gate says.
+---@return FortranInlayHintsHint[]
 local function mixed_hints()
   local bs = scan.scan_lines(MIXED, { fixed = false })
   return IH.build_hints(bs, sigs, false, 1, #MIXED)
 end
 
 --- The first hint of `kind`.
+---@param hs FortranInlayHintsHint[]
+---@param kind integer
+---@return FortranInlayHintsHint?
 local function first_of_kind(hs, kind)
   for _, h in ipairs(hs) do
     if h.kind == kind then
@@ -371,11 +407,12 @@ end
 test("a builtin function call is annotated with its result type", function()
   local h = first_of_kind(mixed_hints(), IH.KIND_TYPE)
   assert_true(h ~= nil, "a type hint was produced: ")
+  ---@cast h -nil
   assert_eq(h.label, ": double precision", "the result type, with its separator: ")
   assert_eq(h.kind, 1, "InlayHintKind.Type: ")
   assert_eq(h.paddingLeft, true, "a space before it, because it abuts the `)`: ")
   assert_eq(h.paddingRight, nil, "and never a space after -- upstream sets paddingRight nowhere: ")
-  assert_eq(#h.textEdits, 0, "accepting it would write invalid Fortran, so there is nothing to accept: ")
+  assert_eq(#assert(h.textEdits), 0, "accepting it would write invalid Fortran, so there is nothing to accept: ")
   -- `  t = omp_get_wtime()` -- the `)` is the 21st byte, so the hint sits at
   -- 0-based character 21, just PAST it.
   assert_eq(h.position.line, 3, "on the call's closing line: ")
@@ -396,7 +433,7 @@ test("only the return-type hint carries paddingLeft", function()
 end)
 
 test("a project function gets no return-type hint", function()
-  local types = {}
+  local types = {} ---@type integer[]
   for _, h in ipairs(mixed_hints()) do
     if h.kind == IH.KIND_TYPE then
       types[#types + 1] = h.position.line + 1
@@ -409,8 +446,9 @@ end)
 test("vim.g.fortran_inlay_hints gates each family", function()
   local saved = vim.g.fortran_inlay_hints
 
+  ---@return table<integer, integer>  hint kind -> count
   local function kinds()
-    local out = { [IH.KIND_PARAMETER] = 0, [IH.KIND_TYPE] = 0 }
+    local out = { [IH.KIND_PARAMETER] = 0, [IH.KIND_TYPE] = 0 } ---@type table<integer, integer>
     for _, h in ipairs(mixed_hints()) do
       out[h.kind] = (out[h.kind] or 0) + 1
     end
@@ -464,11 +502,15 @@ test("both families off answers without scanning the project", function()
   -- empty answer is proof the gate is checked before the scan.
   local buf = buf_for(MIXED, "fortran_free")
   vim.api.nvim_buf_set_name(buf, root .. "/code/gated.f90")
-  local got = nil
-  IH.inlay({ textDocument = { uri = vim.uri_from_bufnr(buf) } }, function(_, res)
-    got = res
-  end)
+  local got = nil ---@type table[]?
+  IH.inlay({ textDocument = { uri = require("andrew.utils.nvim_compat").uri_from_buffer(buf) } },
+    ---@param _ table|nil
+    ---@param res table[]|nil
+    function(_, res)
+      got = res
+    end)
   assert_true(got ~= nil, "answered synchronously, before any subprocess: ")
+  ---@cast got -nil
   assert_eq(#got, 0, "with nothing: ")
   vim.api.nvim_buf_delete(buf, { force = true })
   vim.g.fortran_inlay_hints = saved

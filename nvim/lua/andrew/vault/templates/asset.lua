@@ -66,7 +66,7 @@ WHERE type = "recurring-task" AND contains(file.outlinks, this.file.link)
 ## Notes
 ]==]
 
-function M.run(e, p)
+function M.run(e)
   local name = e.input({ prompt = "Asset name (e.g., 2019 Honda Civic, 45 Oak Street, Fidelity 401k)" })
   if not name then return end
 

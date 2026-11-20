@@ -13,12 +13,18 @@ local M = {}
 -- Index
 -- =============================================================================
 
+---@class QueryIndex
+---@field vault_path string                         vault root, no trailing slash
+---@field pages table<string, table>                rel_path -> page
+---@field _mtimes table<string, integer>|nil        rel_path -> mtime, once built
+---@field _tag_index table<string, string[]>        tag (+ slash-bounded prefixes) -> rel_path[]
+---@field _folder_index table<string, string[]>     folder (+ ancestor prefixes) -> rel_path[]
 M.Index = {}
 M.Index.__index = M.Index
 
 --- Create a new vault index.
 ---@param vault_path string absolute path to vault root
----@return table Index instance (not yet built)
+---@return QueryIndex index not yet built
 function M.Index.new(vault_path)
   local self = setmetatable({}, M.Index)
   self.vault_path = vault_path:gsub("/$", "") -- strip trailing slash
@@ -29,13 +35,13 @@ function M.Index.new(vault_path)
 end
 
 --- Synchronously build the index from the vault index.
----@return table self
+---@return QueryIndex self
 function M.Index:build_sync()
   return self:build_from_vault_index()
 end
 
 --- Build the query index directly from the vault index.
----@return table self
+---@return QueryIndex self
 function M.Index:build_from_vault_index()
   local vi = vault_index.current()
 
@@ -182,7 +188,7 @@ function M.Index:_parse_scalar_from_vi(val)
     -- Could be an array of values; re-parse each element
     local arr = {}
     local is_array = true
-    for k, v in pairs(val) do
+    for k in pairs(val) do
       if type(k) ~= "number" then
         is_array = false
         break
@@ -211,7 +217,7 @@ end
 --- A "full" tier (or missing ctx) falls back to a complete rebuild.
 ---@param vi? table VaultIndex instance (defaults to vault_index.current())
 ---@param ctx? table InvalidationContext with changed/added/deleted_paths + tier
----@return table self
+---@return QueryIndex self
 function M.Index:update_incremental(vi, ctx)
   if ctx and ctx.tier ~= "full" then
     return self:apply_partial(vi, ctx)
@@ -225,9 +231,9 @@ end
 --- incrementally). Producing the same inlinks as a full rebuild requires
 --- reading every page's inlinks, because a changed file's link target — an
 --- otherwise untouched page — also gains/loses an inlink in the vault index.
----@param vi table VaultIndex instance
+---@param vi? table VaultIndex instance (defaults to vault_index.current())
 ---@param ctx table InvalidationContext
----@return table self
+---@return QueryIndex self
 function M.Index:apply_partial(vi, ctx)
   vi = vi or vault_index.current()
   if not (vi and vi:is_ready()) then

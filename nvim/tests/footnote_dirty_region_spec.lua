@@ -21,6 +21,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/footnote_dirty_region_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -31,11 +32,14 @@ local line_parse = require("andrew.vault.line_parse_cache")
 print("\n=== Footnote Dirty-Region Tests ===\n")
 
 -- No code-block exclusion in these scratch buffers.
+---@type fun(row: number, col: number): boolean
 local function code_excl() return false end
 
 -- Seed a fresh scratch buffer and warm the line parse cache over the whole
 -- buffer, mirroring what transform_pipeline.run() does (line_parse.update)
 -- before footnotes' coordinated_update reads the map.
+---@param lines string[]
+---@return integer buf
 local function fresh_buf(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_set_current_buf(buf)
@@ -46,6 +50,9 @@ end
 
 -- Apply an in-place single-line edit and re-warm ONLY that dirty line through
 -- the parse cache (the pipeline's incremental path), then return.
+---@param buf integer
+---@param lnum0 integer  0-based line to replace
+---@param text string
 local function edit_line(buf, lnum0, text)
   vim.api.nvim_buf_set_lines(buf, lnum0, lnum0 + 1, false, { text })
   line_parse.update(buf, { lnum0 }, code_excl)
@@ -53,15 +60,23 @@ end
 
 -- Run M.orphans() while counting whole-buffer nvim_buf_get_lines(0, -1) reads.
 -- Returns (report_text, whole_buffer_read_count).
+---@return string report, integer whole_reads
 local function orphans_counting_reads()
   local whole_reads = 0
   local orig_lines = vim.api.nvim_buf_get_lines
-  vim.api.nvim_buf_get_lines = function(b, s, e, strict)
+  ---@param b integer
+  ---@param s integer
+  ---@param e integer
+  ---@param strict boolean
+  ---@return string[]
+  local function counting_get_lines(b, s, e, strict)
     if s == 0 and e == -1 then whole_reads = whole_reads + 1 end
     return orig_lines(b, s, e, strict)
   end
-  local captured = {}
+  vim.api.nvim_buf_get_lines = counting_get_lines
+  local captured = {} ---@type string[]
   local orig_notify = vim.notify
+  ---@param msg string
   vim.notify = function(msg) captured[#captured + 1] = msg end
   local ok, err = pcall(footnotes.orphans)
   vim.notify = orig_notify

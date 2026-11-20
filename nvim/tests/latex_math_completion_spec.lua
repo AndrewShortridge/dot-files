@@ -51,9 +51,13 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/latex_math_completion_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 local assert_false, assert_match = _H.assert_false, _H.assert_match
+
+-- Plugin type library for lua_ls (lazydev loads it from this line):
+---@module "blink.cmp"
 
 local cfg = vim.fn.stdpath("config")
 local lazy_root = vim.fn.stdpath("data") .. "/lazy"
@@ -63,15 +67,59 @@ vim.opt.runtimepath:prepend(lazy_root .. "/LuaSnip")
 vim.opt.runtimepath:prepend(cfg)
 package.path = cfg .. "/lua/?.lua;" .. package.path
 
+--- One entry of andrew.latex.symbols (shape documented in that file's header).
+---@class LatexMathSymbol
+---@field cmd string  command name without the leading backslash
+---@field kind string
+---@field glyph? string
+---@field body? string  LSP-snippet insert text
+---@field label? string
+---@field aliases? string[]
+---@field doc? string
+
+--- The item shape blink-source.lua builds (plus the two fields blink stamps onto it).
+---@class LatexMathCompletionItem
+---@field label string
+---@field labelDetails? { description: string }  present when the entry has a glyph
+---@field filterText string
+---@field kind integer
+---@field insertTextFormat integer  1 = PlainText, 2 = Snippet
+---@field textEdit lsp.TextEdit
+---@field documentation { kind: string, value: string }
+---@field score_offset? integer  stamped by blink's provider list
+---@field cursor_column? integer  stamped by blink's provider list
+
+---@class LatexMathCompletionResponse
+---@field is_incomplete_forward boolean
+---@field is_incomplete_backward boolean
+---@field items LatexMathCompletionItem[]
+
+--- The part of blink.cmp.Context that blink-source.lua reads.
+---@class LatexMathCompletionCtx
+---@field line string
+---@field cursor [integer, integer]  1-based row, 0-based byte column
+
+--- The part of plugins/blink-cmp.lua's opts this spec checks.
+---@class LatexMathBlinkOpts
+---@field sources { providers: table<string, blink.cmp.SourceProviderConfig>, per_filetype: table<string, string[]> }
+---@field snippets { preset: string }
+
+---@class LatexMathBlinkPluginSpec: LazyPluginSpec
+---@field opts LatexMathBlinkOpts
+
+---@type LatexMathSymbol[]
 local symbols = require("andrew.latex.symbols")
 local source = require("andrew.latex.blink-source")
 local src = source.new({})
 
-local by_cmd = {}
+local by_cmd = {} ---@type table<string, LatexMathSymbol>
 for _, e in ipairs(symbols) do
   by_cmd[e.cmd] = e
 end
 
+---@param items LatexMathCompletionItem[]
+---@param label string
+---@return LatexMathCompletionItem?
 local function by_label(items, label)
   for _, it in ipairs(items) do
     if it.label == label then
@@ -81,12 +129,17 @@ local function by_label(items, label)
   return nil
 end
 
+---@param ctx LatexMathCompletionCtx
+---@return LatexMathCompletionResponse
 local function complete(ctx)
-  local res
-  src:get_completions(ctx, function(r)
+  local res ---@type LatexMathCompletionResponse?
+  src:get_completions(ctx,
+    ---@param r LatexMathCompletionResponse
+    function(r)
     res = r
   end)
   assert_true(res ~= nil, "get_completions never called back")
+  ---@cast res -nil
   return res
 end
 
@@ -115,7 +168,7 @@ test("symbols.lua is a non-empty array of {cmd, kind} with unique cmds", functio
   assert_eq(type(symbols), "table")
   assert_true(#symbols > 0, "symbol table is empty:")
   assert_eq(#symbols, vim.tbl_count(symbols), "array part must hold every entry (stray string key?):")
-  local seen = {}
+  local seen = {} ---@type table<string, integer>
   for i, e in ipairs(symbols) do
     assert_eq(type(e.cmd), "string", "entry " .. i .. " has a non-string cmd:")
     assert_true(#e.cmd > 0, "entry " .. i .. " has an empty cmd:")
@@ -188,13 +241,15 @@ test("snippet bodies expand through LuaSnip into valid LaTeX", function()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_set_current_buf(buf)
 
+  ---@param cmd string
+  ---@return string[]
   local function expand(cmd)
     local e = by_cmd[cmd]
     assert_true(e ~= nil and e.body ~= nil, "\\" .. cmd .. " has no body to expand:")
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
     vim.cmd("startinsert")
-    ls.lsp_expand(e.body)
+    ls.lsp_expand(assert(e.body))
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     ls.unlink_current()
     return lines
@@ -295,10 +350,11 @@ test("get_completions after `\\al` offers the whole table, shaped for blink", fu
 
   local alpha = by_label(res.items, "\\alpha")
   assert_true(alpha ~= nil, "`\\alpha` is not offered:")
+  ---@cast alpha -nil
   -- blink's Rust matcher strips the `\` from the keyword, so the filter text
   -- must not carry it either.
   assert_eq(alpha.filterText, "alpha", "filterText must be the bare command:")
-  assert_eq(alpha.labelDetails.description, "α", "the glyph is the label description:")
+  assert_eq(assert(alpha.labelDetails).description, "α", "the glyph is the label description:")
   assert_eq(alpha.insertTextFormat, 1, "a plain symbol is PlainText:")
   assert_eq(alpha.textEdit.newText, "\\alpha", "inserts the COMMAND, not the glyph:")
   assert_eq(alpha.textEdit.range.start.line, 1, "0-based row from cursor[1]:")
@@ -308,12 +364,14 @@ test("get_completions after `\\al` offers the whole table, shaped for blink", fu
 
   local frac = by_label(res.items, "\\frac{}{}")
   assert_true(frac ~= nil, "`\\frac` is not offered:")
+  ---@cast frac -nil
   assert_eq(frac.insertTextFormat, 2, "an entry with a body is a Snippet:")
   assert_eq(frac.textEdit.newText:sub(1, 6), "\\frac{", "the snippet body is the insert text:")
 
   -- aliases are searchable
   local infty = by_label(res.items, "\\infty")
   assert_true(infty ~= nil, "`\\infty` is not offered:")
+  ---@cast infty -nil
   assert_match(infty.filterText, "infinity", "aliases must be folded into filterText:")
   assert_match(infty.filterText, "^infty", "the command still leads the filter text:")
 end)
@@ -341,26 +399,28 @@ test("each query hands out fresh item tables (blink mutates what it is given)", 
   for _, it in ipairs(third) do
     it.score_offset = (it.score_offset or 0) + 12
   end
-  assert_eq(by_label(third, "\\alpha").score_offset, 12, "the provider offset accumulated across rounds:")
-  assert_nil(by_label(third, "\\alpha").cursor_column, "cursor_column from an earlier round is stuck to the item:")
+  assert_eq(assert(by_label(third, "\\alpha")).score_offset, 12, "the provider offset accumulated across rounds:")
+  assert_nil(assert(by_label(third, "\\alpha")).cursor_column, "cursor_column from an earlier round is stuck to the item:")
 end)
 
 test("applying the textEdit replaces the typed `\\` instead of doubling it", function()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# t", "$x = \\al$" })
   local res = complete({ line = "$x = \\al$", cursor = { 2, 8 } })
-  local alpha = by_label(res.items, "\\alpha")
+  local alpha = assert(by_label(res.items, "\\alpha"))
   vim.lsp.util.apply_text_edits({ alpha.textEdit }, buf, "utf-8")
   assert_eq(vim.api.nvim_buf_get_lines(buf, 1, 2, false)[1], "$x = \\alpha$", "accepted completion:")
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
 
 test("resolve returns the item unchanged", function()
-  local out
-  src:resolve({ label = "sentinel" }, function(item)
+  local out ---@type { label: string }?
+  src:resolve({ label = "sentinel" },
+    ---@param item { label: string }
+    function(item)
     out = item
   end)
-  assert_eq(out.label, "sentinel")
+  assert_eq(assert(out).label, "sentinel")
 end)
 
 -- ---------------------------------------------------------------------------
@@ -368,6 +428,7 @@ end)
 -- ---------------------------------------------------------------------------
 
 test("blink-cmp.lua wires latex_math first in markdown and tex", function()
+  ---@type LatexMathBlinkPluginSpec
   local spec = dofile(cfg .. "/lua/andrew/plugins/blink-cmp.lua")
   local opts = spec.opts
   local p = opts.sources.providers.latex_math

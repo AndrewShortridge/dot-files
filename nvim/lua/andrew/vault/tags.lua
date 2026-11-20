@@ -34,6 +34,7 @@ end
 --- Escape a string for use in Lua gsub patterns.
 ---@param s string
 ---@return string
+---@return integer count number of characters escaped
 local function pattern_escape(s)
   return s:gsub("([%-%.%+%*%?%[%]%^%$%(%)%%])", "%%%1")
 end
@@ -353,7 +354,7 @@ function M.remove_tag()
               local in_tags_block = false
               local fm_count = 0
 
-              for i, line in ipairs(lines) do
+              for _, line in ipairs(lines) do
                 local skip = false
 
                 -- Track frontmatter boundaries

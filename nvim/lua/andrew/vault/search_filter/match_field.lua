@@ -216,9 +216,8 @@ end
 --- Uses generation-aware cache to avoid redundant disk reads.
 ---@param entry table VaultIndexEntry
 ---@param heading string heading text to scope to
----@param index table|nil VaultIndex instance (for generation tracking)
 ---@return table[] outlinks within the section
-local function get_section_outlinks(entry, heading, index)
+local function get_section_outlinks(entry, heading)
   -- Note: cache invalidation is handled once per evaluate() call in search_filter.lua.
   -- Callers outside evaluate() should call invalidate_section_cache() themselves.
 
@@ -534,7 +533,7 @@ function M.match_field(node, entry, index, ctx)
     local source_entry = index.files[source_rel]
     if not source_entry then return false end
 
-    local section_outlinks = get_section_outlinks(source_entry, source_heading, index)
+    local section_outlinks = get_section_outlinks(source_entry, source_heading)
     local entry_basename_lower = entry.basename_lower
     local entry_stem_lower = entry.rel_stem_lower
 

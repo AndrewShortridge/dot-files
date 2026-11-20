@@ -73,7 +73,7 @@ function M.reference_picker()
       return
     end
 
-    local params = vim.lsp.util.make_position_params(0, clients[1].offset_encoding)
+    local params = vim.lsp.util.make_position_params(0, clients[1].offset_encoding) --[[@as lsp.ReferenceParams]]
     params.context = { includeDeclaration = true }
     vim.lsp.buf_request_all(buf, "textDocument/references", params, function(results)
       for _, res in pairs(results or {}) do

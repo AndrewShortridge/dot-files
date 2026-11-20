@@ -44,8 +44,12 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_plugins_surround_blink_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_deep_eq = _H.test, _H.assert_eq, _H.assert_true, _H.assert_deep_eq
+
+-- lazydev loads blink.cmp's annotations into lua_ls from this line.
+---@module "blink.cmp"
 
 local cfgdir = vim.fn.stdpath("config")
 
@@ -53,12 +57,17 @@ local cfgdir = vim.fn.stdpath("config")
 -- nvim-surround index arithmetic, copied from patterns.lua get_selections()
 -- =============================================================================
 
+---@param str string
+---@param pattern string  a nvim-surround pattern with four captures
 --- @return string left, string right  the byte ranges the pattern selects
 local function selected(str, pattern)
+  ---@type integer?, integer?, string|integer|nil, integer?, string|integer|nil, integer?
   local ok, _, ltext, lpos, rtext, rpos = str:find(pattern)
   assert_true(ok ~= nil, "pattern must match " .. vim.inspect(str))
   assert_true(type(lpos) == "number", "2nd capture must be an empty position capture")
   assert_true(type(rpos) == "number", "4th capture must be an empty position capture")
+  ---@cast lpos -nil
+  ---@cast rpos -nil
   local offset = 1 -- the selection under test starts at byte 1 of `str`
   local llen = type(ltext) == "string" and #ltext or 0
   local rlen = type(rtext) == "string" and #rtext or 0
@@ -66,6 +75,17 @@ local function selected(str, pattern)
     str:sub(offset + rpos - rlen - 1, offset + rpos - 2)
 end
 
+-- The LaTeX surrounds plugins/surround.lua defines use plain string patterns,
+-- not the function/false forms nvim-surround's `user_surround` also allows.
+---@class AuditPluginsSurroundBlinkLatexSurround
+---@field delete string  Lua pattern with four captures
+---@field change { target: string }
+
+---@class AuditPluginsSurroundBlinkSurroundSpec  the lazy.nvim spec surround.lua returns
+---@field [1] string  plugin repo
+---@field opts { surrounds: table<string, AuditPluginsSurroundBlinkLatexSurround> }
+
+---@type AuditPluginsSurroundBlinkSurroundSpec
 local surround = dofile(cfgdir .. "/lua/andrew/plugins/surround.lua")
 local ENV = [[\begin{itemize}stuff\end{itemize}]]
 local CMD = [[\textbf{word}]]
@@ -106,6 +126,11 @@ end)
 -- blink.cmp per_filetype keys
 -- =============================================================================
 
+---@class AuditPluginsSurroundBlinkBlinkSpec  the lazy.nvim spec blink-cmp.lua returns
+---@field [1] string  plugin repo
+---@field opts { sources: blink.cmp.SourceConfig }
+
+---@type AuditPluginsSurroundBlinkBlinkSpec
 local blink = dofile(cfgdir .. "/lua/andrew/plugins/blink-cmp.lua")
 local per_ft = blink.opts.sources.per_filetype
 
@@ -132,8 +157,8 @@ test("every Fortran filetype variant gets the LSP source first", function()
 end)
 
 test("the Fortran keys match the spellings the rest of the config uses", function()
-  local lsp_fts = dofile(cfgdir .. "/lua/andrew/lsp_filetypes.lua")
-  local known = {}
+  local lsp_fts = dofile(cfgdir .. "/lua/andrew/lsp_filetypes.lua") ---@type string[]
+  local known = {} ---@type table<string, boolean>
   for _, ft in ipairs(lsp_fts) do
     known[ft] = true
   end

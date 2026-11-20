@@ -22,8 +22,8 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/md_render_math_text_spec.lua
 
-local _H =
-  dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
+---@type SpecHelper
+local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_deep_eq =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_deep_eq
 
@@ -226,7 +226,8 @@ test("scripts: raised marks are written as they are", function()
 end)
 
 test("scripts: no output mixes Unicode and linear scripts of one kind", function()
-  local all = {}
+  -- { TeX, expected } pairs, and { TeX } alone for the extra ones below.
+  local all = {} ---@type string[][]
   for _, list in ipairs({
     CORPUS_SYMBOLS,
     CORPUS_UNICODE_SCRIPTS,

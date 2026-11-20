@@ -97,9 +97,9 @@ end
 --- Handle vault index update notification.
 --- The generation parameter is part of the vault_index subscription callback
 --- signature but is unused by this handler (context paths are sufficient).
----@param _generation number vault index generation (unused, required by callback signature)
----@param context? { changed_paths?: string[], deleted_paths?: string[] }
-function M.on_index_update(_generation, context)
+---@param _ number vault index generation (unused, required by callback signature)
+---@param context? InvalidationContext
+function M.on_index_update(_, context)
   if not config.embed.sync or not config.embed.sync.enabled then
     return
   end

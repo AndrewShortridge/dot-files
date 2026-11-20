@@ -4,7 +4,6 @@
 ---
 --- Zero external dependencies (uses vault_index via package.loaded to
 --- avoid circular requires).
---- @module andrew.vault.gen_cache
 
 local M = {}
 
@@ -15,13 +14,26 @@ local function current_index()
   return vi and vi.current() or nil
 end
 
+---@class GenCache
+---@field get fun(...): any
+---@field invalidate fun()
+---@field get_hits fun(): integer
+---@field get_misses fun(): integer
+
+---@class KeyedGenCache
+---@field get fun(key: string, ...): any
+---@field invalidate fun()
+---@field get_hits fun(): integer
+---@field get_misses fun(): integer
+---@field get_evictions fun(): integer
+
 --- Create a generation-based single-value cache.
 --- The build function is called when the vault index generation changes
 --- (or when an optional composite key changes).
 ---
 --- @param build_fn fun(idx: table, ...): any  Builder called on cache miss.
---- @param opts? { key_fn: fun(...): string, partial_fn: fun(cached: any, idx: table, ctx: table, ...): any }
---- @return { get: fun(...): any, invalidate: fun() }
+--- @param opts? { key_fn?: (fun(...): string), partial_fn?: (fun(cached: any, idx: table, ctx: table, ...): any) }
+--- @return GenCache
 function M.gen_cache(build_fn, opts)
   local cached_gen = 0
   local cached_key = nil
@@ -89,7 +101,7 @@ end
 --- and invalidates all of them when the vault index generation changes.
 ---
 --- @param build_fn fun(idx: table, key: string, ...): any  Builder for a single key.
---- @return { get: fun(key: string, ...): any, invalidate: fun() }
+--- @return KeyedGenCache
 function M.keyed_gen_cache(build_fn)
   local cached_gen = 0
   local entries = {}

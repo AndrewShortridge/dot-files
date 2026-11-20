@@ -85,13 +85,15 @@ local function collect_code_block_ranges()
   local blocks = {}
   local r = 0
   while r < total do
-    local indent, fence = parse_fence(get_line(r))
-    if indent then
+    -- A fence line gives all three captures, so `fence` tells as well as the
+    -- indent does, and is the one used below.
+    local _, fence = parse_fence(get_line(r))
+    if fence then
       local char, len = fence:sub(1, 1), #fence
       local close
       for r2 = r + 1, total - 1 do
-        local indent2, fence2, rest2 = parse_fence(get_line(r2))
-        if indent2 and fence2:sub(1, 1) == char and #fence2 >= len
+        local _, fence2, rest2 = parse_fence(get_line(r2))
+        if fence2 and fence2:sub(1, 1) == char and #fence2 >= len
           and #vim.trim(rest2 or "") == 0 then
           close = r2
           break

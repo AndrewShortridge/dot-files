@@ -412,7 +412,7 @@ end
 local FrameCache = require("andrew.vault.frame_cache")
 
 --- Render footnote definition content as virtual text below each reference.
----@param opts? { silent?: boolean, full?: boolean, bufnr?: number, arena?: integer, frame_cache?: table }
+---@param opts? { silent?: boolean, full?: boolean, bufnr?: number, arena?: integer, frame_cache?: table, start_line?: number, end_line?: number, invalid_ranges?: { start_line: number, end_line: number }[] }
 function M.render_footnotes(opts)
   opts = opts or {}
   local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
@@ -432,7 +432,7 @@ function M.render_footnotes(opts)
   elseif opts.start_line and opts.end_line then
     -- Explicit range (prefetch zones): 1-indexed → 0-indexed for extmark API
     range_start = opts.start_line - 1
-    range_end = opts.end_line
+    range_end = opts.end_line --[[@as number]] -- non-nil: checked by the elseif
     vim.api.nvim_buf_clear_namespace(bufnr, ns, range_start, range_end)
   elseif full then
     vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
@@ -610,9 +610,9 @@ end
 
 --- Coordinated update entry point (called by highlight_coordinator).
 ---@param bufnr number
----@param _code_excl fun  accepted but unused (footnotes don't use code exclusion)
+---@param _ function  code-exclusion callback, accepted but unused (footnotes don't use code exclusion)
 ---@param opts table { full: boolean, prefetch?: boolean, start_line?: number, end_line?: number }
-function M.coordinated_update(bufnr, _code_excl, opts)
+function M.coordinated_update(bufnr, _, opts)
   if not M.enabled then return end
   local ranges = opts and opts.invalid_ranges
   if ranges and #ranges == 0 then return end -- nothing to do

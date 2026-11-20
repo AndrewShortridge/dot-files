@@ -23,7 +23,7 @@ function M.setup()
       -- No frontmatter at all: initialize a basic block
       if #lines == 0 or lines[1] ~= "---" then
         local now = os.date(config.frontmatter.timestamp_format)
-        local ok, err = pcall(vim.cmd, "undojoin")
+        local ok, err = pcall(vim.cmd --[[@as function]], "undojoin")
         if not ok then log.debug("undojoin before frontmatter init: %s", err) end
         vim.api.nvim_buf_set_lines(ev.buf, 0, 0, false, {
           "---",
@@ -43,7 +43,7 @@ function M.setup()
       for i = fm.start_line + 1, fm.end_line - 1 do
         if lines[i]:match("^" .. config.frontmatter.modified_field .. ":") then
           -- Merge into previous undo entry so 'u' doesn't just undo the timestamp
-          local ok, err = pcall(vim.cmd, "undojoin")
+          local ok, err = pcall(vim.cmd --[[@as function]], "undojoin")
           if not ok then log.debug("undojoin before modified update: %s", err) end
           vim.api.nvim_buf_set_lines(ev.buf, i - 1, i, false, { config.frontmatter.modified_field .. ": " .. now })
           return
@@ -51,7 +51,7 @@ function M.setup()
       end
 
       -- No modified field found; insert before closing ---
-      local ok, err = pcall(vim.cmd, "undojoin")
+      local ok, err = pcall(vim.cmd --[[@as function]], "undojoin")
       if not ok then log.debug("undojoin before modified insert: %s", err) end
       vim.api.nvim_buf_set_lines(ev.buf, fm.end_line - 1, fm.end_line - 1, false, { config.frontmatter.modified_field .. ": " .. now })
     end,

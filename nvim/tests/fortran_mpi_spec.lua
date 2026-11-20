@@ -57,6 +57,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_mpi_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
@@ -64,12 +65,22 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 local mpi = require("andrew.fortran.mpi")
 
+--- A seeded or project entry of the signature index `mpi.seed` fills.
+---@class FortranMpiSpecSignature
+---@field name string
+---@field args string[]
+---@field builtin? boolean
+---@field path? string
+
 --- Build a `readable` stub over a set of paths.
+---@param paths string[]
+---@return fun(path: string): boolean
 local function reader(paths)
-  local set = {}
+  local set = {} ---@type table<string, true>
   for _, p in ipairs(paths) do
     set[p] = true
   end
+  ---@param p string
   return function(p)
     return set[p] == true
   end
@@ -123,7 +134,9 @@ end)
 
 test("discover skips duplicate candidates", function()
   local seen = 0
-  local got = mpi.discover({ "/a", "/a", "/a" }, function(p)
+  local got = mpi.discover({ "/a", "/a", "/a" },
+  ---@param _ string
+  function(_)
     seen = seen + 1
     return false
   end)
@@ -195,6 +208,8 @@ end)
 
 test("junk input is not external", function()
   assert_false(mpi.is_external_header("", MPI_DIRS, PROJ_DIRS, reader({})), "empty:")
+  -- Invalid on purpose: a nil header name must answer false, not raise.
+  ---@diagnostic disable-next-line: param-type-mismatch
   assert_false(mpi.is_external_header(nil, MPI_DIRS, PROJ_DIRS, reader({})), "nil:")
 end)
 
@@ -244,7 +259,7 @@ test("constants are absent from the signature table", function()
 end)
 
 test("seeding fills a gap", function()
-  local sigs = {}
+  local sigs = {} ---@type table<string, FortranMpiSpecSignature>
   mpi.seed(sigs)
   assert_true(sigs.mpi_bcast ~= nil, "mpi_bcast seeded:")
   assert_eq(sigs.mpi_bcast.args[1], "buffer", "first dummy:")
@@ -253,6 +268,7 @@ end)
 
 test("seeding does not overwrite a project definition", function()
   -- A project wrapper named MPI_SEND must keep its own dummy names.
+  ---@type table<string, FortranMpiSpecSignature>
   local sigs = { mpi_send = { name = "MPI_SEND", args = { "mine", "yours" }, path = "/proj/w.f90" } }
   mpi.seed(sigs)
   assert_eq(#sigs.mpi_send.args, 2, "project args kept:")
@@ -262,7 +278,7 @@ test("seeding does not overwrite a project definition", function()
 end)
 
 test("seed returns the same table it was given", function()
-  local sigs = {}
+  local sigs = {} ---@type table<string, FortranMpiSpecSignature>
   assert_true(mpi.seed(sigs) == sigs, "identity:")
 end)
 

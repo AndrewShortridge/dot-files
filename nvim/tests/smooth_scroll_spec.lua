@@ -16,6 +16,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/smooth_scroll_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
@@ -23,14 +24,39 @@ local cfg = vim.fn.stdpath("config")
 
 print("\n=== Smooth Scroll / Animation Parity Tests ===\n")
 
+---@class SmoothScrollSpecSnacksOpts
+---@field scroll { enabled?: boolean }
+---@field animate table<string, any>  test 2 reads it by key name
+
+---@class SmoothScrollSpecSnacksPluginSpec
+---@field opts SmoothScrollSpecSnacksOpts
+
+-- Partial Snacks: only `toggle`, the one module snacks.lua's config() touches.
+---@class SmoothScrollSpecFakeSnacks
+---@field toggle table  callable and indexable; every lookup/call yields `noop`
+
 -- snacks.lua's config() runs the whole <leader>u block, so Snacks has to exist.
+---@return SmoothScrollSpecSnacksPluginSpec
 local function snacks_spec()
-  local noop = setmetatable({}, { __index = function(t) return function() return t end end })
-  _G.Snacks = {
-    toggle = setmetatable({ option = function() return noop end },
-      { __call = function() return noop end,
-        __index = function() return function() return noop end end }),
+  local noop = setmetatable({}, {
+    ---@param t table
+    ---@return fun(): table
+    __index = function(t) return function() return t end end,
+  })
+  ---@type SmoothScrollSpecFakeSnacks
+  local fake_snacks = {
+    toggle = setmetatable({
+      ---@return table
+      option = function() return noop end,
+    }, {
+      ---@return table
+      __call = function() return noop end,
+      ---@return fun(): table
+      __index = function() return function() return noop end end,
+    }),
   }
+  -- The fake implements only `toggle`; cast where it replaces the real global.
+  _G.Snacks = fake_snacks --[[@as Snacks]]
   package.loaded["snacks"] = { setup = function() end }
   return dofile(cfg .. "/lua/andrew/plugins/snacks.lua")
 end

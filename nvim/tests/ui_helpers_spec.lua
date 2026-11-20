@@ -3,11 +3,15 @@
 --   preview/target, preview/breadcrumb, viewport, breadcrumbs, sidebar_meta
 -- Run with: nvim --headless -u NONE -l tests/ui_helpers_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
 -- spec-local assert_deep_eq uses vim.deep_equal (NOT the canonical deep_equal)
+---@param got any
+---@param expected any
+---@param msg? string
 local function assert_deep_eq(got, expected, msg)
   if not vim.deep_equal(got, expected) then
     error((msg or "") .. " expected: " .. vim.inspect(expected) .. ", got: " .. vim.inspect(got))
@@ -435,6 +439,8 @@ end)
 -- 9. preview.target.resolve
 -- ============================================================================
 
+---@param lines string[]
+---@return integer
 local function make_buf(lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -451,6 +457,7 @@ test("target.resolve: same-file heading resolves from parent buffer", function()
   local buf = make_buf({ "# Title", "body", "", "## Sub", "subbody" })
   local t = target_mod.resolve({ name = "", heading = "Sub" }, buf)
   assert_true(t ~= nil, "target should resolve")
+  ---@cast t -nil
   assert_eq(t.source_buf, buf)
   assert_nil(t.path)
   assert_deep_eq(t.lines, { "## Sub", "subbody" })
@@ -461,6 +468,7 @@ test("target.resolve: same-file block id strips marker from paragraph", function
   local buf = make_buf({ "para one ^blk-abc123", "", "other para" })
   local t = target_mod.resolve({ name = "", block_id = "blk-abc123" }, buf)
   assert_true(t ~= nil, "target should resolve")
+  ---@cast t -nil
   assert_eq(t.source_buf, buf)
   assert_deep_eq(t.lines, { "para one" })
   vim.api.nvim_buf_delete(buf, { force = true })
@@ -470,6 +478,7 @@ test("target.resolve: same-file missing heading yields placeholder", function()
   local buf = make_buf({ "# Title", "body" })
   local t = target_mod.resolve({ name = "", heading = "Nope" }, buf)
   assert_true(t ~= nil)
+  ---@cast t -nil
   assert_deep_eq(t.lines, { "[Heading not found: #Nope]" })
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
@@ -478,6 +487,7 @@ test("target.resolve: unresolved cross-file name -> placeholder lines, nil path"
   local buf = make_buf({ "x" })
   local t = target_mod.resolve({ name = "ZzNonexistentNote12345" }, buf)
   assert_true(t ~= nil)
+  ---@cast t -nil
   assert_nil(t.path)
   assert_eq(t.name, "ZzNonexistentNote12345")
   assert_deep_eq(t.lines, { "[Note does not exist yet]" })
@@ -488,19 +498,26 @@ end)
 -- 10. preview.target.resolve_in_preview
 -- ============================================================================
 
+--- Partial history entry on purpose: resolve_in_preview only reads `.path` of
+--- its `current_entry` (a PreviewTarget), so these tests build just that field.
+---@class UiHelpersSpecPreviewEntry
+---@field path string
+
 test("target.resolve_in_preview: resolves fragment against current entry path", function()
   local tmp = vim.fn.tempname() .. ".md"
-  local f = io.open(tmp, "w")
+  local f = assert(io.open(tmp, "w"))
   f:write("# Alpha\nalpha body\n\n## Beta\nbeta body\n")
   f:close()
 
   local buf = make_buf({ "unrelated" })
+  local entry = { path = tmp } ---@type UiHelpersSpecPreviewEntry
   local t = target_mod.resolve_in_preview(
     { name = "", heading = "Beta" },
-    { path = tmp },
+    entry --[[@as PreviewTarget]],
     buf
   )
   assert_true(t ~= nil, "should resolve in preview")
+  ---@cast t -nil
   assert_eq(t.path, tmp)
   assert_nil(t.source_buf)
   assert_deep_eq(t.lines, { "## Beta", "beta body" })
@@ -511,7 +528,8 @@ end)
 
 test("target.resolve_in_preview: empty name and no fragment -> nil", function()
   local buf = make_buf({ "x" })
-  assert_nil(target_mod.resolve_in_preview({ name = "" }, { path = "/tmp/whatever.md" }, buf))
+  local entry = { path = "/tmp/whatever.md" } ---@type UiHelpersSpecPreviewEntry
+  assert_nil(target_mod.resolve_in_preview({ name = "" }, entry --[[@as PreviewTarget]], buf))
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
 
@@ -519,6 +537,7 @@ test("target.resolve_in_preview: delegates to resolve without current entry path
   local buf = make_buf({ "## Frag", "frag body" })
   local t = target_mod.resolve_in_preview({ name = "", heading = "Frag" }, nil, buf)
   assert_true(t ~= nil)
+  ---@cast t -nil
   assert_eq(t.source_buf, buf)
   assert_deep_eq(t.lines, { "## Frag", "frag body" })
   vim.api.nvim_buf_delete(buf, { force = true })
@@ -528,7 +547,7 @@ end)
 -- 11. preview.breadcrumb.vault_relative_segments
 -- ============================================================================
 
-local saved_vault_path = engine.vault_path
+local saved_vault_path = engine.vault_path ---@type string
 engine.vault_path = "/tmp/myvault"
 
 test("vault_relative_segments: in-vault path gets Vault root prefix", function()
@@ -554,7 +573,7 @@ local PATH_HL = "VaultPreviewBreadcrumbPath"
 local NOTE_HL = "VaultPreviewBreadcrumbNote"
 local FRAG_HL = "VaultPreviewBreadcrumbFragment"
 
-local saved_style = config.preview.breadcrumb_style
+local saved_style = config.preview.breadcrumb_style ---@type string
 local sep = config.preview.breadcrumb_separator or " \u{203A} "
 
 test("breadcrumb.format: full style builds Vault/path/note chunks", function()
@@ -657,7 +676,7 @@ end)
 
 -- Set up a 300-line buffer in the current window
 local vp_buf = vim.api.nvim_create_buf(false, true)
-local vp_lines = {}
+local vp_lines = {} ---@type string[]
 for i = 1, 300 do vp_lines[i] = "line " .. i end
 vim.api.nvim_buf_set_lines(vp_buf, 0, -1, false, vp_lines)
 vim.api.nvim_set_current_buf(vp_buf)
@@ -707,7 +726,7 @@ end)
 
 test("viewport.get_margin_range: different buffer -> full range", function()
   local other = vim.api.nvim_create_buf(false, true)
-  local other_lines = {}
+  local other_lines = {} ---@type string[]
   for i = 1, 30 do other_lines[i] = "x" .. i end
   vim.api.nvim_buf_set_lines(other, 0, -1, false, other_lines)
   local s, e = viewport.get_margin_range(other, vp_win)
@@ -728,6 +747,7 @@ test("viewport.newly_visible: reports new range after scrolling down", function(
   assert_true(r.first > 1, "viewport should have scrolled (first=" .. r.first .. ")")
   local nv = viewport.newly_visible(vp_win)
   assert_true(nv ~= nil, "newly_visible should report ranges after scroll")
+  ---@cast nv -nil
   assert_eq(nv[#nv].last, r.pad_last, "new below-range extends to pad_last")
 end)
 
@@ -780,6 +800,7 @@ test("compute_breadcrumb: vault note without parent-project -> Vault > note", fu
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# Hello" })
   local wb = breadcrumbs.compute_breadcrumb(buf)
   assert_true(wb ~= nil, "winbar should be computed")
+  ---@cast wb -nil
   assert_true(wb:find("%1@v:lua._vault_breadcrumb_click@Vault%X", 1, true) ~= nil,
     "Vault segment is clickable")
   assert_true(wb:find("%#VaultBreadcrumbCurrent#MyNote77", 1, true) ~= nil,
@@ -799,6 +820,7 @@ test("compute_breadcrumb: parent-project frontmatter adds middle segment", funct
   })
   local wb = breadcrumbs.compute_breadcrumb(buf)
   assert_true(wb ~= nil, "winbar should be computed")
+  ---@cast wb -nil
   assert_true(wb:find("Foo Project", 1, true) ~= nil, "wikilink alias used as middle segment")
   assert_true(wb:find("%#VaultBreadcrumbCurrent#Note88", 1, true) ~= nil,
     "note stem is the current segment")

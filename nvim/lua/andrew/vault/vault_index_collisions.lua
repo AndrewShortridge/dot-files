@@ -14,7 +14,7 @@ local ns = vim.api.nvim_create_namespace("vault_index_collisions")
 
 --- Module-level dismiss timer and window for collision popup.
 --- Hoisted so a new popup cancels the previous one's timer and window.
----@type uv_timer_t|nil
+---@type uv.uv_timer_t|nil
 local _dismiss_timer = nil
 ---@type number|nil
 local _dismiss_win = nil

@@ -1,5 +1,4 @@
 local base = require("andrew.vault.completion_base")
-local engine = require("andrew.vault.engine")
 local file_cache = require("andrew.vault.file_cache")
 local config = require("andrew.vault.config")
 local fm_parser = require("andrew.vault.frontmatter_parser")
@@ -134,7 +133,8 @@ local function build_buffer_block_items(item_opts)
     local cached = _block_cache.items and _block_cache.items[variant]
     if cached then return cached end
     buf_lines = _block_cache.buf_lines
-    blocks = _block_cache.blocks
+    -- A (bufnr, tick) hit means the miss branch below stored blocks for this buffer.
+    blocks = _block_cache.blocks --[[@as table[] ]]
   else
     buf_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     blocks = block_patterns.extract_from_lines(buf_lines)
@@ -233,11 +233,14 @@ end
 -- Identical description strings (same type/tags/path combo) share one Lua string.
 local _desc_pool = string_intern.new(500)
 
+---@param desc string
+---@return string
 local function intern_desc(desc)
   if config.completion and config.completion.intern_descriptions == false then
     return desc
   end
-  return string_intern.intern(_desc_pool, desc)
+  -- intern() returns nil only for a nil input
+  return string_intern.intern(_desc_pool, desc) --[[@as string]]
 end
 
 --- Reset the description pool on cache invalidation to free stale strings.
@@ -343,18 +346,13 @@ local source = base.create_source({
   name = "wikilinks",
 
   --- Build all completion items for a single file (for per-file invalidation).
-  ---@param rel_path string
-  ---@param entry VaultIndexEntry
-  ---@param idx table
-  ---@return table[] items
   build_single = build_items_for_file,
 
   --- Iterator-based builder for coroutine chunking.
   --- Returns a stateful iterator that yields one completion item per call.
   --- Returns nil when the vault index is not ready.
-  ---@param vault_path string
   ---@return (fun(): table|nil)|nil
-  build_iter = function(vault_path)
+  build_iter = function()
     local idx = base.get_ready_index()
     if not idx then return nil end
 
@@ -434,7 +432,7 @@ local source = base.create_source({
     end
   end,
 
-  get_completions = function(self, ctx, items, callback)
+  get_completions = function(_, ctx, items, callback)
     local before = ctx.line:sub(1, ctx.cursor[2])
 
     -- Standalone block ID reference: ^partial (not inside [[ ]])
@@ -536,7 +534,8 @@ local source = base.create_source({
             callback(base.response(_heading_cache.items))
             return
           end
-          headings = _heading_cache.headings
+          -- A (bufnr, tick) hit means the miss branch below stored the headings.
+          headings = _heading_cache.headings --[[@as table[] ]]
         else
           local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
           local buf_path = vim.api.nvim_buf_get_name(bufnr)
@@ -592,7 +591,7 @@ local source = base.create_source({
     callback(base.response(items))
   end,
 
-  resolve_item = function(self, item, callback)
+  resolve_item = function(_, item, callback)
     -- Block context preview: lazy-load surrounding lines from disk
     if item.data and item.data.completion_kind == "block" and item.data.rel_path then
       local path = base.resolve_abs_path(item.data.rel_path)

@@ -24,6 +24,7 @@
 -- Drives the REAL parser (no mock). Run with:
 --   nvim --headless -u NONE -l tests/strip_code_blocks_single_pass_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil = _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
 
@@ -32,17 +33,26 @@ local P = require("andrew.vault.vault_index_parser")
 
 print("\n=== strip_code_blocks Single-Pass Parity Tests ===\n")
 
+---@param content string
+---@return VaultIndexEntry
 local function parse(content)
   return P.parse_content(content, "Note.md", {
     mtime = { sec = 1 }, size = #content, birthtime = { sec = 1 },
   })
 end
 
+---@param list? string[]
+---@param val string
+---@return boolean
 local function has(list, val)
   for _, v in ipairs(list or {}) do if v == val then return true end end
   return false
 end
 
+-- An outlink as extract_links records it (VaultIndexEntry.outlinks is `table[]`).
+---@param links? { path: string, display?: string }[]
+---@param name string
+---@return boolean
 local function has_link(links, name)
   for _, l in ipairs(links or {}) do
     if l.path == name or l.display == name then return true end

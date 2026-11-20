@@ -1,6 +1,7 @@
 -- Unit tests for lua/andrew/vault/link_utils.lua (pure functions only)
 -- Run with: nvim --headless -u NONE -l tests/link_utils_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil

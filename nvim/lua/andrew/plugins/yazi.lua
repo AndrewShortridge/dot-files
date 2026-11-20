@@ -82,7 +82,7 @@ return {
       open_for_directories = true,
 
       -- Open file function: edit selected file
-      open_file_function = function(chosen_file, _config, _state)
+      open_file_function = function(chosen_file)
         vim.cmd("edit " .. vim.fn.fnameescape(chosen_file))
       end,
 
@@ -190,7 +190,7 @@ return {
         vim.notify("No explorer window to close", vim.log.levels.WARN)
         return
       end
-      pcall(vim.cmd, "close")
+      pcall(vim.cmd --[[@as function]], "close")
     end, { desc = "Close explorer window (Yazi)" })
 
     -- Refresh Yazi

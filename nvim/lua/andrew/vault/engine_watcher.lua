@@ -124,7 +124,7 @@ local _watcher_stats = {
 local add_dir_watch
 
 --- Shared callback for all fs_event watchers.
-local function on_fs_event(vault, base_dir, err_msg, filename, _events)
+local function on_fs_event(vault, base_dir, err_msg, filename)
   if err_msg then return end
 
   if filename then
@@ -158,7 +158,7 @@ local function on_fs_event(vault, base_dir, err_msg, filename, _events)
             end
           end
           if found_new then
-            on_fs_event(vault, abs_path, nil, nil, nil)
+            on_fs_event(vault, abs_path, nil, nil)
           end
         end, { domain = "fs-watch", label = "scan-new-dir" })
         -- Fall through (deferred scan will trigger debounce if .md files found)
@@ -203,8 +203,8 @@ local function add_dir_watch_single(abs_dir)
   local watcher = vim.uv.new_fs_event()
   if not watcher then return end
 
-  local ok, _err = watcher:start(abs_dir, {}, function(err_msg, filename, events)
-    on_fs_event(vault, abs_dir, err_msg, filename, events)
+  local ok = watcher:start(abs_dir, {}, function(err_msg, filename)
+    on_fs_event(vault, abs_dir, err_msg, filename)
   end)
 
   if not ok then
@@ -280,7 +280,7 @@ end
 --- Add a fs_event watch on a single directory (runtime new-directory handler).
 --- Does NOT recurse — subdirectories are picked up by their own creation events
 --- flowing through on_fs_event, avoiding synchronous blocking on deep trees.
-add_dir_watch = function(_vault, abs_dir)
+add_dir_watch = function(_, abs_dir)
   add_dir_watch_single(abs_dir)
 end
 
@@ -309,9 +309,9 @@ function W.start_fs_watcher()
     local watcher = vim.uv.new_fs_event()
     if not watcher then return end
 
-    local ok, _err = watcher:start(vault, { recursive = true },
-      function(err_msg, filename, events)
-        on_fs_event(vault, vault, err_msg, filename, events)
+    local ok = watcher:start(vault, { recursive = true },
+      function(err_msg, filename)
+        on_fs_event(vault, vault, err_msg, filename)
       end)
 
     if not ok then

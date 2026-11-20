@@ -13,6 +13,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/js2lua_transpile_cache_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -77,6 +78,8 @@ end)
 
 test("non-string input is rejected without caching errors", function()
   js2lua.clear_cache()
+  -- Invalid on purpose: a nil input must be rejected without caching the error.
+  ---@diagnostic disable-next-line: param-type-mismatch
   local r, e = js2lua.transpile(nil)
   assert_nil(r, "nil input returns nil code")
   assert_true(type(e) == "string", "nil input returns an error string")

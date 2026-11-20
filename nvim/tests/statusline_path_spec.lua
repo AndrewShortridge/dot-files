@@ -21,6 +21,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/statusline_path_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq = _H.test, _H.assert_eq
 
@@ -35,6 +36,8 @@ local sandbox = vim.uv.fs_realpath(vim.fn.fnamemodify(vim.fn.tempname(), ":h")) 
 vim.fn.delete(sandbox, "rf")
 
 --- Create `relative_path` under the sandbox; a trailing slash makes a directory.
+---@param relative_path string
+---@return string
 local function make(relative_path)
   local path = sandbox .. "/" .. relative_path
   if relative_path:sub(-1) == "/" then
@@ -59,6 +62,8 @@ make("elsewhere/")
 
 --- Edit `relative_path` with the working directory at `working_directory`
 --- (both relative to the sandbox).
+---@param relative_path string
+---@param working_directory string
 local function open(relative_path, working_directory)
   vim.cmd("silent! %bwipeout!")
   root.project_cache = {}
@@ -66,6 +71,7 @@ local function open(relative_path, working_directory)
   vim.cmd.edit(vim.fn.fnameescape(sandbox .. "/" .. relative_path))
 end
 
+---@return string
 local function shown_path()
   local directory, filename = statusline_path.display_parts()
   return directory .. filename
@@ -96,7 +102,7 @@ end)
 test("without a marker the project root is the working directory, and follows :cd", function()
   -- A marker list of our own: the real one could match something above the
   -- temp directory on the machine running this.
-  local real_markers = root.project_markers
+  local real_markers = root.project_markers ---@type string[]
   root.project_markers = { ".statusline-path-spec-marker" }
 
   open("repo/top.txt", "elsewhere")

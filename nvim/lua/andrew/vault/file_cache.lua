@@ -9,7 +9,11 @@ local weighers = require("andrew.vault.cache_weighers")
 
 local M = {}
 
+-- Both are created together by ensure_init(): once _cache is set, so is
+-- _section_cache.
+---@type WeightedCache|nil
 local _cache = nil
+---@type WeightedCache|nil
 local _section_cache = nil
 local _hits = 0
 local _misses = 0
@@ -38,6 +42,7 @@ end
 --- @return string[]|nil lines, number|nil mtime
 function M.read(path, max_lines)
   ensure_init()
+  ---@cast _cache -nil
   local stat = vim.uv.fs_stat(path)
   if not stat then return nil, nil end
 
@@ -87,6 +92,7 @@ function M.get_section(path, fragment, extract_fn)
   ensure_init()
   local stat = vim.uv.fs_stat(path)
   if not stat then return nil end
+  ---@cast _section_cache -nil
 
   local mtime = stat.mtime.sec
   local key = path .. "\0" .. fragment
@@ -117,6 +123,7 @@ function M.invalidate(path)
   if not _cache then return end
   _cache:remove(path)
   -- Invalidate sections from this file (scan section cache keys)
+  ---@cast _section_cache -nil
   local prefix = path .. "\0"
   local to_remove = {}
   for key, _ in _section_cache:entries() do
@@ -133,6 +140,7 @@ end
 function M.clear()
   if not _cache then return end
   _cache:clear()
+  ---@cast _section_cache -nil
   _section_cache:clear()
   _hits = 0
   _misses = 0
@@ -142,6 +150,8 @@ end
 --- @return table { file_size, file_max, section_size, section_max, hits, misses, hit_rate }
 function M.stats()
   ensure_init()
+  ---@cast _cache -nil
+  ---@cast _section_cache -nil
   local total = _hits + _misses
   local file_stats = _cache.stats and _cache:stats() or {}
   local section_stats = _section_cache.stats and _section_cache:stats() or {}

@@ -263,8 +263,7 @@ function M.setup()
 end
 
 --- Called by event_dispatch.lua on BufEnter for vault markdown buffers.
---- @param _ctx { bufnr: number, file: string, is_vault_md: boolean }
-function M.on_buf_enter(_ctx)
+function M.on_buf_enter()
   -- Automatic popup path only: disabled by config.task_notify.enabled = false.
   -- The on-demand commands/keymap registered in setup() are unaffected.
   if (config.task_notify or {}).enabled == false then return end

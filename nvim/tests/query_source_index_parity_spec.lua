@@ -26,6 +26,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/query_source_index_parity_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -39,6 +40,25 @@ print("\n=== Query Source Index (tag/folder) Parity Tests ===\n")
 -- ---------------------------------------------------------------------------
 -- Temp vault helpers.
 -- ---------------------------------------------------------------------------
+
+--- The part of a query page (QueryIndex.pages holds plain `table`s) this spec
+--- reads.
+---@class QuerySourceIndexParityPage
+---@field file { path: string, folder: string, tags: string[] }
+
+--- A FROM source AST node as resolve_source reads it (the parser builds plain
+--- tables). Which optional field is set depends on `type`.
+---@class QuerySourceIndexParityNode
+---@field type "folder"|"tag"|"or"|"and"|"not"
+---@field path? string                         folder nodes
+---@field tag? string                          tag nodes
+---@field left? QuerySourceIndexParityNode     and/or nodes
+---@field right? QuerySourceIndexParityNode    and/or nodes
+---@field operand? QuerySourceIndexParityNode  not nodes
+
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -54,6 +74,7 @@ end
 --  ProjectsX/Gamma.md     tag:  myproject       (prefix-trap decoy)
 --  Other/Delta.md         tag:  project
 --  Top.md                 no tags, root folder ""
+---@return string dir
 local function make_vault()
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -73,6 +94,8 @@ local function make_vault()
   return dir
 end
 
+---@param dir string
+---@return VaultIndex
 local function fresh_vi(dir)
   vault_index._instance = nil
   local idx = vault_index.get(dir)
@@ -81,37 +104,52 @@ local function fresh_vi(dir)
 end
 
 -- Set of rel_paths from a page list.
+---@param pages QuerySourceIndexParityPage[]
+---@return table<string, true>
 local function rel_set(pages)
-  local s = {}
+  local s = {} ---@type table<string, true>
   for _, p in ipairs(pages) do s[p.file.path] = true end
   return s
 end
 
+---@param a table<string, true>
+---@param b table<string, true>
+---@param msg? string
 local function set_eq(a, b, msg)
   for k in pairs(a) do assert_true(b[k], (msg or "") .. ": missing " .. tostring(k)) end
   for k in pairs(b) do assert_true(a[k], (msg or "") .. ": extra " .. tostring(k)) end
 end
 
+---@param s table<string, true>
+---@return string
 local function keys(s)
-  local t = {}
+  local t = {} ---@type string[]
   for k in pairs(s) do t[#t + 1] = k end
   table.sort(t)
   return table.concat(t, ",")
 end
 
 -- The OLD linear-scan implementations, driven against the REAL semantics.
+---@param q QueryIndex
+---@param tag string
+---@return table<string, true>
 local function linear_tag(q, tag)
-  local s = {}
+  local s = {} ---@type table<string, true>
   for rp, page in pairs(q.pages) do
+    ---@cast page QuerySourceIndexParityPage
     if vault_index.tag_matches(page.file.tags, tag) then s[rp] = true end
   end
   return s
 end
 
+---@param q QueryIndex
+---@param folder string
+---@return table<string, true>
 local function linear_folder(q, folder)
   folder = folder:gsub("/$", "")
-  local s = {}
+  local s = {} ---@type table<string, true>
   for rp, page in pairs(q.pages) do
+    ---@cast page QuerySourceIndexParityPage
     local pf = page.file.folder
     if pf == folder or pf:sub(1, #folder + 1) == folder .. "/" then s[rp] = true end
   end
@@ -123,7 +161,7 @@ end
 -- ===========================================================================
 test("pages_with_tag matches the linear scan for every tag case", function()
   local dir = make_vault()
-  local vi = fresh_vi(dir)
+  fresh_vi(dir)
   local q = QI.Index.new(dir)
   q:build_from_vault_index()
 
@@ -154,7 +192,7 @@ end)
 -- ===========================================================================
 test("pages_in_folder matches the linear scan for every folder case", function()
   local dir = make_vault()
-  local vi = fresh_vi(dir)
+  fresh_vi(dir)
   local q = QI.Index.new(dir)
   q:build_from_vault_index()
 
@@ -182,35 +220,41 @@ end)
 -- ===========================================================================
 test("resolve_source AND/OR/NOT match a from-scratch linear resolution", function()
   local dir = make_vault()
-  local vi = fresh_vi(dir)
+  fresh_vi(dir)
   local q = QI.Index.new(dir)
   q:build_from_vault_index()
 
-  -- Linear reference resolver mirroring resolve_source's set logic.
+  -- Linear reference resolver mirroring resolve_source's set logic. Each branch
+  -- reads the field its node kind always carries (see `nodes` below), hence the
+  -- casts from the optional fields of QuerySourceIndexParityNode.
+  ---@param node QuerySourceIndexParityNode
+  ---@return table<string, true>
   local function lin_resolve(node)
-    if node.type == "folder" then return linear_folder(q, node.path) end
-    if node.type == "tag" then return linear_tag(q, node.tag) end
+    if node.type == "folder" then return linear_folder(q, node.path --[[@as string]]) end
+    if node.type == "tag" then return linear_tag(q, node.tag --[[@as string]]) end
     if node.type == "or" then
-      local r = {}
-      for k in pairs(lin_resolve(node.left)) do r[k] = true end
-      for k in pairs(lin_resolve(node.right)) do r[k] = true end
+      local r = {} ---@type table<string, true>
+      for k in pairs(lin_resolve(node.left --[[@as QuerySourceIndexParityNode]])) do r[k] = true end
+      for k in pairs(lin_resolve(node.right --[[@as QuerySourceIndexParityNode]])) do r[k] = true end
       return r
     end
     if node.type == "and" then
-      local l, rr = lin_resolve(node.left), lin_resolve(node.right)
-      local r = {}
+      local l, rr = lin_resolve(node.left --[[@as QuerySourceIndexParityNode]]),
+        lin_resolve(node.right --[[@as QuerySourceIndexParityNode]])
+      local r = {} ---@type table<string, true>
       for k in pairs(l) do if rr[k] then r[k] = true end end
       return r
     end
     if node.type == "not" then
-      local op = lin_resolve(node.operand)
-      local r = {}
+      local op = lin_resolve(node.operand --[[@as QuerySourceIndexParityNode]])
+      local r = {} ---@type table<string, true>
       for k in pairs(q.pages) do if not op[k] then r[k] = true end end
       return r
     end
     return {}
   end
 
+  ---@type QuerySourceIndexParityNode[]
   local nodes = {
     { type = "or",
       left = { type = "tag", tag = "project/active" },
@@ -284,7 +328,7 @@ end)
 -- ===========================================================================
 test("a bare-segment registration would break parity (proves discriminating power)", function()
   local dir = make_vault()
-  local vi = fresh_vi(dir)
+  fresh_vi(dir)
   local q = QI.Index.new(dir)
   q:build_from_vault_index()
 
@@ -294,6 +338,9 @@ test("a bare-segment registration would break parity (proves discriminating powe
 
   -- Inject the WRONG (bloom-style) registration: register each bare slash
   -- segment too. This is exactly the trap the implementation must avoid.
+  ---@param index table<string, string[]>
+  ---@param key string
+  ---@param rp string
   local function register(index, key, rp)
     local b = index[key]
     if not b then index[key] = { rp } else
@@ -301,8 +348,9 @@ test("a bare-segment registration would break parity (proves discriminating powe
       b[#b + 1] = rp
     end
   end
-  local bad = {}
+  local bad = {} ---@type table<string, string[]>
   for rp, page in pairs(q.pages) do
+    ---@cast page QuerySourceIndexParityPage
     for _, t in ipairs(page.file.tags or {}) do
       register(bad, t, rp)
       local s = t:find("/", 1, true)

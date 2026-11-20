@@ -74,7 +74,7 @@ end
 
 --- Scan buffer lines and apply autolink hints.
 ---@param bufnr number
----@param opts? { visible_only?: boolean }
+---@param opts? { visible_only?: boolean, invalid_ranges?: { start_line: number, end_line: number }[] }
 local function apply(bufnr, opts)
   if not M.enabled then return end
   if not vim.api.nvim_buf_is_valid(bufnr) then return end
@@ -126,8 +126,9 @@ local function apply(bufnr, opts)
   local rt = ranges and #ranges > 0 and require("andrew.vault.region_tracker") or nil
   for _, m in ipairs(scan_matches) do
     -- When using invalid_ranges, only place extmarks within them
-    -- (not in valid gaps between ranges) to avoid duplicate extmarks
-    if rt and not rt.is_line_in_ranges(m.row, ranges) then goto continue_match end
+    -- (not in valid gaps between ranges) to avoid duplicate extmarks.
+    -- rt is set only when ranges is a non-empty list.
+    if rt and not rt.is_line_in_ranges(m.row, ranges --[[@as table]]) then goto continue_match end
 
     local extmark_id = vim.api.nvim_buf_set_extmark(bufnr, M.ns, m.row, m.start_col, {
       end_col = m.end_col,
@@ -296,9 +297,9 @@ end
 --- Delegates to apply(); code_excl is not used directly (link_scan builds its
 --- own code-exclusion set internally, cached per changedtick).
 ---@param bufnr number
----@param _code_excl table  unused — kept for coordinator API conformance
----@param opts { full?: boolean }
-function M.coordinated_update(bufnr, _code_excl, opts)
+---@param _ table  code exclusion set, unused — kept for coordinator API conformance
+---@param opts { full?: boolean, invalid_ranges?: { start_line: number, end_line: number }[] }
+function M.coordinated_update(bufnr, _, opts)
   if not M.enabled then return end
   -- Use invalid_ranges from region tracker when available
   local ranges = opts and opts.invalid_ranges

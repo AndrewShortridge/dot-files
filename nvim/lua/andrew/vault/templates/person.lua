@@ -65,7 +65,7 @@ LIMIT 10
 ## Notes
 ]==]
 
-function M.run(e, p)
+function M.run(e)
   local name = e.input({ prompt = "Full name" })
   if not name then return end
 

@@ -33,6 +33,7 @@
 -- Run with:
 --   nvim --headless -u NONE -l tests/completion_inline_fields_gate_bytescan_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -48,6 +49,9 @@ print("\n=== Inline-Field Completion Gate Byte-Scan Perf Tests ===\n")
 -- Temp vault: notes carrying inline fields so build_kv_single_pass yields a
 -- non-trivial key/value candidate set.
 -- ---------------------------------------------------------------------------
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -79,10 +83,18 @@ idx:build_sync()
 vim.cmd("edit " .. vim.fn.fnameescape(dir .. "/note_001.md"))
 local bufnr = vim.api.nvim_get_current_buf()
 
+-- Loads blink.cmp's type library for this file (lazydev): the source's callback
+-- receives a blink.cmp.CompletionResponse.
+---@module "blink.cmp"
+
+---@param line string
+---@return blink.cmp.CompletionItem[]
 local function get_items(line)
-  local result = nil
+  local result = nil ---@type blink.cmp.CompletionResponse?
   local ctx = { line = line, cursor = { 1, #line }, bufnr = bufnr }
-  fields_source:get_completions(ctx, function(r) result = r end)
+  fields_source:get_completions(ctx,
+    ---@param r blink.cmp.CompletionResponse?
+    function(r) result = r end)
   vim.wait(2000, function() return result ~= nil end, 10)
   return (result or {}).items or {}
 end
@@ -106,13 +118,24 @@ test("no-trigger prose line: byte-dependent matches gated behind plain finds", f
   local saw_colon_find = false
   local saw_bracket_find = false
   local saw_paren_find = false
-  local result = nil
   local ok, err = pcall(function()
-    string.match = function(...)
+    ---@param s string|number
+    ---@param pattern string|number
+    ---@param init? integer
+    ---@return any ...
+    local function counting_match(s, pattern, init)
       match_count = match_count + 1
-      return orig_match(...)
+      return orig_match(s, pattern, init)
     end
-    string.find = function(s, patt, init, plain)
+    string.match = counting_match
+    ---@param s string|number
+    ---@param patt string|number
+    ---@param init? integer
+    ---@param plain? boolean
+    ---@return integer|nil start
+    ---@return integer|nil end
+    ---@return any ... captures
+    local function counting_find(s, patt, init, plain)
       find_count = find_count + 1
       if plain == true then
         if patt == "::" then saw_colon_find = true end
@@ -121,8 +144,12 @@ test("no-trigger prose line: byte-dependent matches gated behind plain finds", f
       end
       return orig_find(s, patt, init, plain)
     end
+    string.find = counting_find
     local ctx = { line = PROSE, cursor = { 1, #PROSE }, bufnr = bufnr }
-    fields_source:get_completions(ctx, function(r) result = r end)
+    -- The response is not inspected here: only the spies' counters are.
+    fields_source:get_completions(ctx,
+      ---@param _ blink.cmp.CompletionResponse?
+      function(_) end)
   end)
   string.match = orig_match -- finally: always restore
   string.find = orig_find

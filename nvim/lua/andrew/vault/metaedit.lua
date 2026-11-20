@@ -1,4 +1,6 @@
-local engine = require("andrew.vault.engine")
+-- Loaded for its load-time setup (vault path, cache registry, autocmds,
+-- commands); nothing in this module calls it.
+require("andrew.vault.engine")
 local config = require("andrew.vault.config")
 local fm_parser = require("andrew.vault.frontmatter_parser")
 local notify = require("andrew.vault.notify")
@@ -28,14 +30,6 @@ local function format_value(val)
     return '"' .. s:gsub('"', '\\"') .. '"'
   end
   return s
-end
-
---- Parse a raw string value and set the corresponding frontmatter field.
---- Delegates type coercion to parse_value.
---- @param field string  frontmatter field name
---- @param raw_value string  raw string typed by the user
-local function coerce_and_set(field, raw_value)
-  M.set_field(field, fm_parser.parse_value(raw_value))
 end
 
 -- ---------------------------------------------------------------------------
@@ -85,7 +79,7 @@ end
 ---@param lnum number 1-based
 ---@param text string
 local function replace_line(buf, lnum, text)
-  local ok, err = pcall(vim.cmd, "undojoin")
+  local ok, err = pcall(vim.cmd --[[@as function]], "undojoin")
   if not ok then log.debug("undojoin before replace_line: %s", err) end
   vim.api.nvim_buf_set_lines(buf, lnum - 1, lnum, false, { text })
 end
@@ -95,7 +89,7 @@ end
 ---@param before number 1-based line to insert before
 ---@param text string
 local function insert_before(buf, before, text)
-  local ok, err = pcall(vim.cmd, "undojoin")
+  local ok, err = pcall(vim.cmd --[[@as function]], "undojoin")
   if not ok then log.debug("undojoin before insert_before: %s", err) end
   vim.api.nvim_buf_set_lines(buf, before - 1, before - 1, false, { text })
 end
@@ -105,7 +99,7 @@ end
 ---@param field_name string
 ---@param val any
 local function create_frontmatter(buf, field_name, val)
-  local ok, err = pcall(vim.cmd, "undojoin")
+  local ok, err = pcall(vim.cmd --[[@as function]], "undojoin")
   if not ok then log.debug("undojoin before create_frontmatter: %s", err) end
   vim.api.nvim_buf_set_lines(buf, 0, 0, false, {
     "---",

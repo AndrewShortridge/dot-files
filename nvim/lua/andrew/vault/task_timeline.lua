@@ -1,5 +1,4 @@
 --- Task timeline view — plots vault tasks by due date with overdue/today/upcoming zones.
---- @module andrew.vault.task_timeline
 
 local config = require("andrew.vault.config")
 local engine = require("andrew.vault.engine")
@@ -249,6 +248,7 @@ end
 
 -- Render cache: stores rendered output (lines, highlights, task_positions) to
 -- avoid re-running render_timeline() when nothing has changed.
+---@type { key: string|nil, result: table|nil }
 local _render_cache = { key = nil, result = nil }
 
 --- Build a composite cache key for the render output.
@@ -272,8 +272,18 @@ local function render_cache_key(state, filter_opts, win_width)
   }, "|")
 end
 
+---@class VaultTimelineFloat
+---@field buf number
+---@field win number
+---@field close fun()
+---@field state table
+---@field task_positions table[]
+---@field row_index table row (0-indexed) -> task position
+---@field filter_opts table|nil
+---@field _prev_lines string[]|nil lines of the last render, for incremental updates
+
 --- Active float state (singleton).
----@type { buf: number, win: number, close: fun(), state: table, task_positions: table[], filter_opts: table|nil }|nil
+---@type VaultTimelineFloat|nil
 local active = nil
 
 --- Apply highlights to the float buffer.
@@ -296,9 +306,8 @@ local function redraw(state)
   local win_width = vim.api.nvim_win_get_width(active.win)
   local rkey = render_cache_key(state, active.filter_opts, win_width)
 
-  local result
-  if _render_cache.key == rkey and _render_cache.result then
-    result = _render_cache.result
+  local result = _render_cache.key == rkey and _render_cache.result or nil
+  if result then
     log.debug("render cache hit")
   else
     local data = collect_timeline_tasks(active.filter_opts)
@@ -383,6 +392,9 @@ local function set_keymaps(buf, state)
 
   -- Jump to task source file
   vim.keymap.set("n", "<CR>", function()
+    -- A second timeline's float can outlive the first one's BufWipeout hook,
+    -- which clears `active`; bail out like redraw() does.
+    if not active then return end
     local cursor = vim.api.nvim_win_get_cursor(active.win)
     local task = task_at_cursor(cursor[1])
     if not task then
@@ -405,6 +417,8 @@ local function set_keymaps(buf, state)
   vim.keymap.set("n", "f", function()
     vim.ui.input({ prompt = "Filter tasks: " }, function(input)
       if input == nil then return end
+      -- The float may have been closed while the prompt was open.
+      if not active then return end
       if input == "" then
         active.filter_opts = nil
       else

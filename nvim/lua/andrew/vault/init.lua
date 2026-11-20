@@ -1214,7 +1214,7 @@ vim.api.nvim_create_user_command("VaultPipelineDebug", function()
   local cache_data = parse_cache._get_cache()
   local buf_count = 0
   local total_cached_lines = 0
-  for bufnr, buf_cache in pairs(cache_data) do
+  for _, buf_cache in pairs(cache_data) do
     buf_count = buf_count + 1
     local line_count = 0
     for _ in pairs(buf_cache.lines) do line_count = line_count + 1 end

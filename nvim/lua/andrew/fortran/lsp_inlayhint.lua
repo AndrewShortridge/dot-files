@@ -35,6 +35,7 @@
 local M = {}
 
 local scan = require("andrew.fortran.scan")
+local nvim_compat = require("andrew.utils.nvim_compat")
 
 --- LSP InlayHintKind.Parameter.
 M.KIND_PARAMETER = 2
@@ -188,7 +189,11 @@ end
 ---@return table[] slots, boolean closed, integer|nil close_lnum, integer|nil close_col
 function M.arg_slots(masked, first_lnum, open_col, fixed)
   local slots = {}
-  local depth, slot = 0, nil
+  local depth = 0
+  -- Nil only until the `(` at open_col -- the first character walked -- opens
+  -- the first slot.
+  ---@type { parts: { lnum: integer, col: integer, ch: string }[] }
+  local slot = nil
   local lnum = first_lnum
   local budget = M.MAX_CONTINUATION
 
@@ -620,7 +625,7 @@ function M.inlay(params, cb)
   if not uri then
     return cb(nil, nil)
   end
-  local bufnr = vim.uri_to_bufnr(uri)
+  local bufnr = nvim_compat.uri_to_buffer(uri)
   if not vim.api.nvim_buf_is_loaded(bufnr) then
     return cb(nil, nil)
   end

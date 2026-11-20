@@ -20,6 +20,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/which_key_register_once_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -28,11 +29,44 @@ local ftplugin_path = config_dir .. "/ftplugin/markdown.lua"
 
 print("\n=== Which-Key Register-Once Tests ===\n")
 
+-- Loads which-key's types (wk.*) for this file; the fake below stands in for it.
+---@module "which-key"
+
 -- ---------------------------------------------------------------------------
 -- Fake which-key recorder: installed BEFORE the ftplugin loads.
 -- Records, per wk.add call, how many global (buffer==nil) vs buffer-local
 -- (buffer~=nil) entries it received, plus the union of all entries seen.
 -- ---------------------------------------------------------------------------
+--- One recorded `wk.add` entry. Real entries are `wk.Spec`; the ftplugin's
+--- specs only use a string lhs/mode/desc/group, a table icon and a buffer
+--- number, so entries are narrowed to that shape when recorded.
+---@class WhichKeyRegisterOnceSpecEntry
+---@field [1] string
+---@field mode? string
+---@field desc? string
+---@field group? string
+---@field icon? wk.Icon
+---@field buffer? integer
+
+---@class WhichKeyRegisterOnceSpecCall
+---@field global integer  entries without a buffer
+---@field buffer integer  buffer-local entries
+---@field specs WhichKeyRegisterOnceSpecEntry[]
+
+---@class WhichKeyRegisterOnceSpecRecorder
+---@field calls WhichKeyRegisterOnceSpecCall[]
+---@field all_entries WhichKeyRegisterOnceSpecEntry[]
+
+--- An EXPECTED tuple: flat icon/color fields.
+---@class WhichKeyRegisterOnceSpecExpected
+---@field [1] string
+---@field mode? string
+---@field group? string
+---@field desc? string
+---@field icon? string
+---@field color? string
+
+---@type WhichKeyRegisterOnceSpecRecorder
 local recorder = {
   calls = {},          -- per-call: { global = N, buffer = M, specs = {...} }
   all_entries = {},    -- union of every spec table ever registered
@@ -40,6 +74,7 @@ local recorder = {
 
 local fake_wk = {
   setup = function() end,
+  ---@param specs wk.Spec
   add = function(specs)
     local g, b = 0, 0
     for _, spec in ipairs(specs) do
@@ -48,9 +83,11 @@ local fake_wk = {
       else
         g = g + 1
       end
-      recorder.all_entries[#recorder.all_entries + 1] = spec
+      -- Narrowed on purpose: see WhichKeyRegisterOnceSpecEntry.
+      recorder.all_entries[#recorder.all_entries + 1] = spec --[[@as WhichKeyRegisterOnceSpecEntry]]
     end
-    recorder.calls[#recorder.calls + 1] = { global = g, buffer = b, specs = specs }
+    recorder.calls[#recorder.calls + 1] =
+      { global = g, buffer = b, specs = specs --[[@as WhichKeyRegisterOnceSpecEntry[] ]] }
   end,
 }
 
@@ -61,7 +98,7 @@ package.loaded["which-key"] = fake_wk
 local vault = vim.fn.tempname()
 vim.fn.mkdir(vault, "p")
 local N = 8
-local bufs = {}
+local bufs = {} ---@type integer[]
 
 vim.g.__md_wk_registered = nil
 
@@ -95,7 +132,7 @@ end)
 
 test("per-buffer (buffer-local) block registers on every open, small + constant", function()
   local buffer_calls_with_entries = 0
-  local per_open_count = nil
+  local per_open_count = nil ---@type integer?
   for _, c in ipairs(recorder.calls) do
     if c.buffer > 0 then
       buffer_calls_with_entries = buffer_calls_with_entries + 1
@@ -120,6 +157,7 @@ end)
 -- The full original spec set (key/mode/icon/color/desc/group tuples), verbatim
 -- from the pre-split ftplugin. The union of (global block + ONE buffer block)
 -- must equal this exactly.
+---@type WhichKeyRegisterOnceSpecExpected[]
 local EXPECTED = {
   { "<leader>m", group = "Markdown", icon = "", color = "blue" },
   { "<leader>mb", icon = "󰉿", color = "yellow" },
@@ -176,6 +214,8 @@ local EXPECTED = {
 }
 
 -- Canonical key for a recorded wk.add spec: lhs + mode + icon + color + desc + group.
+---@param spec WhichKeyRegisterOnceSpecEntry
+---@return string
 local function entry_key(spec)
   local lhs = spec[1]
   local mode = spec.mode or "n"
@@ -185,6 +225,8 @@ local function entry_key(spec)
 end
 
 -- Canonical key for an EXPECTED tuple (flat icon/color fields).
+---@param e WhichKeyRegisterOnceSpecExpected
+---@return string
 local function expected_key(e)
   return table.concat({ e[1], e.mode or "n", e.icon or "", e.color or "", e.desc or "", e.group or "" }, "|")
 end
@@ -192,8 +234,9 @@ end
 -- Build the union from ONE buffer-block plus the single global block. Since
 -- the buffer block is identical on every open, taking the dedup set of all
 -- recorded entries equals (global block ∪ one buffer block).
+---@return table<string, boolean> seen  set of entry_key()s
 local function build_seen()
-  local seen = {}
+  local seen = {} ---@type table<string, boolean>
   for _, spec in ipairs(recorder.all_entries) do
     seen[entry_key(spec)] = true
   end
@@ -208,7 +251,7 @@ test("union of all registered entries equals the full original spec set", functi
     assert_true(seen[key], "missing/altered entry: " .. key)
   end
   -- And no extra entries beyond the expected set (split introduced nothing).
-  local expected_set = {}
+  local expected_set = {} ---@type table<string, boolean>
   for _, e in ipairs(EXPECTED) do
     expected_set[expected_key(e)] = true
   end
@@ -265,7 +308,7 @@ end)
 -- AND the augmented "colliding keys" test fail; Test 1's count still passes.
 -- ---------------------------------------------------------------------------
 test("markdown fold icons (mf/mu) must NOT leak buffer-less (would decorate tex popup)", function()
-  local leaked = {}
+  local leaked = {} ---@type string[]
   for _, spec in ipairs(recorder.all_entries) do
     local lhs, mode = spec[1], (spec.mode or "n")
     if (lhs == "<leader>mf" or lhs == "<leader>mu") and mode == "n" and spec.buffer == nil then

@@ -10,32 +10,47 @@
 -- Assertions are behavioral: they exercise real executor.execute output against
 -- a tiny fake index, never source-introspection.
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
-local test, assert_eq, assert_true, assert_false =
-  _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
+local test, assert_true, assert_false =
+  _H.test, _H.assert_true, _H.assert_false
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 -- Stub the logger so requiring real modules doesn't pull full vault infra.
 package.loaded["andrew.vault.vault_log"] = {
+  ---@return table
   scope = function()
-    return setmetatable({}, { __index = function() return function() end end })
+    return setmetatable({}, {
+      ---@return fun()
+      __index = function() return function() end end,
+    })
   end,
 }
 
 local executor = require("andrew.vault.query.executor")
 
 -- Build a fake index exposing the interface executor.execute needs.
+---@param pages table[]
+---@return table
 local function fake_index(pages)
   return {
+    ---@return table[]
     all_pages = function() return pages end,
-    resolve_source = function(_, _) return pages end,
-    current_page = function(_, _) return nil end,
+    -- Called as index:resolve_source(node) / index:current_page(path); the fake ignores its arguments.
+    ---@return table[]
+    resolve_source = function() return pages end,
+    ---@return table|nil
+    current_page = function() return nil end,
   }
 end
 
 -- TABLE <field> WHERE <field> <op> <literal>  (File column present so each row's
 -- row[1] is the page's file link → easy to assert which pages matched).
+---@param field_name string
+---@param op string  a DQL comparison operator (">", ">=", "=", ...)
+---@param literal number|string
+---@return table ast
 local function table_ast(field_name, op, literal)
   return {
     type = "TABLE",
@@ -51,15 +66,24 @@ local function table_ast(field_name, op, literal)
 end
 
 -- Run a query and return a set { [file_link] = true } of matched rows.
+---@param field_name string
+---@param op string
+---@param literal number|string
+---@param pages table[]
+---@return table<string, true>
 local function matched(field_name, op, literal, pages)
   local results = executor.execute(table_ast(field_name, op, literal), fake_index(pages), "/x.md")
-  local set = {}
-  for _, row in ipairs(results[1].rows) do
+  local set = {} ---@type table<string, true>
+  -- Each row is the TABLE's cells; row[1] is the File column's link.
+  for _, row in ipairs(results[1].rows --[[@as string[][] ]]) do
     set[row[1]] = true
   end
   return set
 end
 
+---@param link string
+---@param fields table<string, any>
+---@return table<string, any> page  `fields` with file.link set
 local function page(link, fields)
   fields.file = { link = link }
   return fields

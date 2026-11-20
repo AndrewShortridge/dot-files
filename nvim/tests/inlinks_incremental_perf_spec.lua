@@ -25,6 +25,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/inlinks_incremental_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -37,6 +38,9 @@ print("\n=== Inlinks Incremental Perf Tests ===\n")
 -- ---------------------------------------------------------------------------
 -- Temp vault helpers.
 -- ---------------------------------------------------------------------------
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -46,6 +50,8 @@ local function write_file(dir, rel, lines)
   f:close()
 end
 
+---@param n integer
+---@return string
 local function pad(n)
   return string.format("%03d", n)
 end
@@ -53,6 +59,8 @@ end
 -- Build a vault of M targets, each with a dedicated source linking only to it
 -- (so _inlinks has M target lists, each with one inlink), plus one unrelated
 -- file that links to nothing and serves as a benign save target.
+---@param M integer  number of targets
+---@return string dir
 local function make_vault(M)
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir, "p")
@@ -66,6 +74,8 @@ local function make_vault(M)
   return dir
 end
 
+---@param dir string
+---@return VaultIndex
 local function fresh_vi(dir)
   vault_index._instance = nil
   local idx = vault_index.get(dir)
@@ -75,6 +85,10 @@ end
 
 -- Run an unrelated save over a vault of size M and return how many entries were
 -- yielded while iterating the _inlinks map itself during the save.
+---@param M integer  vault size
+---@return integer visited
+---@return VaultIndex idx
+---@return string dir
 local function measure_visited(M)
   local dir = make_vault(M)
   local idx = fresh_vi(dir)
@@ -86,9 +100,15 @@ local function measure_visited(M)
   local inlinks_tbl = idx._inlinks -- capture identity BEFORE the save
   local real_pairs = pairs
   local visited = 0
+  ---@param t table
+  ---@return fun(table: table, index?: any): any, any
+  ---@return table
+  ---@return any
   _G.pairs = function(t)
     if t == inlinks_tbl then
       local it, s, k = real_pairs(t)
+      ---@param st table
+      ---@param key any
       return function(st, key)
         local nk, nv = it(st, key)
         if nk ~= nil then visited = visited + 1 end

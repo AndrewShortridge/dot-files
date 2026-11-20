@@ -1,6 +1,7 @@
 -- Unit tests for lua/andrew/vault/watch_channel.lua
 -- Run with: nvim --headless -u NONE -l tests/watch_channel_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq = _H.test, _H.assert_eq
 
@@ -14,6 +15,7 @@ local watch = require("andrew.vault.watch_channel")
 
 -- Helper: process pending vim.schedule callbacks and libuv timers.
 -- vim.wait() pumps both the libuv event loop AND the vim.schedule queue.
+---@param ms? integer
 local function flush(ms)
   ms = ms or 50
   vim.wait(ms, function() return false end)
@@ -30,7 +32,7 @@ test("new() returns send function and handle table", function()
 end)
 
 test("get() returns initial value", function()
-  local send, handle = watch.new("initial")
+  local _, handle = watch.new("initial")
   assert_eq(handle.get(), "initial", "initial value")
   handle.close()
 end)
@@ -49,7 +51,9 @@ test("multiple sends within same tick coalesce into one notification", function(
   local call_count = 0
   local last_value = nil
 
-  handle.subscribe(function(val)
+  handle.subscribe(
+    ---@param val any
+    function(val)
     call_count = call_count + 1
     last_value = val
   end)
@@ -72,9 +76,11 @@ end)
 
 test("sends after notification schedule a new notification", function()
   local send, handle = watch.new(nil)
-  local values = {}
+  local values = {} ---@type any[]
 
-  handle.subscribe(function(val) table.insert(values, val) end)
+  handle.subscribe(
+    ---@param val any
+    function(val) table.insert(values, val) end)
 
   send("first")
   flush()
@@ -115,7 +121,7 @@ test("close prevents further notifications", function()
 end)
 
 test("close is idempotent", function()
-  local send, handle = watch.new(nil)
+  local _, handle = watch.new(nil)
   handle.close()
   handle.close() -- should not error
 end)
@@ -157,7 +163,9 @@ test("nil is a valid value", function()
   local send, handle = watch.new("start")
   local received = "sentinel"
 
-  handle.subscribe(function(val) received = val end)
+  handle.subscribe(
+    ---@param val any
+    function(val) received = val end)
   send(nil)
   flush()
 
@@ -167,7 +175,7 @@ test("nil is a valid value", function()
 end)
 
 test("no notification if no sends occur", function()
-  local send, handle = watch.new(nil)
+  local _, handle = watch.new(nil)
   local called = false
 
   handle.subscribe(function() called = true end)

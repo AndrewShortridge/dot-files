@@ -32,38 +32,50 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/lsp_server_config_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
-local test, assert_eq, assert_true, assert_nil, assert_deep_eq =
-  _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil, _H.assert_deep_eq
+local test, assert_true, assert_nil, assert_deep_eq =
+  _H.test, _H.assert_true, _H.assert_nil, _H.assert_deep_eq
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
+---@module "andrew.plugins.lsp.lspconfig"
 local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/lsp/lspconfig.lua")
 
 --- Run the real config() with vim.lsp.config/enable captured.
 --- `missing` is an optional binary basename that executable() should deny, so
 --- the "do not enable a server whose binary is absent" guard can be exercised
 --- on a machine where the binary is in fact present.
+---@param missing? string
+---@return boolean ok, any err, table<string, vim.lsp.Config> captured, (string|string[])[] enabled
 local function run_config(missing)
-  local captured, enabled = {}, {}
+  local captured, enabled = {}, {} ---@type table<string, vim.lsp.Config>, (string|string[])[]
   local real_config, real_enable = vim.lsp.config, vim.lsp.enable
   local real_executable = vim.fn.executable
 
   vim.lsp.config = setmetatable({}, {
+    ---@param _ table
+    ---@param name string
+    ---@param cfg vim.lsp.Config
     __call = function(_, name, cfg)
       captured[name] = cfg
     end,
   })
-  vim.lsp.enable = function(name)
+  ---@param name string|string[]
+  local function fake_enable(name)
     enabled[#enabled + 1] = name
   end
+  vim.lsp.enable = fake_enable
   if missing then
-    vim.fn.executable = function(path)
+    ---@param path string
+    ---@return 0|1
+    local function fake_executable(path)
       if type(path) == "string" and path:find(missing, 1, true) then
         return 0
       end
       return real_executable(path)
     end
+    vim.fn.executable = fake_executable
   end
 
   local ok, err = pcall(plug.config)
@@ -76,6 +88,8 @@ end
 
 local cfg_ok, cfg_err, captured, enabled = run_config()
 
+---@param name string
+---@return boolean
 local function is_enabled(name)
   return vim.tbl_contains(enabled, name)
 end
@@ -90,6 +104,7 @@ end)
 test("ctags_lsp serves C/C++ ONLY -- never Fortran", function()
   local ft = captured.ctags_lsp and captured.ctags_lsp.filetypes
   assert_true(type(ft) == "table", "ctags_lsp must declare filetypes")
+  ---@cast ft string[]
   assert_deep_eq(ft, { "c", "cpp" }, "ctags_lsp filetypes must be exactly c/cpp")
 
   for _, bad in ipairs({ "fortran", "fortran_free", "fortran_fixed", "f90", "f95" }) do
@@ -105,8 +120,9 @@ test("fortls is configured by CLI flags, not initializationOptions", function()
   assert_nil(f.init_options, "fortls ignores initializationOptions entirely -- options must be CLI flags")
 
   assert_true(type(f.cmd) == "table", "fortls must declare a cmd")
-  local flags = {}
-  for _, a in ipairs(f.cmd) do
+  local flags = {} ---@type table<string, boolean>
+  -- Cast: the assertion above checked that cmd is the string[] form, not a function.
+  for _, a in ipairs(f.cmd --[[@as string[] ]]) do
     flags[a] = true
   end
   for _, want in ipairs({ "--enable_code_actions", "--hover_signature", "--use_signature_help" }) do
@@ -167,7 +183,7 @@ end)
 test("every server is told the client supports snippet completion", function()
   local defaults = captured["*"]
   assert_true(defaults ~= nil, "vim.lsp.config('*') must be declared")
-  local item = defaults.capabilities.textDocument.completion.completionItem
+  local item = assert(defaults.capabilities.textDocument.completion.completionItem)
   assert_true(item.snippetSupport, "snippetSupport must be advertised")
   assert_true(item.insertReplaceSupport, "insertReplaceSupport must be advertised")
 end)

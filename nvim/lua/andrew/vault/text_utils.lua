@@ -42,7 +42,8 @@ end
 ---@param content string
 ---@return string
 function M.normalize_line_endings(content)
-  return content:gsub("\r\n", "\n"):gsub("\r", "\n")
+  -- Parenthesized: gsub's substitution count must not leak as a second return.
+  return (content:gsub("\r\n", "\n"):gsub("\r", "\n"))
 end
 
 --- Split content string into lines, normalizing CRLF/CR line endings.

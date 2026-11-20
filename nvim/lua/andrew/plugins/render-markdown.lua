@@ -222,7 +222,7 @@ return {
               -- Switch to manual foldmethod and clear all treesitter folds,
               -- then create clean callout folds without nested fold interference
               vim.wo.foldmethod = "manual"
-              pcall(vim.cmd, "normal! zE")
+              pcall(vim.cmd --[[@as function]], "normal! zE")
               apply_callout_folds(bufnr, blocks)
               -- Restore user overrides from cache (callout_folds already loaded above)
               cf.restore(bufnr)

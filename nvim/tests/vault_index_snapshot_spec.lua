@@ -1,6 +1,7 @@
 -- Unit tests for vault_index snapshot, generation_guard, and _apply_staged logic
 -- Run with: nvim --headless -u NONE -l tests/vault_index_snapshot_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_nil =
   _H.test, _H.assert_eq, _H.assert_true, _H.assert_nil
@@ -11,10 +12,44 @@ local test, assert_eq, assert_true, assert_nil =
 -- without loading the full module (which requires neovim plugin state).
 -- ============================================================================
 
-local VaultIndex = {}
+---@class VaultIndexSnapshotSpecEntry
+---@field title string
+---@field tags? string[]
+
+---@class VaultIndexSnapshotSpecContext
+---@field changed_paths? string[]
+---@field deleted_paths? string[]
+
+---@alias VaultIndexSnapshotSpecSubscriber fun(gen: integer, context?: VaultIndexSnapshotSpecContext)
+
+---@class VaultIndexSnapshotSpecGuard
+---@field generation integer
+---@field is_valid fun(): boolean
+
+--- What `snapshot()` returns: a copied `files` table plus shared derived indexes.
+---@class VaultIndexSnapshotSpecSnapshot
+---@field files table<string, VaultIndexSnapshotSpecEntry>
+---@field _name_index table<string, string>
+---@field _alias_index table<string, string>
+---@field _inlinks table<string, string[]>
+---@field _files_with_tags table<string, boolean>
+---@field _files_with_tasks table<string, boolean>
+---@field _files_by_type table<string, table<string, boolean>>
+---@field _tag_blooms table<string, table<integer, boolean>>
+---@field _generation integer
+---@field _file_count integer
+
+---@class VaultIndexSnapshotSpecMock: VaultIndexSnapshotSpecSnapshot
+---@field _subscribers VaultIndexSnapshotSpecSubscriber[]
+---@field _ready boolean
+---@field _building boolean
+---@field _generation integer  re-declared: lua_ls loses the inherited type of fields the methods increment
+---@field _file_count integer  re-declared, as _generation
+local VaultIndex = {} ---@type VaultIndexSnapshotSpecMock
 VaultIndex.__index = VaultIndex
 
 --- Create a minimal mock VaultIndex for testing.
+---@return VaultIndexSnapshotSpecMock
 function VaultIndex.new()
   local self = setmetatable({}, VaultIndex)
   self.files = {}
@@ -35,8 +70,9 @@ end
 
 --- Snapshot: shallow-copy files table, share derived indexes by reference.
 --- Matches the real vault_index.lua implementation exactly.
+---@return VaultIndexSnapshotSpecSnapshot
 function VaultIndex:snapshot()
-  local files_snap = {}
+  local files_snap = {} ---@type table<string, VaultIndexSnapshotSpecEntry>
   for k, v in pairs(self.files) do
     files_snap[k] = v
   end
@@ -56,11 +92,13 @@ function VaultIndex:snapshot()
 end
 
 --- Generation guard: captures a generation and provides is_valid().
+---@return VaultIndexSnapshotSpecGuard
 function VaultIndex:generation_guard()
   local captured_gen = self._generation
   local idx = self
   return {
     generation = captured_gen,
+    ---@return boolean
     is_valid = function()
       return idx._generation == captured_gen
     end,
@@ -68,18 +106,20 @@ function VaultIndex:generation_guard()
 end
 
 --- Notify subscribers and bump generation.
+---@param context? VaultIndexSnapshotSpecContext
 function VaultIndex:_notify_update(context)
   self._generation = self._generation + 1
   for _, fn in ipairs(self._subscribers) do
-    local ok, err = pcall(fn, self._generation, context)
-    if not ok then
-      -- swallow in tests
-    end
+    -- A failing subscriber is swallowed in tests.
+    pcall(fn, self._generation, context)
   end
 end
 
 --- Apply staged mutations atomically (simplified for testing).
 --- Matches the core logic of the real _apply_staged without derived index rebuilds.
+---@param staged table<string, VaultIndexSnapshotSpecEntry>
+---@param deleted string[]
+---@param changed_rel_paths string[]
 function VaultIndex:_apply_staged(staged, deleted, changed_rel_paths)
   -- Apply staged entries
   for rel_path, entry in pairs(staged) do
@@ -317,8 +357,11 @@ end)
 test("_apply_staged calls _notify_update", function()
   local idx = VaultIndex.new()
   local notified = false
-  local notified_gen = nil
-  table.insert(idx._subscribers, function(gen, _ctx)
+  local notified_gen = nil ---@type integer?
+  table.insert(idx._subscribers,
+    ---@param gen integer
+    ---@param _ VaultIndexSnapshotSpecContext?
+    function(gen, _)
     notified = true
     notified_gen = gen
   end)
@@ -421,14 +464,16 @@ test("real _apply_staged signature matches what the mock assumes", function()
   local src_path = vim.fn.stdpath("config") .. "/lua/andrew/vault/vault_index.lua"
   local fd = io.open(src_path, "r")
   assert_true(fd, "could not open vault_index.lua at " .. src_path)
-  local src = fd:read("*a")
+  ---@cast fd -nil
+  local src = fd:read("*a") ---@type string
   fd:close()
 
   -- Locate the real method definition and capture its parameter list.
-  local params_str = src:match("function%s+M%.VaultIndex:_apply_staged%s*%(([^)]*)%)")
+  local params_str = src:match("function%s+M%.VaultIndex:_apply_staged%s*%(([^)]*)%)") ---@type string?
   assert_true(params_str, "could not find M.VaultIndex:_apply_staged definition in vault_index.lua")
+  ---@cast params_str -nil
 
-  local params = {}
+  local params = {} ---@type string[]
   for p in params_str:gmatch("[%w_]+") do
     table.insert(params, p)
   end
@@ -448,11 +493,12 @@ test("real _apply_staged signature matches what the mock assumes", function()
   local mock_params = { "staged", "deleted", "changed_rel_paths" }
   local last_pos = 0
   for _, mp in ipairs(mock_params) do
-    local pos = nil
+    local pos = nil ---@type integer?
     for i, rp in ipairs(expected) do
       if rp == mp then pos = i break end
     end
     assert_true(pos, "mock param '" .. mp .. "' not present in real signature")
+    ---@cast pos -nil
     assert_true(pos > last_pos, "mock param '" .. mp .. "' out of order vs real signature")
     last_pos = pos
   end

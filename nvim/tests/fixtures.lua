@@ -15,6 +15,12 @@
 -- behavioral_upgrades_spec make_mock_index) use structurally different shapes
 -- with no reconcilable common form, so they keep their own local builders.
 
+---@class SpecTempVaultOpts
+---@field suffix? string  appended to vim.fn.tempname()
+
+--- What `dofile(... "/fixtures.lua")` returns; specs annotate the local they
+--- assign it to with `---@type SpecFixtures` (lua_ls cannot follow dofile).
+---@class SpecFixtures
 local M = {}
 
 -- ============================================================================
@@ -23,6 +29,8 @@ local M = {}
 -- and link_maintenance_spec.lua. Parent directory must already exist
 -- (make_temp_vault creates parent dirs for nested names).
 -- ============================================================================
+---@param path string
+---@param content string
 function M.write_file(path, content)
   local f = assert(io.open(path, "w"))
   f:write(content)
@@ -33,6 +41,7 @@ end
 -- make_tmp_dir() — fresh temp directory (vim.fn.tempname() + mkdir -p).
 -- Mirrors link_maintenance_spec.make_tmp_dir.
 -- ============================================================================
+---@return string path of the new directory
 function M.make_tmp_dir()
   local tmp = vim.fn.tempname()
   vim.fn.mkdir(tmp, "p")
@@ -53,6 +62,9 @@ end
 -- vault index or set engine.vault_path — callers own that, since the index
 -- handle and engine state are used differently per spec.
 -- ============================================================================
+---@param files? table<string, string>  relative name -> content
+---@param opts? SpecTempVaultOpts
+---@return string path of the temp vault
 function M.make_temp_vault(files, opts)
   opts = opts or {}
   local tmp = vim.fn.tempname() .. (opts.suffix or "")

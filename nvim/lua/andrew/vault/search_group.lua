@@ -77,18 +77,18 @@ function M.resolve_group_key(rel_path, mode, idx, spec)
     local ts = file_entry and file_entry.mtime
     if not ts then return "\xff(unknown date)", "(unknown date)" end
     if mode == "date" then
-      local d = os.date("%Y-%m-%d", ts)
+      local d = os.date("%Y-%m-%d", ts) --[[@as string]]
       return d, d
     else
-      local m = os.date("%Y-%m", ts)
-      return m, os.date("%B %Y", ts)
+      local m = os.date("%Y-%m", ts) --[[@as string]]
+      return m, os.date("%B %Y", ts) --[[@as string]]
     end
   end
 
   if mode == "created" then
     local ts = file_entry and filter_utils.get_entry_timestamp(file_entry, "created", 12)
     if not ts then return "\xff(unknown)", "(unknown)" end
-    local d = os.date("%Y-%m-%d", ts)
+    local d = os.date("%Y-%m-%d", ts) --[[@as string]]
     return d, d
   end
 

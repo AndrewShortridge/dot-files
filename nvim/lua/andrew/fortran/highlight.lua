@@ -436,7 +436,8 @@ end
 --- Union of the visible ranges of every window showing `bufnr`, padded by
 --- MARGIN. Returns nil when the buffer is not on screen.
 ---@param bufnr integer
----@return integer|nil first 0-based, integer|nil last exclusive
+---@return integer|nil first 0-based; nil, together with last, when off screen
+---@return integer|nil last exclusive
 function M.viewport(bufnr)
   bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
   local first, last
@@ -456,7 +457,14 @@ end
 -- Per-buffer lifecycle
 -- ---------------------------------------------------------------------------
 
----@type table<integer, { timer: uv.uv_timer_t|nil, lo: integer|nil, hi: integer|nil, group: integer }>
+---@class fortran.highlight.BufState
+---@field timer? uv.uv_timer_t
+---@field lo? integer
+---@field hi? integer
+---@field viewport? boolean repaint whatever is visible, superseding lo/hi
+---@field group integer
+
+---@type table<integer, fortran.highlight.BufState>
 local state = {}
 
 --- Is the feature on? Off means: attached, but painting nothing.
@@ -514,7 +522,8 @@ local function schedule(bufnr, lo, hi)
     elseif vlo then
       -- Only the on-screen part of an edit needs paint now; the rest is
       -- painted by the viewport refresh if it ever scrolls into view.
-      a, b = math.max(a, vlo), math.min(b, vhi)
+      -- lo/hi are queued as a pair, and viewport() answers both or neither.
+      a, b = math.max(a, vlo), math.min(b --[[@as integer]], vhi --[[@as integer]])
     end
     if a and b and a < b then
       M.paint(bufnr, a, b)
@@ -567,7 +576,7 @@ function M.refresh(bufnr)
   if not lo then
     return
   end
-  M.paint(bufnr, lo, hi)
+  M.paint(bufnr, lo, hi --[[@as integer]])
 end
 
 --- Drop every mark this module made in `bufnr`.
@@ -623,6 +632,7 @@ end
 ---@param bufnr integer|nil
 function M.attach(bufnr)
   bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
+  ---@cast bufnr integer
   if state[bufnr] or not vim.api.nvim_buf_is_loaded(bufnr) then
     return
   end

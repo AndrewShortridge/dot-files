@@ -21,11 +21,15 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fzf_git_hunks_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq = _H.test, _H.assert_eq
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 package.loaded["fzf-lua.make_entry"] = {
+  -- fzf-lua's make_entry.file(x: string, opts: table): string?, as identity.
+  ---@param path string
+  ---@return string
   file = function(path)
     return path
   end,
@@ -34,8 +38,10 @@ package.loaded["fzf-lua.make_entry"] = {
 local hunks = require("andrew.utils.fzf_git_hunks")
 
 --- Rows for a whole diff, as one picker would produce them.
+---@param diff_text string
+---@return string[]
 local function rows_of(diff_text)
-  local picker_opts, rows = {}, {}
+  local picker_opts, rows = {}, {} ---@type table, string[]
   for _, diff_line in ipairs(vim.split(diff_text, "\n")) do
     rows[#rows + 1] = hunks.to_entry(diff_line, picker_opts)
   end

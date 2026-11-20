@@ -149,7 +149,7 @@ end
 --- Create a managed subscription handle with idempotency and vault-switch detection.
 --- Encapsulates the ensure/unsubscribe pattern used by embed_sync and connections.
 ---@param get_index fun(): table|nil  Function returning current vault index (or nil)
----@param callback function  The subscriber callback
+---@param callback function|{ fn: function, interests?: string[] }  The subscriber callback, or a table with interests for tiered invalidation
 ---@param opts? { weak_state?: table }  If weak_state is provided, wraps callback with weak_callback so it becomes a no-op when the state table is GC'd (defense-in-depth)
 ---@return table handle  { ensure(): boolean, unsubscribe(): nil, is_active(): boolean }
 function M.subscription_handle(get_index, callback, opts)
@@ -161,12 +161,12 @@ function M.subscription_handle(get_index, callback, opts)
   if opts and opts.weak_state then
     if type(callback) == "table" and callback.fn then
       -- Wrap the inner fn with weak_callback, preserve interests
-      local weak_fn = M.weak_callback(opts.weak_state, function(_state, ...)
+      local weak_fn = M.weak_callback(opts.weak_state, function(_, ...)
         callback.fn(...)
       end)
       actual_sub = { fn = weak_fn, interests = callback.interests }
     else
-      actual_sub = M.weak_callback(opts.weak_state, function(_state, ...)
+      actual_sub = M.weak_callback(opts.weak_state, function(_, ...)
         callback(...)
       end)
     end

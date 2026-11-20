@@ -54,6 +54,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_lsp_server_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil, assert_deep_eq = _H.assert_nil, _H.assert_deep_eq
@@ -64,7 +65,24 @@ local lsp = require("andrew.fortran.lsp")
 
 -- Helpers -------------------------------------------------------------------
 
+--- What `call` hands back: the two arguments the dispatcher's callback got.
+---@class FortranLspServerSpecReply
+---@field err lsp.ResponseError|nil
+---@field result any
+
+--- The RPC object `lsp.server` builds for vim.lsp.start: the public half of
+--- vim.lsp.rpc.Client (whose private fields it does not have) plus `publish`.
+---@class FortranLspServerSpecRpc
+---@field request fun(method: string, params: table?, callback: fun(err?: lsp.ResponseError, result: any), notify_reply_callback?: fun(message_id: integer)): boolean, integer
+---@field notify fun(method: string, params: any): boolean
+---@field is_closing fun(): boolean
+---@field terminate fun()
+---@field publish fun(uri: string, diagnostics: table[])
+
 --- A loaded, named Fortran buffer -- attach() needs a path to find a root.
+---@param name string
+---@param lines string[]|nil
+---@return integer
 local function fortran_buf(name, lines)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, name)
@@ -74,14 +92,23 @@ local function fortran_buf(name, lines)
 end
 
 --- Exactly what andrew.lsp_keymaps.has() evaluates for one method.
+---@param buf integer
+---@param method vim.lsp.protocol.Method.ClientToServer
+---@return boolean
 local function has(buf, method)
   return #vim.lsp.get_clients({ bufnr = buf, method = method }) > 0
 end
 
 --- Drive one request through the dispatcher synchronously.
+---@param method string
+---@param params table
+---@return FortranLspServerSpecReply|nil
 local function call(method, params)
-  local got, done = nil, false
-  lsp.dispatch(method, params, function(err, result)
+  local got, done = nil, false ---@type FortranLspServerSpecReply|nil, boolean
+  lsp.dispatch(method, params,
+  ---@param err lsp.ResponseError|nil
+  ---@param result any
+  function(err, result)
     got, done = { err = err, result = result }, true
   end)
   return done and got or nil
@@ -137,12 +164,18 @@ end)
 test("from_pos refuses a position it cannot use", function()
   -- vim.NIL is what a JSON `null` becomes on the way in; it is a userdata and
   -- arithmetic on it raises rather than erroring politely.
+  -- Invalid on purpose: a null character must answer no position, not raise.
+  ---@diagnostic disable-next-line: assign-type-mismatch
   local ok, lnum = pcall(lsp.from_pos, { line = 0, character = vim.NIL })
   assert_true(ok, "a null character does not raise:")
   assert_nil(lnum, "and answers no position:")
+  -- Invalid on purpose: a null line must answer no position.
+  ---@diagnostic disable-next-line: assign-type-mismatch
   assert_nil(lsp.from_pos({ line = vim.NIL, character = 0 }), "a null line likewise:")
   assert_nil(lsp.from_pos({ line = 0 }), "a missing character likewise:")
   assert_nil(lsp.from_pos(nil), "no position at all likewise:")
+  -- Invalid on purpose: a stringly-typed line must answer no position.
+  ---@diagnostic disable-next-line: assign-type-mismatch
   assert_nil(lsp.from_pos({ line = "3", character = 1 }), "a stringly-typed line likewise:")
 end)
 
@@ -160,6 +193,7 @@ end)
 test("initialize answers with the capability set", function()
   local got = call("initialize", {})
   assert_true(got ~= nil, "initialize answered synchronously:")
+  ---@cast got -nil
   assert_nil(got.err, "no error:")
   assert_eq(got.result.capabilities.positionEncoding, "utf-8", "capabilities are carried:")
 end)
@@ -167,6 +201,7 @@ end)
 test("unknown methods answer nil rather than an error", function()
   local got = call("textDocument/somethingNobodyImplements", {})
   assert_true(got ~= nil, "the callback still ran:")
+  ---@cast got -nil
   assert_nil(got.err, "no RPC error is raised:")
   assert_nil(got.result, "the result is empty:")
 end)
@@ -181,13 +216,15 @@ test("a raising handler degrades to no result", function()
 
   assert_true(ok, "the error does not escape into Neovim's dispatch loop:")
   assert_true(got ~= nil, "the callback still ran:")
+  ---@cast got -nil
   assert_nil(got.result, "the answer is empty:")
 end)
 
 -- The RPC object ------------------------------------------------------------
 
 test("request reports success and an increasing id", function()
-  local srv = lsp.server({})
+  -- lsp.server is annotated `table`; it builds a FortranLspServerSpecRpc.
+  local srv = lsp.server({}) --[[@as FortranLspServerSpecRpc]]
   local ok1, id1 = srv.request("initialize", {}, function() end)
   local ok2, id2 = srv.request("initialize", {}, function() end)
   assert_true(ok1 and ok2, "both requests are accepted:")
@@ -195,14 +232,14 @@ test("request reports success and an increasing id", function()
 end)
 
 test("notify exit closes the server", function()
-  local srv = lsp.server({})
+  local srv = lsp.server({}) --[[@as FortranLspServerSpecRpc]]
   assert_eq(srv.is_closing(), false, "starts open:")
   srv.notify("exit", {})
   assert_eq(srv.is_closing(), true, "exit closes it:")
 end)
 
 test("terminate closes the server", function()
-  local srv = lsp.server({})
+  local srv = lsp.server({}) --[[@as FortranLspServerSpecRpc]]
   srv.terminate()
   assert_eq(srv.is_closing(), true, "terminate closes it:")
 end)
@@ -223,15 +260,19 @@ test("gates flip for a Fortran buffer", function()
   })
   local id = lsp.attach(buf)
   assert_true(id ~= nil, "a client was started:")
+  ---@cast id -nil
   assert_true(
     vim.wait(5000, function()
       local c = vim.lsp.get_client_by_id(id)
+      -- vim.wait types its callback `fun(): boolean`, but polls for any truthy
+      -- value; Client.initialized is `true?`.
+      ---@diagnostic disable-next-line: return-type-mismatch
       return c ~= nil and c.initialized
     end),
     "the client initialized:"
   )
 
-  local client = vim.lsp.get_client_by_id(id)
+  local client = assert(vim.lsp.get_client_by_id(id))
   assert_eq(client.offset_encoding, "utf-8", "utf-8 was negotiated, so byte columns are safe:")
 
   -- The six keymaps in andrew.lsp_keymaps hang off exactly these three.
@@ -243,9 +284,14 @@ end)
 test("fortls-owned gates stay closed", function()
   local buf = fortran_buf("/tmp/fortran-extras-spec/code/u.f90")
   local id = lsp.attach(buf)
+  -- A nil id would leave the client unfound and fail the wait below.
+  ---@cast id -nil
   assert_true(
     vim.wait(5000, function()
       local c = vim.lsp.get_client_by_id(id)
+      -- vim.wait types its callback `fun(): boolean`, but polls for any truthy
+      -- value; Client.initialized is `true?`.
+      ---@diagnostic disable-next-line: return-type-mismatch
       return c ~= nil and c.initialized
     end),
     "the client initialized:"

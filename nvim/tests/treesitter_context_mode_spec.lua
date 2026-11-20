@@ -27,15 +27,30 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/treesitter_context_mode_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
-local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/treesitter-context.lua")
+-- Lets lazydev load treesitter-context's type library (TSContext.*, used below).
+---@module "treesitter-context"
+
+-- What lua/andrew/plugins/treesitter-context.lua returns: a lazy.nvim spec
+-- whose opts are treesitter-context's user config, on_attach included.
+---@class TreesitterContextModeSpecOpts: TSContext.UserConfig
+---@field on_attach fun(buf: integer): boolean
+
+---@class TreesitterContextModeSpecPlugin: LazyPluginSpec
+---@field opts TreesitterContextModeSpecOpts
+
+local plug = dofile(vim.fn.stdpath("config") .. "/lua/andrew/plugins/treesitter-context.lua") ---@type TreesitterContextModeSpecPlugin
 
 local vault = vim.fn.tempname()
 vim.fn.mkdir(vault, "p")
-local bufs = {}
+local bufs = {} ---@type integer[]
 
+---@param name string
+---@param ft string
+---@return integer
 local function make_buf(name, ft)
   local buf = vim.api.nvim_create_buf(false, false)
   vim.api.nvim_buf_set_name(buf, vault .. "/" .. name)

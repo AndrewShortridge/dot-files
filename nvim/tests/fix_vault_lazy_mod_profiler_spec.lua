@@ -19,6 +19,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fix_vault_lazy_mod_profiler_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -34,15 +35,17 @@ vim.g.vault_path = tmp_vault
 -- stub only requires it on first use, so the order does not actually matter --
 -- but this keeps the spec honest about never having loaded the real module).
 local BOOM = "BOOM-simulated-load-failure"
+---@type table?
 package.loaded["andrew.vault.stats"] = nil
 package.preload["andrew.vault.stats"] = function() error(BOOM, 0) end
 
 require("andrew.vault") -- Tier 1
 
 test("a lazy_mod stub never turns a failed require into a nil-index error", function()
-  local errs = {}
+  local errs = {} ---@type string[]
   for i = 1, 3 do
-    local ok, err = pcall(vim.cmd, "VaultStats")
+    -- vim.cmd is annotated as a callable table, which pcall's `fun` parameter rejects.
+    local ok, err = pcall(vim.cmd --[[@as fun(command: string)]], "VaultStats")
     assert_true(not ok, "call " .. i .. " should have failed")
     errs[i] = tostring(err)
   end
@@ -66,13 +69,21 @@ end)
 
 test("a lazy_mod stub still memoizes a module that loads", function()
   local loads = 0
+  ---@type table?
   package.loaded["andrew.vault.pins"] = nil
+  -- Fake andrew.vault.pins: only the two entry points :VaultPins reaches.
+  ---@class LazyModProfilerFakePins
+  ---@field setup fun()
+  ---@field list fun()
+
+  ---@return LazyModProfilerFakePins
   package.preload["andrew.vault.pins"] = function()
     loads = loads + 1
     return { setup = function() end, list = function() end }
   end
   -- :VaultPins goes through the same stub; three calls, one require.
-  for _ = 1, 3 do pcall(vim.cmd, "VaultPins") end
+  -- vim.cmd is annotated as a callable table, which pcall's `fun` parameter rejects.
+  for _ = 1, 3 do pcall(vim.cmd --[[@as fun(command: string)]], "VaultPins") end
   assert_eq(loads, 1, "the module must be required exactly once")
 end)
 
@@ -85,12 +96,15 @@ test("memory_profiler exposes whether it is actually collecting", function()
 end)
 
 test(":VaultMemorySnapshot / :VaultMemoryReset say 'disabled' instead of 'saved'", function()
-  local msgs = {}
+  local msgs = {} ---@type [string, integer?][]
   local orig = vim.notify
+  ---@param m string
+  ---@param lvl? integer
   vim.notify = function(m, lvl) msgs[#msgs + 1] = { tostring(m), lvl } end
 
-  local ok1 = pcall(vim.cmd, "VaultMemorySnapshot")
-  local ok2 = pcall(vim.cmd, "VaultMemoryReset")
+  -- vim.cmd is annotated as a callable table, which pcall's `fun` parameter rejects.
+  local ok1 = pcall(vim.cmd --[[@as fun(command: string)]], "VaultMemorySnapshot")
+  local ok2 = pcall(vim.cmd --[[@as fun(command: string)]], "VaultMemoryReset")
 
   vim.notify = orig
   assert_true(ok1 and ok2, "neither command may throw")

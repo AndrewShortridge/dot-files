@@ -166,7 +166,7 @@ end
 ---@param bufnr number
 ---@param line_nrs number[]|nil lines to resolve (nil = all cached)
 ---@param parse_cache table Line parse cache module (Layer 1)
----@param index table vault_index instance
+---@param index table|nil vault_index instance
 function M.resolve(bufnr, line_nrs, parse_cache, index)
   local buf = _cache[bufnr]
   if not buf then

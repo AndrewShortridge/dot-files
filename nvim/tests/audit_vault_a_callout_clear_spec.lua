@@ -11,6 +11,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/audit_vault_a_callout_clear_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 

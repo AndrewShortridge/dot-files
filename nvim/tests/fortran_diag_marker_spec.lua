@@ -37,6 +37,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_diag_marker_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_true, assert_false = _H.test, _H.assert_true, _H.assert_false
 
@@ -82,6 +83,8 @@ test("junk input is kept", function()
   -- A parser can hand over nil when a pattern half-matches; erroring here
   -- would abort the entire lint run rather than lose one diagnostic.
   assert_false(is_marker(nil), "nil:")
+  -- Invalid on purpose: is_marker() must keep (return false for) a non-string.
+  ---@diagnostic disable-next-line: param-type-mismatch
   assert_false(is_marker(42), "number:")
   assert_false(is_marker(""), "empty string:")
 end)

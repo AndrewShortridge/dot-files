@@ -34,6 +34,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/markdown_headings_guard_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_match = _H.test, _H.assert_eq, _H.assert_true, _H.assert_match
 
@@ -44,6 +45,7 @@ vim.opt.runtimepath:prepend(config_dir)
 local AFTER = config_dir .. "/after/ftplugin/markdown.lua"
 
 --- Fresh markdown buffer with the guard applied; returns the captured maps.
+---@return integer buf, table<string, vim.api.keyset.get_keymap> maps  keyed by lhs
 local function setup_markdown_buffer()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_set_current_buf(buf)
@@ -59,9 +61,11 @@ local function setup_markdown_buffer()
   vim.bo[buf].filetype = "markdown"
   dofile(AFTER)
 
-  local maps = {}
+  local maps = {} ---@type table<string, vim.api.keyset.get_keymap>
   for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
-    maps[m.lhs] = m
+    -- Cast: every mapping nvim_buf_get_keymap returns has an lhs; the shared
+    -- keyset (vim.api.keyset.get_keymap) marks all its fields optional.
+    maps[m.lhs --[[@as string]]] = m
   end
   return buf, maps
 end
@@ -134,9 +138,10 @@ test("teardown is the runtime ftplugin's, and we add no second copy", function()
   vim.api.nvim_set_current_buf(buf2)
   vim.bo[buf2].filetype = "markdown"
   local undo = vim.b[buf2].undo_ftplugin or ""
-  local maps = {}
+  local maps = {} ---@type table<string, vim.api.keyset.get_keymap>
   for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf2, "n")) do
-    maps[m.lhs] = m
+    -- Cast: as in setup_markdown_buffer, every returned mapping has an lhs.
+    maps[m.lhs --[[@as string]]] = m
   end
   vim.o.runtimepath = saved_rtp
   vim.api.nvim_buf_delete(buf2, { force = true })

@@ -37,6 +37,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/lsp_keymaps_gated_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true, assert_false = _H.test, _H.assert_eq, _H.assert_true, _H.assert_false
 
@@ -46,20 +47,34 @@ local K = require("andrew.lsp_keymaps")
 -- ---------------------------------------------------------------------------
 -- Stub harness: pretend a client advertising exactly `methods` is attached.
 -- ---------------------------------------------------------------------------
+---@type fun(filter?: vim.lsp.get_clients.Filter): vim.lsp.Client[]
 local real_get_clients = vim.lsp.get_clients
 
+-- The part of vim.lsp.Client the stubbed get_clients hands back: lsp_keymaps
+-- only counts the clients get_clients returns for a method filter.
+---@class LspKeymapsGatedFakeClient
+---@field name string
+---@field id integer
+---@field server_capabilities table
+
+---@param methods string[]
+---@param fn fun()
 local function with_methods(methods, fn)
-  local set = {}
+  local set = {} ---@type table<string, boolean>
   for _, m in ipairs(methods) do
     set[m] = true
   end
-  vim.lsp.get_clients = function(filter)
+  ---@param filter? vim.lsp.get_clients.Filter
+  ---@return LspKeymapsGatedFakeClient[]
+  local function fake_get_clients(filter)
     filter = filter or {}
     if filter.method and not set[filter.method] then
       return {}
     end
     return { { name = "stub", id = 1, server_capabilities = {} } }
   end
+  -- Cast: the fake clients carry only the fields lsp_keymaps reads.
+  vim.lsp.get_clients = fake_get_clients --[[@as fun(filter?: vim.lsp.get_clients.Filter): vim.lsp.Client[] ]]
   local ok, err = pcall(fn)
   vim.lsp.get_clients = real_get_clients
   if not ok then
@@ -68,13 +83,19 @@ local function with_methods(methods, fn)
 end
 
 --- Bind into a throwaway buffer and return a set of "lhs|mode".
+---@param methods string[]
+---@param kinds? string[]  code-action kinds the stubbed code_action_kinds reports
+---@return table<string, boolean>
 local function bound_keys(methods, kinds)
   local buf = vim.api.nvim_create_buf(false, true)
+  ---@type fun(buf: integer): string[]
   local real_kinds = K.code_action_kinds
   if kinds then
-    K.code_action_kinds = function()
+    ---@return string[]
+    local function fake_code_action_kinds()
       return kinds
     end
+    K.code_action_kinds = fake_code_action_kinds
   end
 
   with_methods(methods, function()
@@ -82,7 +103,7 @@ local function bound_keys(methods, kinds)
   end)
   K.code_action_kinds = real_kinds
 
-  local seen = {}
+  local seen = {} ---@type table<string, boolean>
   for _, mode in ipairs({ "n", "x", "v" }) do
     for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, mode)) do
       seen[m.lhs .. "|" .. mode] = true
@@ -94,6 +115,8 @@ end
 
 -- Leader is unset under -u NONE, so <leader> resolves to "\" in a stored lhs.
 local LEADER = "\\"
+---@param suffix string
+---@return string
 local function lk(suffix)
   return LEADER .. suffix
 end
@@ -198,7 +221,7 @@ test("every `has` method exists in nvim's capability map", function()
 
   for _, key in ipairs(K._keys) do
     if key.has then
-      local methods = type(key.has) == "string" and { key.has } or key.has
+      local methods = type(key.has) == "string" and { key.has } or key.has --[[@as string[] ]]
       for _, m in ipairs(methods) do
         local qualified = m:find("/") and m or ("textDocument/" .. m)
         assert_true(
@@ -211,17 +234,23 @@ test("every `has` method exists in nvim's capability map", function()
 end)
 
 test("<leader>cC uses codelens.enable, not the deprecated refresh", function()
-  local rhs
+  local rhs ---@type function?
   for _, key in ipairs(K._keys) do
     if key[1] == "<leader>cC" then
       rhs = key[2]
     end
   end
   assert_true(type(rhs) == "function", "<leader>cC must exist with a function rhs")
+  ---@cast rhs -nil
 
   local real = vim.lsp.codelens
-  local called = {}
+  ---@class LspKeymapsGatedCodelensCalls
+  ---@field enable? [boolean?, vim.lsp.capability.enable.Filter?]  arguments of the enable() call
+  ---@field refresh? true
+  local called = {} ---@type LspKeymapsGatedCodelensCalls
   vim.lsp.codelens = {
+    ---@param on? boolean
+    ---@param opts? vim.lsp.capability.enable.Filter
     enable = function(on, opts)
       called.enable = { on, opts }
     end,
@@ -240,16 +269,20 @@ test("<leader>cC uses codelens.enable, not the deprecated refresh", function()
 end)
 
 test("action metatable requests one kind and applies it without a prompt", function()
+  ---@type fun(opts?: vim.lsp.buf.code_action.Opts)
   local real = vim.lsp.buf.code_action
-  local got
-  vim.lsp.buf.code_action = function(o)
+  local got ---@type vim.lsp.buf.code_action.Opts?
+  ---@param o? vim.lsp.buf.code_action.Opts
+  local function fake_code_action(o)
     got = o
   end
+  vim.lsp.buf.code_action = fake_code_action
   local ok, err = pcall(K.action["source.organizeImports"])
   vim.lsp.buf.code_action = real
 
   assert_true(ok, "action must not error: " .. tostring(err))
   assert_true(got ~= nil, "action must call vim.lsp.buf.code_action")
+  ---@cast got -nil
   assert_eq(got.apply, true, "apply must be true (no prompt for a single action)")
   assert_eq(got.context and got.context.only and got.context.only[1], "source.organizeImports", "only must carry the kind")
   assert_true(

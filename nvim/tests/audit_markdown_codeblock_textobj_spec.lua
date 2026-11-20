@@ -13,6 +13,7 @@
 -- ]b/[b motions (collect_code_block_ranges), where an opener is unambiguous.
 -- Run with: nvim --headless -u NONE -l tests/audit_markdown_codeblock_textobj_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_deep_eq = _H.test, _H.assert_eq, _H.assert_deep_eq
 
@@ -21,6 +22,11 @@ local mto = require("andrew.utils.md-textobjects")
 
 --- Put `lines` in a real window, move to (row, col) 1/0-indexed, run the text
 --- object, then yank the resulting visual selection and return it.
+---@param lines string[]
+---@param row integer 1-based
+---@param col integer 0-based
+---@param fn fun() the text object to run
+---@return string
 local function select_text(lines, row, col, fn)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)

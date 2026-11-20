@@ -28,6 +28,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/completion_wikilink_tail_perf_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -43,6 +44,18 @@ print("\n=== Wikilink Completion Tail-Capture Perf Tests ===\n")
 -- Temp vault: one note with a heading and a block id, plus enough sibling notes
 -- that the note-name candidate list is non-trivial.
 -- ---------------------------------------------------------------------------
+---@class CompletionWikilinkTailItemData  the `data` the vault source attaches (heading/block items set completion_kind)
+---@field completion_kind? "heading"|"block"
+
+---@class CompletionWikilinkTailItem  the part of a vault completion item this spec reads
+---@field data? CompletionWikilinkTailItemData
+
+---@class CompletionWikilinkTailResponse  what the vault source hands its get_completions callback
+---@field items CompletionWikilinkTailItem[]
+
+---@param dir string
+---@param rel string
+---@param lines string[]
 local function write_file(dir, rel, lines)
   local abs = dir .. "/" .. rel
   local parent = abs:match("^(.*)/[^/]+$")
@@ -78,10 +91,14 @@ vim.cmd("edit " .. vim.fn.fnameescape(dir .. "/note.md"))
 local bufnr = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, note_lines)
 
+---@param line string
+---@return CompletionWikilinkTailResponse?
 local function get_items(line)
-  local result = nil
+  local result = nil ---@type CompletionWikilinkTailResponse?
   local ctx = { line = line, cursor = { 1, #line } }
-  completion:get_completions(ctx, function(r) result = r end)
+  completion:get_completions(ctx,
+    ---@param r CompletionWikilinkTailResponse
+    function(r) result = r end)
   vim.wait(2000, function() return result ~= nil end, 10)
   return result
 end
@@ -99,14 +116,19 @@ test("note-name path runs a bounded number of string.match calls", function()
 
   local orig_match = string.match
   local count = 0
-  local result = nil
+  local result = nil ---@type CompletionWikilinkTailResponse?
+  ---@param ... any
+  ---@return any ...
+  local function spy_match(...)
+    count = count + 1
+    return orig_match(...)
+  end
   local ok, err = pcall(function()
-    string.match = function(...)
-      count = count + 1
-      return orig_match(...)
-    end
+    string.match = spy_match
     local ctx = { line = "[[foo", cursor = { 1, #("[[foo") } }
-    completion:get_completions(ctx, function(r) result = r end)
+    completion:get_completions(ctx,
+      ---@param r CompletionWikilinkTailResponse
+      function(r) result = r end)
   end)
   string.match = orig_match -- finally: always restore
 

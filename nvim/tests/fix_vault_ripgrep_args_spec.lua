@@ -16,6 +16,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fix_vault_ripgrep_args_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
@@ -44,10 +45,15 @@ local sf = require("andrew.vault.search_filter")
 local sq = require("andrew.vault.search_query")
 
 --- Parse a query string and hand back just its text half (what rg is given).
+---@param q string
+---@return table|nil text_ast
 local function text_ast(q)
   return sf.split_ast(sq.parse_query(q)).text_ast
 end
 
+---@param q string
+---@param files? string[]  absolute paths; defaults to the two vault notes
+---@return string[]
 local function run(q, files)
   local lines = sf.ripgrep_in_files(text_ast(q), files or { hay, other }, tmp_vault)
   return lines or {}

@@ -103,10 +103,10 @@ end
 --- Render the tag tree panel content.
 ---@param buf number
 ---@param width number
----@param source_buf number (unused for tags — vault-global view)
+---@param _ number source buffer (unused for tags — vault-global view)
 ---@param start_line number
 ---@param ns number
-function M.render(buf, width, source_buf, start_line, ns)
+function M.render(buf, width, _, start_line, ns)
   _line_to_tag = {}
 
   local idx = vault_index.current()
@@ -179,7 +179,7 @@ end
 -- Keymaps
 -- ---------------------------------------------------------------------------
 
-function M.setup_keymaps(buf, _source_win)
+function M.setup_keymaps(buf)
   local opts = { buffer = buf, nowait = true, silent = true }
 
   -- Enter: search notes with this tag

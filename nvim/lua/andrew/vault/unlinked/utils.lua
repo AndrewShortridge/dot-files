@@ -1,5 +1,8 @@
 local config = require("andrew.vault.config")
-local engine = require("andrew.vault.engine")
+-- Not used here any more, but kept loaded: engine.lua runs setup at file scope
+-- (vault path, file_io and template layers), so dropping the require could
+-- change load order.
+require("andrew.vault.engine")
 local file_cache = require("andrew.vault.file_cache")
 
 local M = {}

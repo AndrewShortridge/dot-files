@@ -28,10 +28,15 @@ local M = {}
 -- Memoized derivations, keyed on the identity of config.search.exclude_dirs.
 -- Reassigning that table (as specs do) invalidates automatically; there is no
 -- reset() to forget to call.
+-- All nil until the first rebuild(), which every reader below calls first.
 local _src = nil
+---@type table<string, true> lowercased directory name -> true
 local _set = nil
+---@type string[]
 local _rg_args = nil
+---@type string[]
 local _rg_opts = nil
+---@type string[]
 local _fzf_patterns = nil
 
 --- Turn a directory name into a case-insensitive Lua pattern fragment.

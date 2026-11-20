@@ -337,7 +337,7 @@ function M.list()
   local handle = vim.uv.fs_scandir(dir)
   if handle then
     while true do
-      local name, _ftype = vim.uv.fs_scandir_next(handle)
+      local name = vim.uv.fs_scandir_next(handle)
       if not name then break end
       entries[#entries + 1] = name
     end

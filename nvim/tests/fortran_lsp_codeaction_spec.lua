@@ -60,6 +60,7 @@
 --
 -- Run with: nvim --headless -u NONE -l tests/fortran_lsp_codeaction_spec.lua
 
+---@type SpecHelper
 local _H = dofile((debug.getinfo(1, "S").source:gsub("^@", "")):match("^(.*)[/\\]") .. "/spec_helper.lua")
 local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 local assert_nil = _H.assert_nil
@@ -68,6 +69,16 @@ package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 
 local CA = require("andrew.fortran.lsp_codeaction")
 local D = require("andrew.fortran.lsp_diagnostics")
+local nvim_compat = require("andrew.utils.nvim_compat")
+
+--- Every action this server offers carries its edit inline, as one TextEdit
+--- list keyed by the document's URI (lsp_codeaction's line_insert / ierror_edit).
+---@class FortranLspCodeactionEdit: lsp.WorkspaceEdit
+---@field changes table<string, lsp.TextEdit[]>
+
+--- What lsp_codeaction.actions answers with: an inline edit, never a command.
+---@class FortranLspCodeactionAction: lsp.CodeAction
+---@field edit FortranLspCodeactionEdit
 
 local root = vim.fn.tempname()
 vim.fn.mkdir(root .. "/code", "p")
@@ -76,6 +87,9 @@ vim.fn.mkdir(root .. "/.git", "p")
 local seq = 0
 
 --- A named, loaded Fortran buffer in the temp project.
+---@param lines string[]
+---@param ft? string
+---@return integer
 local function buf_for(lines, ft)
   seq = seq + 1
   local ext = ft == "fortran_fixed" and ".f" or ".f90"
@@ -89,15 +103,23 @@ end
 --- Drive actions() to completion. `diags` (optional) becomes the client
 --- context; passing nil is the case where the client forwards nothing and the
 --- provider has to re-derive them.
+---@param lines string[]
+---@param lnum integer
+---@param diags? lsp.Diagnostic[]
+---@param ft? string
+---@return FortranLspCodeactionAction[] actions
+---@return string uri
 local function actions_for(lines, lnum, diags, ft)
   local buf = buf_for(lines, ft)
-  local uri = vim.uri_from_bufnr(buf)
-  local pos = { line = lnum - 1, character = 0 }
-  local got = nil
+  local uri = nvim_compat.uri_from_buffer(buf)
+  local pos = { line = lnum - 1, character = 0 } ---@type lsp.Position
+  local got = nil ---@type FortranLspCodeactionAction[]|nil
   CA.actions({
     textDocument = { uri = uri },
     range = { start = pos, ["end"] = pos },
     context = { diagnostics = diags or {} },
+    ---@param _ table|nil
+    ---@param res table[]|nil
   }, function(_, res)
     got = res or {}
   end)
@@ -108,6 +130,9 @@ local function actions_for(lines, lnum, diags, ft)
   return got or {}, uri
 end
 
+---@param list FortranLspCodeactionAction[]
+---@param title string
+---@return FortranLspCodeactionAction|nil
 local function by_title(list, title)
   for _, a in ipairs(list) do
     if a.title == title then
@@ -118,6 +143,9 @@ local function by_title(list, title)
 end
 
 --- The single TextEdit of an action.
+---@param action FortranLspCodeactionAction
+---@param uri string
+---@return lsp.TextEdit
 local function edit_of(action, uri)
   local edits = action.edit.changes[uri]
   assert_true(#edits == 1, "exactly one edit: ")
@@ -142,9 +170,11 @@ local OMP = {
 test("use omp_lib lands after the use block and before implicit none", function()
   local list, uri = actions_for(OMP, 5)
   local a = by_title(list, CA.TITLE_OMP_LIB)
+  ---@param x FortranLspCodeactionAction
   assert_true(a ~= nil, "the action is offered: " .. vim.inspect(vim.tbl_map(function(x)
     return x.title
   end, list)))
+  ---@cast a -nil
   assert_eq(a.kind, "quickfix", "kind: ")
   assert_eq(a.isPreferred, true, "preferred: ")
   local e = edit_of(a, uri)
@@ -184,6 +214,7 @@ test("fixed form puts the sentinel in column 1 and the statement in column 7", f
   local list, uri = actions_for(lines, 3, nil, "fortran_fixed")
   local a = by_title(list, CA.TITLE_OMP_LIB)
   assert_true(a ~= nil, "offered in fixed form too: ")
+  ---@cast a -nil
   local e = edit_of(a, uri)
   assert_eq(e.newText, "!$    use omp_lib\n", "sentinel in columns 1-2, statement from column 7: ")
   assert_eq(e.range.start.line, 1, "straight after the PROGRAM line: ")
@@ -206,6 +237,7 @@ test("include mpif.h lands straight after the header", function()
   local list, uri = actions_for(MPI, 4)
   local a = by_title(list, CA.TITLE_MPIF_H)
   assert_true(a ~= nil, "the action is offered: ")
+  ---@cast a -nil
   local e = edit_of(a, uri)
   assert_eq(e.range.start.line, 1, "line 2 -- before `implicit none`, no `use` lines to clear: ")
   assert_eq(e.newText, "  include 'mpif.h'\n", "the statement: ")
@@ -243,8 +275,9 @@ test("the ierror fix inserts before the closing paren", function()
   local list, uri = actions_for(SHORT, 5, diags)
   local a = by_title(list, CA.TITLE_IERROR)
   assert_true(a ~= nil, "the action is offered: ")
+  ---@cast a -nil
   assert_eq(a.kind, "quickfix", "kind: ")
-  assert_eq(#a.diagnostics, 1, "it is attached to its diagnostic: ")
+  assert_eq(#assert(a.diagnostics), 1, "it is attached to its diagnostic: ")
   assert_eq(a.diagnostics[1].code, "mpiArgumentCount", "the right one: ")
   local e = edit_of(a, uri)
   assert_eq(e.range.start.line, 4, "on the call line: ")
@@ -260,7 +293,7 @@ test("the status name is copied from the buffer's own correct calls", function()
   lines[3] = "  integer :: rank, n, IERR"
   lines[4] = "  call MPI_Comm_size(MPI_COMM_WORLD, n, IERR)"
   local list, uri = actions_for(lines, 5, D.analyse(lines, { openmp = true }))
-  local e = edit_of(by_title(list, CA.TITLE_IERROR), uri)
+  local e = edit_of(assert(by_title(list, CA.TITLE_IERROR)), uri)
   assert_eq(e.newText, ", IERR", "the buffer's own casing, read from the RAW line: ")
 end)
 
@@ -273,7 +306,7 @@ test("a buffer with no correct call falls back to ierr", function()
     "end program p",
   }
   local list, uri = actions_for(lines, 4, D.analyse(lines, { openmp = true }))
-  local e = edit_of(by_title(list, CA.TITLE_IERROR), uri)
+  local e = edit_of(assert(by_title(list, CA.TITLE_IERROR)), uri)
   assert_eq(e.newText, ", ierr", "the registry's own spelling: ")
 end)
 
@@ -289,6 +322,7 @@ test("a continued call is closed on its last line", function()
   local list, uri = actions_for(lines, 4, D.analyse(lines, { openmp = true }))
   local a = by_title(list, CA.TITLE_IERROR)
   assert_true(a ~= nil, "offered for the continued call: ")
+  ---@cast a -nil
   local e = edit_of(a, uri)
   assert_eq(e.range.start.line, 4, "the CONTINUATION line, not the diagnostic's line: ")
   assert_eq(e.range.start.character, 25, "before the `)` that actually closes the list: ")
@@ -302,6 +336,7 @@ test("the fix is offered with no client context at all", function()
   local list, uri = actions_for(SHORT, 5, nil)
   local a = by_title(list, CA.TITLE_IERROR)
   assert_true(a ~= nil, "re-derived from the buffer: ")
+  ---@cast a -nil
   assert_eq(edit_of(a, uri).newText, ", ierr", "the same edit: ")
 end)
 
@@ -312,17 +347,19 @@ test("one underline is claimed once, not twice", function()
   -- Two entries for one underline makes nvim count the action as fixing two
   -- problems.
   local diags = D.analyse(OMP, { openmp = false })
-  local omp = nil
+  local omp = nil ---@type lsp.Diagnostic|nil
   for _, d in ipairs(diags) do
     if d.code == "ompDirectiveWithoutFlag" then
       omp = d
     end
   end
   assert_true(omp ~= nil, "the fixture has an OpenMP warning: ")
+  ---@cast omp -nil
   local list = actions_for(OMP, 5, { omp })
   local a = by_title(list, CA.TITLE_OMP_LIB)
   assert_true(a ~= nil, "the action is offered: ")
-  assert_eq(#a.diagnostics, 1, "one diagnostic for one underline: ")
+  ---@cast a -nil
+  assert_eq(#assert(a.diagnostics), 1, "one diagnostic for one underline: ")
   assert_eq(a.diagnostics[1].code, "ompDirectiveWithoutFlag", "the one the client sent: ")
 end)
 
@@ -372,12 +409,14 @@ end)
 test("applying the fix produces a compilable call", function()
   -- The end of the loop: take the edit and apply it the way the client does.
   local buf = buf_for(SHORT, "fortran_free")
-  local uri = vim.uri_from_bufnr(buf)
-  local got = nil
+  local uri = nvim_compat.uri_from_buffer(buf)
+  local got = nil ---@type FortranLspCodeactionAction[]|nil
   CA.actions({
     textDocument = { uri = uri },
     range = { start = { line = 4, character = 0 }, ["end"] = { line = 4, character = 0 } },
     context = { diagnostics = D.analyse(SHORT, { openmp = true }) },
+    ---@param _ table|nil
+    ---@param res table[]|nil
   }, function(_, res)
     got = res or {}
   end)
@@ -386,6 +425,7 @@ test("applying the fix produces a compilable call", function()
   end, 20)
   local a = by_title(got or {}, CA.TITLE_IERROR)
   assert_true(a ~= nil, "the action is there: ")
+  ---@cast a -nil
   vim.lsp.util.apply_workspace_edit(a.edit, "utf-8")
   local line = vim.api.nvim_buf_get_lines(buf, 4, 5, false)[1]
   assert_eq(line, "  call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)", "the repaired call: ")

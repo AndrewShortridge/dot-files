@@ -7,7 +7,7 @@ local M = {}
 
 --- @class EventCoalescer
 --- @field _pending table<number, table> Pending events by bufnr
---- @field _timer uv_timer_t|nil Coalescing timer
+--- @field _timer uv.uv_timer_t|nil Coalescing timer
 --- @field _delay_ms number Base coalescing window (ms)
 --- @field _handler function Batch handler callback
 --- @field _max_batch number Max events before forced flush
@@ -79,7 +79,7 @@ function M.queue(coalescer, bufnr, event_data)
   if coalescer._timer then
     coalescer._timer:stop()
   else
-    coalescer._timer = vim.uv.new_timer()
+    coalescer._timer = assert(vim.uv.new_timer())
   end
 
   coalescer._timer:start(delay, 0, vim.schedule_wrap(function()

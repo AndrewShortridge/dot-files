@@ -169,7 +169,8 @@ function M.build_predicate(state)
 
   -- Date filter (entry-based)
   if state.date_field and (state.date_from or state.date_to) then
-    local field = state.date_field
+    -- non-nil: checked by the enclosing `if`
+    local field = state.date_field --[[@as "created"|"modified"]]
     local from_ts = state.date_from and date_utils.parse_iso_datetime(state.date_from) or nil
     local to_ts = state.date_to and date_utils.parse_iso_datetime(state.date_to) or nil
     entry_preds[#entry_preds + 1] = function(entry)
