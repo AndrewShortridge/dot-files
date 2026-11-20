@@ -10,6 +10,10 @@
 -- window was showing, cursor where the terminal's cursor was, with hybrid
 -- line numbers in the gutter. Nothing is ever sent back to the window.
 --
+-- Images the window showed are shown too. The snapshot has none of them:
+-- their pixels are fetched from kitty (kittens/copy_mode_images.py) when
+-- their rows are first drawn.
+--
 -- The user's whole Neovim config is loaded, so motions, search, text objects
 -- and plugins are the usual ones. Differences from an ordinary buffer:
 --   * `q` or `<Esc>` in Normal mode leaves copy mode.
@@ -30,6 +34,9 @@
 --                     hyperlink (OSC 8) left open runs on into the next row.
 --   $KITTY_PIPE_DATA  "{scrolled_by}:{cursor_x},{cursor_y}:{lines},{columns}",
 --                     cursor 1-based, of the window at the time of the snapshot.
+--   $KITTY_WINDOW_ID  this overlay, for asking kitty about the images of the
+--                     window under it. That goes through `kitten @`: without
+--                     remote control there are no images.
 
 local SNAPSHOT_FD = 3
 
@@ -315,6 +322,316 @@ local function colour(buf, snapshot)
   })
 end
 
+-- The character a program prints in every cell an image covers when it draws
+-- the image with Unicode placeholders (U+10EEEE). Combining characters after
+-- it number the cell's row and column in the image and carry the top byte of
+-- the image's id; the foreground colour is the rest of the id.
+local PLACEHOLDER = "\244\142\187\174"
+local UTF8_CHARACTER = "^[%z\1-\127\194-\244][\128-\191]*"
+
+-- Those combining characters as code points, in the order of the numbers
+-- they stand for, from 0 (kitty: gen/rowcolumn-diacritics.txt).
+local DIACRITICS = [[
+0305 030D 030E 0310 0312 033D 033E 033F 0346 034A 034B 034C 0350 0351 0352 0357 035B 0363 0364
+0365 0366 0367 0368 0369 036A 036B 036C 036D 036E 036F 0483 0484 0485 0486 0487 0592 0593 0594
+0595 0597 0598 0599 059C 059D 059E 059F 05A0 05A1 05A8 05A9 05AB 05AC 05AF 05C4 0610 0611 0612
+0613 0614 0615 0616 0617 0657 0658 0659 065A 065B 065D 065E 06D6 06D7 06D8 06D9 06DA 06DB 06DC
+06DF 06E0 06E1 06E2 06E4 06E7 06E8 06EB 06EC 0730 0732 0733 0735 0736 073A 073D 073F 0740 0741
+0743 0745 0747 0749 074A 07EB 07EC 07ED 07EE 07EF 07F0 07F1 07F3 0816 0817 0818 0819 081B 081C
+081D 081E 081F 0820 0821 0822 0823 0825 0826 0827 0829 082A 082B 082C 082D 0951 0953 0954 0F82
+0F83 0F86 0F87 135D 135E 135F 17DD 193A 1A17 1A75 1A76 1A77 1A78 1A79 1A7A 1A7B 1A7C 1B6B 1B6D
+1B6E 1B6F 1B70 1B71 1B72 1B73 1CD0 1CD1 1CD2 1CDA 1CDB 1CE0 1DC0 1DC1 1DC3 1DC4 1DC5 1DC6 1DC7
+1DC8 1DC9 1DCB 1DCC 1DD1 1DD2 1DD3 1DD4 1DD5 1DD6 1DD7 1DD8 1DD9 1DDA 1DDB 1DDC 1DDD 1DDE 1DDF
+1DE0 1DE1 1DE2 1DE3 1DE4 1DE5 1DE6 1DFE 20D0 20D1 20D4 20D5 20D6 20D7 20DB 20DC 20E1 20E7 20E9
+20F0 2CEF 2CF0 2CF1 2DE0 2DE1 2DE2 2DE3 2DE4 2DE5 2DE6 2DE7 2DE8 2DE9 2DEA 2DEB 2DEC 2DED 2DEE
+2DEF 2DF0 2DF1 2DF2 2DF3 2DF4 2DF5 2DF6 2DF7 2DF8 2DF9 2DFA 2DFB 2DFC 2DFD 2DFE 2DFF A66F A67C
+A67D A6F0 A6F1 A8E0 A8E1 A8E2 A8E3 A8E4 A8E5 A8E6 A8E7 A8E8 A8E9 A8EA A8EB A8EC A8ED A8EE A8EF
+A8F0 A8F1 AAB0 AAB2 AAB3 AAB7 AAB8 AABE AABF AAC1 FE20 FE21 FE22 FE23 FE24 FE25 FE26 10A0F 10A38
+1D185 1D186 1D187 1D188 1D189 1D1AA 1D1AB 1D1AC 1D1AD 1D242 1D243 1D244
+]]
+
+local KITTEN = vim.fs.normalize(
+  vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)) .. "/../kittens/copy_mode_images.py"
+)
+
+--- The low 24 bits of an image id, as an SGR sequence sets them.
+---@param params string the sequence's parameters
+---@param current integer? the bits before the sequence
+---@return integer?
+local function id_bits(params, current)
+  for code, sub in (params == "" and "0" or params):gmatch("(%d+)([%d:]*)") do
+    code = tonumber(code)
+    if code == 0 or code == 39 then
+      current = nil
+    elseif code >= 30 and code <= 37 then
+      current = code - 30
+    elseif code >= 90 and code <= 97 then
+      current = code - 90 + 8
+    elseif code == 38 then
+      local index = sub:match("^:5:(%d+)$")
+      local red, green, blue = sub:match("^:2:(%d+):(%d+):(%d+)$")
+      current = index and tonumber(index) or red and tonumber(red) * 0x10000 + tonumber(green) * 0x100 + tonumber(blue)
+    end
+  end
+  return current
+end
+
+--- Show the images the kitty window had.
+---
+--- The snapshot is text. It has nothing of an image a program placed on the
+--- screen (the rows under it are blank), and of an image drawn with Unicode
+--- placeholders only the placeholder cells. The pixels of both are in the
+--- kitty window underneath, where the copy_mode_images kitten reads them.
+---
+--- An image is sent to this window the first time one of its rows is drawn,
+--- and shown by placeholder cells. Those of a placed image are virtual text
+--- over its rows, so the buffer is as it would be without images.
+---@param buf integer
+---@param snapshot copy_mode.Snapshot
+local function images(buf, snapshot)
+  local window = vim.env.KITTY_WINDOW_ID
+  if not window then
+    return
+  end
+  local highlights = api.nvim_create_namespace("kitty.copy-mode")
+  local marks = api.nvim_create_namespace("kitty.copy-mode.images")
+
+  local diacritics = {} ---@type string[] by the number they stand for, 0 at index 1
+  local diacritic_numbers = {} ---@type table<string, integer>
+  for codepoint in DIACRITICS:gmatch("%x+") do
+    local character = vim.fn.nr2char(tonumber(codepoint, 16))
+    diacritic_numbers[character] = #diacritics
+    diacritics[#diacritics + 1] = character
+  end
+
+  --- Run the kitten over this window; it answers about the one underneath.
+  ---@param arguments any[]
+  ---@param on_answer fun(answer: table?) nil when it could not answer
+  local function ask(arguments, on_answer)
+    local command = { "kitten", "@", "kitten", "--match", "id:" .. window, KITTEN }
+    for _, argument in ipairs(arguments) do
+      command[#command + 1] = tostring(argument)
+    end
+    vim.system(
+      command,
+      { text = true },
+      vim.schedule_wrap(function(result)
+        local ok, answer = pcall(vim.json.decode, result.stdout or "")
+        on_answer(result.code == 0 and ok and type(answer) == "table" and not answer.error and answer or nil)
+      end)
+    )
+  end
+
+  local file_count = 0
+  --- A name for a file of pixels. kitty deletes the file once it has read
+  --- it, but only one whose name says it is for the graphics protocol.
+  local function pixel_file()
+    file_count = file_count + 1
+    return ("/dev/shm/tty-graphics-protocol-copy-mode-%d-%d.raw"):format(vim.fn.getpid(), file_count)
+  end
+
+  --- Send an image to this window, to be shown by placeholder cells.
+  ---@param id integer the id the cells will carry
+  ---@param pixels { path: string, width: integer, height: integer, depth: integer } as the kitten wrote them
+  ---@param columns integer cells the image spans
+  ---@param rows integer
+  local function transmit(id, pixels, columns, rows)
+    local keys = ("a=T,U=1,q=2,i=%d,f=%d,s=%d,v=%d,c=%d,r=%d,t=t"):format(
+      id,
+      pixels.depth * 8,
+      pixels.width,
+      pixels.height,
+      columns,
+      rows
+    )
+    api.nvim_ui_send(("\27_G%s;%s\27\\"):format(keys, vim.base64.encode(pixels.path)))
+  end
+
+  ---@class copy_mode.Placement an image a program placed on the screen, as the kitten lists it
+  ---@field image integer kitty's id for the image
+  ---@field rows_before_end integer rows from its first row to the last row of the screen
+  ---@field column integer first cell, 1-based
+  ---@field rows integer
+  ---@field columns integer
+  ---@field src number[] the part of the image it shows
+  ---@field px number[] its size on screen
+  ---@field id integer the id it has in this window
+  ---@field group string highlight group whose foreground is that id
+  ---@field state "loading"|"ready"|"failed"|nil
+
+  local placed = {} ---@type table<integer, { placement: copy_mode.Placement, image_row: integer }[]> by buffer row
+
+  ---@param placement copy_mode.Placement
+  local function load_placement(placement)
+    local arguments = { "plain", placement.image, placement.px[1], placement.px[2] }
+    vim.list_extend(arguments, placement.src)
+    arguments[#arguments + 1] = pixel_file()
+    ask(arguments, function(pixels)
+      if not pixels then
+        placement.state = "failed"
+        return
+      end
+      transmit(placement.id, pixels, placement.columns, placement.rows)
+      placement.state = "ready"
+      api.nvim__redraw({ buf = buf, valid = false })
+    end)
+  end
+
+  ---@class copy_mode.PlaceholderImage an image the snapshot has placeholder cells of
+  ---@field source integer its id in the window underneath
+  ---@field id integer the id its cells carry when Neovim draws them
+  ---@field rows integer cells the image spans, going by the cells in the snapshot
+  ---@field columns integer
+  ---@field state "loading"|"ready"|"failed"|nil
+
+  local placeholder_images ---@type table<integer, copy_mode.PlaceholderImage>? by source id, once scanned
+  local placeholder_rows = {} ---@type table<integer, integer[]> source ids, by buffer row
+
+  --- Find every placeholder image in the snapshot.
+  local function scan_placeholders()
+    placeholder_images = {}
+    for row, raw in ipairs(snapshot.rows) do
+      if raw:find(PLACEHOLDER, 1, true) then
+        local attrs, bits = {}, nil
+        local from = 1
+        local function read(to)
+          local text = raw:sub(from, to - 1)
+          local found = bits and text:find(PLACEHOLDER, 1, true)
+          while found do
+            local at, numbers = found + #PLACEHOLDER, {}
+            for index = 1, 3 do
+              local character = text:match(UTF8_CHARACTER, at)
+              numbers[index] = character and diacritic_numbers[character]
+              if not numbers[index] then
+                break
+              end
+              at = at + #character
+            end
+            if numbers[1] and numbers[2] then
+              -- Neovim draws the cell in the colour its highlight group has,
+              -- which for a palette colour is not the number kitty was given.
+              local shown = type(attrs.fg) == "string" and tonumber(attrs.fg:sub(2), 16) or attrs.fg
+              local top = (numbers[3] or 0) * 0x1000000
+              local source = top + bits
+              local image = placeholder_images[source] or { source = source, id = top + shown, rows = 0, columns = 0 }
+              image.rows = math.max(image.rows, numbers[1] + 1)
+              image.columns = math.max(image.columns, numbers[2] + 1)
+              placeholder_images[source] = image
+              placeholder_rows[row] = placeholder_rows[row] or {}
+              if not vim.tbl_contains(placeholder_rows[row], source) then
+                table.insert(placeholder_rows[row], source)
+              end
+            end
+            found = text:find(PLACEHOLDER, at, true)
+          end
+        end
+        for _, seq in ipairs(sequences:match(raw)) do
+          read(seq.start)
+          from = seq.stop
+          if seq.final == "m" then
+            apply_sgr(attrs, seq.params)
+            bits = id_bits(seq.params, bits)
+          end
+        end
+        read(#raw + 1)
+      end
+    end
+  end
+
+  ---@param row integer a row with placeholder cells
+  local function load_placeholders(row)
+    if not placeholder_images then
+      scan_placeholders()
+    end
+    for _, source in ipairs(placeholder_rows[row] or {}) do
+      local image = placeholder_images[source]
+      if not image.state then
+        image.state = "loading"
+        ask({ "placeholder", source, pixel_file() }, function(pixels)
+          if not pixels then
+            image.state = "failed"
+            return
+          end
+          transmit(image.id, pixels, image.columns, image.rows)
+          image.state = "ready"
+          -- The cells are on screen already, and kitty looks for their image
+          -- only when their line is drawn again: have Neovim send it all anew.
+          vim.cmd("mode")
+        end)
+      end
+    end
+  end
+
+  ask({ "list" }, function(listing)
+    if not listing then
+      return
+    end
+    -- Rows the window has gained since the snapshot was taken.
+    local drift = math.max(listing.history + listing.lines - #snapshot.rows, 0)
+    local count = 0
+    for _, placement in ipairs(listing.placements) do
+      local first = #snapshot.rows - (placement.rows_before_end - drift) + 1
+      local last = math.min(first + placement.rows - 1, #snapshot.rows)
+      local probe = snapshot.rows[math.max(first, 1)]
+      -- kitty also lists the placeholder cells it has drawn; those are text here.
+      if last >= 1 and probe and not probe:find(PLACEHOLDER, 1, true) and placement.rows <= #diacritics then
+        count = count + 1
+        placement.id = count
+        placement.group = "KittyCopyModeImage" .. count
+        api.nvim_set_hl(highlights, placement.group, { fg = placement.id })
+        for row = math.max(first, 1), last do
+          placed[row] = placed[row] or {}
+          table.insert(placed[row], { placement = placement, image_row = row - first })
+        end
+      end
+    end
+    api.nvim__redraw({ buf = buf, valid = false })
+  end)
+
+  local leftcol = 0
+  local seen = {} ---@type table<integer, true> rows whose placeholder images were asked for
+  api.nvim_set_decoration_provider(marks, {
+    on_win = function(_, win, drawn)
+      if drawn ~= buf then
+        return false
+      end
+      leftcol = vim.fn.getwininfo(win)[1].leftcol
+    end,
+    on_line = function(_, _, _, line)
+      local row = line + 1
+      for _, cell in ipairs(placed[row] or {}) do
+        local placement = cell.placement
+        -- Cells scrolled off the left edge are left out; the rest keep their numbers.
+        local hidden = math.max(leftcol - (placement.column - 1), 0)
+        if placement.state == "ready" and hidden < placement.columns then
+          local cells = {}
+          for column = hidden, math.min(placement.columns, #diacritics) - 1 do
+            cells[#cells + 1] = PLACEHOLDER .. diacritics[cell.image_row + 1] .. diacritics[column + 1]
+          end
+          api.nvim_buf_set_extmark(buf, marks, line, 0, {
+            virt_text = { { table.concat(cells), placement.group } },
+            virt_text_pos = "overlay",
+            virt_text_win_col = placement.column - 1 + hidden - leftcol,
+            hl_mode = "combine",
+            ephemeral = true,
+          })
+        elseif not placement.state then
+          placement.state = "loading"
+          vim.schedule(function()
+            load_placement(placement)
+          end)
+        end
+      end
+      if not seen[row] and snapshot.rows[row]:find(PLACEHOLDER, 1, true) then
+        seen[row] = true
+        vim.schedule(function()
+          load_placeholders(row)
+        end)
+      end
+    end,
+  })
+end
+
 --- Show the rows the kitty window was showing, cursor on the terminal's cursor.
 ---@param row_count integer
 local function restore_view(row_count)
@@ -471,3 +788,4 @@ local buf = show(snapshot.rows)
 colour(buf, snapshot)
 restore_view(#snapshot.rows)
 attach(buf, snapshot)
+images(buf, snapshot)
