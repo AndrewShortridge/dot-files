@@ -31,6 +31,7 @@ This is a Neovim configuration repository targeting **Neovim 0.11+**. Agents sho
     │   ├── gitsigns.lua             # Git change indicators + <leader>gh hunks
     │   ├── indent-blankline.lua     # Indentation guides
     │   ├── incline.lua              # Window labels: icon + file name at each split's top-right (incline.nvim)
+    │   ├── kitty-scrollback.lua     # Kitty scrollback viewer / copy mode (kitty-scrollback.nvim)
     │   ├── mini-diff.lua           # Diff overlay + gh/gH hunk operators (mini.diff)
     │   ├── linting.lua              # Multi-language linting (nvim-lint)
     │   ├── lualine.lua              # Status line (lualine.nvim); also shows 'showcmd' keys and "recording @q"
@@ -426,6 +427,7 @@ Per-language type checking via terminal split (30% height):
 | md-render.nvim | md-render.lua | Second markdown renderer, on trial: renders into a separate buffer (`:MdRender float\|tab\|split\|toggle`); the default backend of `:MarkdownRenderer` | `cmd` (`MdRender`, `MdRenderHeadingColors`, `MdRenderMath`) |
 | nvim-colorizer | colorizer.lua | Color code preview | Config |
 | yazi.nvim | yazi.lua | File explorer | `VeryLazy` |
+| kitty-scrollback.nvim | kitty-scrollback.lua | Kitty's scrollback in an overlay nvim (copy mode). Started by Kitty, never by an ordinary nvim; the kitten path is hard-coded in `~/.config/kitty/kitty.conf` | `User KittyScrollbackLaunch`, `cmd` |
 | rustaceanvim | rustaceanvim.lua | Rust IDE features | `lazy = false` |
 | nvim-lspconfig | lsp/lspconfig.lua | LSP configuration | `BufReadPre, BufNewFile` |
 | mason.nvim | lsp/mason.lua | Tool installer | `cmd`, `<leader>cm` |
