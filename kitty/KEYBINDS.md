@@ -271,8 +271,8 @@ and use kitty's remote control socket.
   `ctrl+space > [`. kitty's `launch --stdin-source=@screen_scrollback
   --stdin-add-formatting --stdin-add-line-wrap-markers` pipes the window's
   rows to the script; it moves them to fd 3 and starts nvim, which sources
-  `copy-mode.lua` to render them in a terminal buffer. Needs neither `jq`,
-  `fzf` nor remote control.
+  `copy-mode.lua` to put them in a read-only buffer, colouring each row
+  when it is first drawn. Needs neither `jq`, `fzf` nor remote control.
 
 ---
 
