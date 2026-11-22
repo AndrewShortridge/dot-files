@@ -7,6 +7,7 @@
 // custom settings, run `zed: open default settings` from the
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
+  "diff_view_style": "split",
   "cli_default_open_behavior": "existing_window",
   "agent_servers": {
     
@@ -77,9 +78,10 @@
       "model": "gpt-5.2",
     },
     "default_model": {
-      "enable_thinking": false,
-      "provider": "MiniMax",
-      "model": "MiniMax-M2",
+      "effort": "medium",
+      "enable_thinking": true,
+      "provider": "zed.dev",
+      "model": "gpt-6-luna",
     },
     "favorite_models": [],
     "model_parameters": [],
@@ -104,26 +106,133 @@
       "border.selected": "#98C379", // One Dark Green
       // "border.selected": "#C678DD", // One Dark Pink
       "panel.focused_border": "#C678DD", // Focus border around file in the file explorer
+      // Ported from nvim's onedark (plugins/colorscheme.lua). Colours are the
+      // highlight groups of a running nvim; styles are its `styles` block:
+      // keywords and parameters italic, functions bold, comments upright.
+      "editor.background": "#1E222A", // Normal
+      "editor.gutter.background": "#282C34", // LineNr, SignColumn
+      "editor.line_number": "#495162", // LineNr
+      "editor.active_line_number": "#C678DD", // CursorLineNr
+      "editor.active_line.background": "#2D313B", // CursorLine
+      "elevated_surface.background": "#17191d", // NormalFloat bg
+      // Cursor is kitty.conf's `cursor`; selection is Visual.
+      "players": [{ "cursor": "#61AFEF", "background": "#61AFEF", "selection": "#414858" }],
+      // A key styles every capture it prefixes (`keyword` covers
+      // `keyword.control`) unless a longer key is listed, and a longer key
+      // inherits nothing from the shorter one.
+      "syntax": {
+        "comment": { "color": "#7F848E" },
+        "comment.doc": { "color": "#7F848E" },
+        "keyword": { "font_style": "italic" },
+        "preproc": { "color": "#C678DD", "font_style": "italic" },
+        "function": { "font_weight": 700 },
+        "function.builtin": { "color": "#E5C07B" },
+        "constructor": { "color": "#E5C07B" },
+        "attribute": { "color": "#C678DD" },
+        "boolean": { "color": "#D19A66", "font_weight": 400 },
+        "constant.builtin": { "color": "#C678DD" },
+        "operator": { "color": "#56B6C2" },
+        "punctuation.bracket": { "color": "#C678DD" },
+        "punctuation.list_marker": { "color": "#E06C75" },
+        "string.escape": { "color": "#56B6C2" },
+        "string.regex": { "color": "#61AFEF" },
+        "string.special": { "color": "#61AFEF" },
+        "string.special.symbol": { "color": "#E06C75" },
+        "variable.builtin": { "color": "#E5C07B" },
+        "variable.parameter": { "color": "#E06C75", "font_style": "italic" },
+        "namespace": { "color": "#E5C07B" },
+        "module": { "color": "#E5C07B" },
+        "label": { "color": "#C678DD" },
+        "title": { "color": "#E06C75", "font_weight": 700 },
+        "emphasis": { "font_style": "italic" },
+        "emphasis.strong": { "color": "#E5C07B", "font_weight": 700 },
+        "link_text": { "color": "#61AFEF" },
+        "link_uri": { "color": "#C678DD" },
+        // Capture names only the Fortran extension uses.
+        "conditional": { "color": "#C678DD", "font_style": "italic" },
+        "repeat": { "color": "#C678DD", "font_style": "italic" },
+        "include": { "color": "#C678DD", "font_style": "italic" },
+        "parameter": { "color": "#E06C75", "font_style": "italic" },
+      },
     },
   },
   "wrap_guides": [120],
   "icon_theme": "Material Icon Theme",
   "ui_font_size": 20,
-  "buffer_font_size": 18,
+  // Editor font follows ~/.config/kitty/kitty.conf. Zed takes one family and
+  // finds bold and italic inside it, so scripts/build-buffer-font.py builds
+  // this one from kitty's four faces: JetBrainsMono regular and bold,
+  // VictorMono (cursive) italic and bold italic.
+  "buffer_font_family": "JetBrainsVictorMono Nerd Font",
+  // kitty `font_size 15.0` is 20px at 96 dpi, and a kitty cell is 12x39px
+  // (27px of font plus `modify_font cell_height 12px`): lines are 39/20 high.
+  "buffer_font_size": 20,
+  "buffer_line_height": { "custom": 1.95 },
+  // nvim core/options.lua: scrolloff and sidescrolloff 8, smartcase
+  "vertical_scroll_margin": 8,
+  "horizontal_scroll_margin": 8,
+  "use_smartcase_search": true,
+  "vim": { "highlight_on_yank_duration": 300 }, // TextYankPost autocmd, core/keymaps.lua
+  "which_key": { "enabled": true, "delay_ms": 200 }, // which-key.nvim
+  "sticky_scroll": { "enabled": true }, // nvim-treesitter-context
+  // Language-server semantic highlighting over the treesitter colours, as
+  // nvim does it ("off" is Zed's default; "full" drops treesitter).
+  "semantic_tokens": "combined",
   "theme": {
     "mode": "dark",
-    "light": "One Light",
+    // Light = nvim's soft-paper-light (:SoftPaperLight), in themes/soft-paper.json
+    "light": "Soft Paper Light",
     "dark": "One Dark Pro Extended",
   },
   // Automatic tab indentation is 2 spaces instead of default 4
   "tab_size": 2,
   // Setting to run automatic code formatting when saving code
   "format_on_save": "on",
-  "languages": { "Fortran": { "language_servers": ["fortls"] } },
+  "languages": {
+    "Fortran": {
+      "language_servers": ["fortls"],
+      // nvim's conform.nvim formatter for Fortran, same arguments
+      // (plugins/formatting/conform.lua). fortls has no formatter. A full
+      // path because Zed's PATH lacks conda's bin, as for fortls below.
+      // Runs on save through "format_on_save" above, as nvim does.
+      "formatter": {
+        "external": {
+          "command": "/home/andrew/miniconda3/bin/fprettify",
+          "arguments": ["--indent=2", "--whitespace=2", "-"],
+        },
+      },
+    },
+  },
   "lsp": {
     "fortls": {
-      "settings": {
-        "source_dirs": ["./code**"],
+      // The Fortran extension looks fortls up on PATH, and Zed's PATH has
+      // conda's condabin but not its bin (conda `auto_activate: false`), so
+      // the extension reported "Fortls not installed". A path here bypasses
+      // that lookup; it also drops the extension's one flag, so the flags
+      // are listed. They are nvim's (plugins/lsp/lspconfig.lua).
+      //
+      // fortls takes no settings from the editor: it reads these flags and a
+      // .fortls / .fortlsrc / .fortls.json file in the project root. Without
+      // --source_dirs it scans every directory under the root.
+      "binary": {
+        "path": "/home/andrew/miniconda3/bin/fortls",
+        "arguments": [
+          // First, and keep: without it fortls asks pypi.org for a newer
+          // version before answering `initialize`, and hangs if that stalls.
+          "--disable_autoupdate",
+          "--hover_signature",
+          "--autocomplete_no_prefix",
+          "--use_signature_help",
+          "--enable_code_actions",
+          "--incremental_sync",
+          "--max_line_length",
+          "132",
+          "--max_comment_line_length",
+          "132",
+          "--pp_suffixes",
+          ".h",
+          "--lowercase_intrinsics",
+        ],
       },
     },
   },
