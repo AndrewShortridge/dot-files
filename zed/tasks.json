@@ -1,6 +1,10 @@
+// Labels are the descriptions of the nvim keys the tasks stand in for: Zed's
+// which-key popup shows a task binding by its label. keymap.json refers to
+// each task by label, so rename in both files.
 [
+  // nvim <leader>Lw: lint the whole Fortran workspace
   {
-    "label": "Fortran: gfortran syntax (all in ./code)",
+    "label": "Lint: Lint entire Fortran workspace",
     "command": "bash",
     "args": [
       "-lc",
@@ -10,4 +14,32 @@
     "reveal": "always",
     "hide": "never",
   },
+  // nvim <leader>Ll: lint the current buffer
+  {
+    "label": "Lint: run linters for current buffer",
+    "command": "gfortran",
+    "args": ["-Wall", "-Wextra", "-fsyntax-only", "-fdiagnostics-plain-output", "-fdiagnostics-color=always", "$ZED_FILE"],
+    "cwd": "$ZED_DIRNAME",
+    "reveal": "always",
+    "hide": "never",
+  },
+  // nvim <leader>m make group (plugins/fortran-build.lua). nvim picks a
+  // Makefile from a list; these run the worktree root's Makefile, so the
+  // labels leave out nvim's "(pick Makefile)".
+  { "label": "Make: Build", "command": "make", "cwd": "$ZED_WORKTREE_ROOT", "reveal": "always", "hide": "never" },
+  { "label": "Make: Build Debug", "command": "make", "args": ["debug"], "cwd": "$ZED_WORKTREE_ROOT", "reveal": "always", "hide": "never" },
+  { "label": "Make: Clean", "command": "make", "args": ["clean"], "cwd": "$ZED_WORKTREE_ROOT", "reveal": "always", "hide": "never" },
+  { "label": "Make: Run", "command": "make", "args": ["run"], "cwd": "$ZED_WORKTREE_ROOT", "reveal": "always", "hide": "never" },
+  { "label": "Make: All", "command": "make", "args": ["all"], "cwd": "$ZED_WORKTREE_ROOT", "reveal": "always", "hide": "never" },
+  // nvim <leader>a type check group (plugins/type-checker.lua). The commands
+  // are in scripts/typecheck.sh. The two Fortran tasks run the same command:
+  // nvim's <leader>aF follows its mpif90/mpiifx toggle, and only mpif90 is here.
+  { "label": "Type check (dispatch by filetype)", "command": "/home/andrew/.config/zed/scripts/typecheck.sh", "args": ["auto", "$ZED_FILE", "$ZED_WORKTREE_ROOT"], "reveal": "always", "hide": "never" },
+  { "label": "Python type check (current file: ruff check)", "command": "/home/andrew/.config/zed/scripts/typecheck.sh", "args": ["ruff", "$ZED_FILE", "$ZED_WORKTREE_ROOT"], "reveal": "always", "hide": "never" },
+  { "label": "Ty type check (Python current file)", "command": "/home/andrew/.config/zed/scripts/typecheck.sh", "args": ["ty", "$ZED_FILE", "$ZED_WORKTREE_ROOT"], "reveal": "always", "hide": "never" },
+  { "label": "cargo check (Rust project)", "command": "/home/andrew/.config/zed/scripts/typecheck.sh", "args": ["cargo", "$ZED_FILE", "$ZED_WORKTREE_ROOT"], "reveal": "always", "hide": "never" },
+  { "label": "lua-language-server --check (Lua project)", "command": "/home/andrew/.config/zed/scripts/typecheck.sh", "args": ["lua", "$ZED_FILE", "$ZED_WORKTREE_ROOT"], "reveal": "always", "hide": "never" },
+  { "label": "Fortran type check (current compiler)", "command": "/home/andrew/.config/zed/scripts/typecheck.sh", "args": ["fortran", "$ZED_FILE", "$ZED_WORKTREE_ROOT"], "reveal": "always", "hide": "never" },
+  { "label": "Fortran type check (mpif90/gfortran)", "command": "/home/andrew/.config/zed/scripts/typecheck.sh", "args": ["fortran", "$ZED_FILE", "$ZED_WORKTREE_ROOT"], "reveal": "always", "hide": "never" },
+  { "label": "C/C++ syntax & warnings", "command": "/home/andrew/.config/zed/scripts/typecheck.sh", "args": ["cpp", "$ZED_FILE", "$ZED_WORKTREE_ROOT"], "reveal": "always", "hide": "never" },
 ]

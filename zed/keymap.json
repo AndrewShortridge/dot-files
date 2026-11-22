@@ -5,6 +5,10 @@
 //
 // To see the default key bindings run `zed: open default keymap`
 // from the command palette.
+//
+// Leader-key layout mirrors ~/.config/nvim (leader = space): core/keymaps.lua,
+// lsp_keymaps.lua and the plugin specs under lua/andrew/plugins. nvim features
+// with no Zed equivalent (vault, yazi, TeX, ftnchek, ...) are not ported.
 [
   {
     "context": "Workspace && !menu",
@@ -23,6 +27,24 @@
       // Maximize / restore the focused pane or panel (incl. the terminal).
       "ctrl-shift-m": "workspace::ToggleZoom",
       "g e": "vim::PreviousSubwordEnd",
+
+      // ---- nvim <leader>d: debug (plugins/dap) ----
+      "space d c": "debugger::Start", // dap.continue() starts a session when none is running
+      "space d o": "debugger::StepOver",
+      "space d i": "debugger::StepInto",
+      "space d shift-o": "debugger::StepOut",
+      "space d t": "debugger::Stop",
+      "space d r": "debugger::Restart",
+      "space d shift-c": "debugger::RunToCursor",
+      "space d u": "debug_panel::ToggleFocus",
+      "space d shift-r": "debug_panel::ToggleFocus", // REPL lives in the debug panel
+    },
+  },
+  {
+    // Declared after the block above so it wins while a session is paused.
+    "context": "Workspace && debugger_stopped",
+    "bindings": {
+      "space d c": "debugger::Continue",
     },
   },
   {
@@ -32,14 +54,10 @@
       "shift-k": "editor::Hover",
       "space l a": "editor::ToggleCodeActions",
       "space l f": "editor::Format",
-      "space l r": "editor::Rename",
       "space l l": "diagnostics::Deploy",
-      "space f": "file_finder::Toggle",
       "space o": "tab_switcher::Toggle",
       "space s t": "pane::DeploySearch",
-      "space e": "workspace::ToggleLeftDock",
       "space p": "outline::Toggle",
-      "space |": "editor::GoToDefinitionSplit",
       "g r": "editor::FindAllReferences",
       "g o": "editor::GoToTypeDefinition",
       "space t p": "vim::GoToPreviousTab",
@@ -50,13 +68,259 @@
       "space s x": "pane::CloseActiveItem",
       "space a l": [
         "task::Spawn",
-        { "task_name": "Fortran: gfortran syntax only (./code)" },
+        { "task_name": "Lint: Lint entire Fortran workspace" },
       ],
+
+      // <leader>a type check (plugins/type-checker.lua); tasks live in tasks.json
+      "space a c": ["task::Spawn", { "task_name": "Type check (dispatch by filetype)" }],
+      "space a shift-p": ["task::Spawn", { "task_name": "Python type check (current file: ruff check)" }],
+      "space a shift-t": ["task::Spawn", { "task_name": "Ty type check (Python current file)" }],
+      "space a shift-r": ["task::Spawn", { "task_name": "cargo check (Rust project)" }],
+      "space a shift-l": ["task::Spawn", { "task_name": "lua-language-server --check (Lua project)" }],
+      "space a shift-f": ["task::Spawn", { "task_name": "Fortran type check (current compiler)" }],
+      "space a g": ["task::Spawn", { "task_name": "Fortran type check (mpif90/gfortran)" }],
+      "space a shift-c": ["task::Spawn", { "task_name": "C/C++ syntax & warnings" }],
+
       "w": "vim::NextSubwordStart",
       "b": "vim::PreviousSubwordStart",
       "e": "vim::NextSubwordEnd",
       "g e": "vim::PreviousSubwordEnd",
       // "space s x": "pane::SplitVertical",
+
+      // ---- nvim core/keymaps.lua ----
+      "space n h": "buffer_search::Dismiss", // :nohlsearch
+      "space n a": "vim::Increment",
+      "space n x": "vim::Decrement",
+
+      // Diagnostics (global in nvim)
+      "space c d": "editor::Hover", // line diagnostics float
+      "] e": ["editor::GoToDiagnostic", { "severity": { "min": "error", "max": "error" } }],
+      "[ e": ["editor::GoToPreviousDiagnostic", { "severity": { "min": "error", "max": "error" } }],
+      "] w": ["editor::GoToDiagnostic", { "severity": { "min": "warning", "max": "warning" } }],
+      "[ w": ["editor::GoToPreviousDiagnostic", { "severity": { "min": "warning", "max": "warning" } }],
+
+      // <leader>w window group (mirrors <C-w>)
+      "space w h": "workspace::ActivatePaneLeft",
+      "space w j": "workspace::ActivatePaneDown",
+      "space w k": "workspace::ActivatePaneUp",
+      "space w l": "workspace::ActivatePaneRight",
+      "space w w": "workspace::ActivateNextPane",
+      "space w s": "pane::SplitDown",
+      "space w v": "pane::SplitRight",
+      "space w d": "pane::CloseActiveItem",
+      "space w q": "pane::CloseActiveItem",
+      "space w o": "workspace::CloseInactiveTabsAndPanes",
+      "space w =": "vim::ResetPaneSizes",
+      "space w +": "vim::ResizePaneUp",
+      "space w -": "vim::ResizePaneDown",
+      "space w >": "vim::ResizePaneRight",
+      "space w <": "vim::ResizePaneLeft",
+      "space w _": "vim::MaximizePane",
+      "space w |": "vim::MaximizePane",
+      "space w x": "workspace::SwapPaneAdjacent",
+      "space w shift-h": "workspace::MovePaneLeft",
+      "space w shift-j": "workspace::MovePaneDown",
+      "space w shift-k": "workspace::MovePaneUp",
+      "space w shift-l": "workspace::MovePaneRight",
+      "space w m": "workspace::ToggleZoom", // vim-maximizer
+      "space -": "pane::SplitDown",
+      "space |": "pane::SplitRight",
+      "ctrl-up": "vim::ResizePaneUp",
+      "ctrl-down": "vim::ResizePaneDown",
+      "ctrl-left": "vim::ResizePaneLeft",
+      "ctrl-right": "vim::ResizePaneRight",
+
+      // <leader>t tabs (nvim tabpages -> Zed pane tabs)
+      "space t o": "workspace::NewFile",
+      "space t x": "pane::CloseActiveItem",
+      // <leader><Tab> LazyVim tab group
+      "space tab tab": "workspace::NewFile",
+      "space tab d": "pane::CloseActiveItem",
+      "space tab o": "pane::CloseOtherItems",
+      "space tab ]": "pane::ActivateNextItem",
+      "space tab [": "pane::ActivatePreviousItem",
+      "space tab f": ["pane::ActivateItem", 0],
+      "space tab l": "pane::ActivateLastItem",
+
+      // <leader>q quit / session
+      "space q q": "zed::Quit",
+      "space q shift-s": "projects::OpenRecent", // select session
+
+      // Quick access
+      "space space": "file_finder::Toggle",
+      "space /": "pane::DeploySearch",
+      "space ,": "tab_switcher::Toggle",
+      "space :": "command_palette::Toggle",
+      "space .": "workspace::NewFile", // scratch buffer
+      "space ?": "zed::OpenKeymap",
+      "space shift-k": "zed::OpenKeymap",
+      "ctrl-/": "terminal_panel::Toggle",
+
+      // <leader>f find (fzf-lua)
+      "space f f": "file_finder::Toggle",
+      "space f r": "file_finder::Toggle", // empty query lists recent files first
+      "space f s": "pane::DeploySearch",
+      "space f c": "pane::DeploySearch", // seeded with the word under the cursor
+      "space f k": "zed::OpenKeymap",
+      "space f h": "zed::OpenDocs",
+      // todo-comments.nvim's keywords, each followed by a colon
+      "space f t": [
+        "pane::DeploySearch",
+        {
+          "query": "\\b(TODO|FIX|FIXME|BUG|FIXIT|ISSUE|HACK|WARN|WARNING|XXX|PERF|OPTIM|PERFORMANCE|OPTIMIZE|NOTE|INFO|TEST|TESTING|PASSED|FAILED):",
+          "regex": true,
+          "case_sensitive": true,
+        },
+      ],
+
+      // <leader>s search
+      "space s w": "pane::DeploySearch",
+      "space s shift-w": "pane::DeploySearch",
+      "space s r": ["pane::DeploySearch", { "replace_enabled": true }], // grug-far
+      "space s c": "command_palette::Toggle",
+      "space s shift-c": "command_palette::Toggle",
+      "space s d": "diagnostics::Deploy",
+      "space s shift-d": "diagnostics::DeployCurrentFile",
+      "space s s": "outline::Toggle",
+      "space s shift-s": "project_symbols::Toggle",
+
+      // <leader>e explorer
+      "space e e": "workspace::ToggleLeftDock",
+      "space e f": "pane::RevealInProjectPanel",
+      "space e c": "project_panel::CollapseAllEntries",
+
+      // <leader>g git (snacks / gitsigns / mini.diff)
+      "space g g": "git_panel::ToggleFocus", // lazygit
+      "space g s": "git_panel::ToggleFocus",
+      "space g l": "git_graph::Open",
+      "space g c": "git_graph::Open",
+      "space g f": "git::FileHistory",
+      "space g b": "editor::BlameHover",
+      "space g d": "git::Diff",
+      "space g shift-s": "git::ViewStash",
+      "space g shift-b": "editor::OpenPermalinkToLine",
+      "space g shift-y": "editor::CopyPermalinkToLine",
+      "space g o": "editor::ExpandAllDiffHunks", // diff overlay
+      "space g shift-g": "git_panel::ToggleFocus", // lazygit (cwd)
+      "space g shift-l": "git_graph::Open", // git log (cwd)
+      "space g shift-d": "git::DiffBranch", // changes since the default branch
+      // codediff.nvim: review tab, pick a commit, pick a worktree, histories
+      "space g v": "git::Diff",
+      "space g shift-v": "git_graph::Open",
+      "space g w": "git::Worktree",
+      "space g t": "git::FileHistory",
+      "space g shift-t": "git_graph::Open",
+      "space g h s": "git::ToggleStaged",
+      "space g h r": "git::Restore",
+      "space g h shift-s": "git::StageFile",
+      "space g h shift-r": "git::RestoreFile",
+      "space g h u": "git::UnstageAndNext",
+      "space g h p": "editor::ToggleSelectedDiffHunks",
+      "space g h b": "editor::BlameHover",
+      "space g h shift-b": "git::Blame",
+      "space g h t": "editor::ToggleGitBlameInline",
+      "space g h d": "git::Diff",
+      "] g": "editor::GoToHunk",
+      "[ g": "editor::GoToPreviousHunk",
+      "] h": "editor::GoToHunk",
+      "[ h": "editor::GoToPreviousHunk",
+
+      // LSP (lsp_keymaps.lua). gd/gD/gy/gI/K already match Zed's vim defaults.
+      // nvim deletes the builtin gr* maps so `gr` fires without a timeout.
+      "g r n": null,
+      "g r r": null,
+      "g r i": null,
+      "g r a": null,
+      "g shift-k": "editor::ShowSignatureHelp",
+      "g a i": "call_hierarchy::ShowIncomingCalls",
+      "g a o": "call_hierarchy::ShowOutgoingCalls",
+      // Zed's `g a` (editor::SelectAllMatches) would run 1s into the chord above
+      // and close the which-key popup; see the note on `space` further down.
+      "g a": null,
+      "] ]": "vim::GoToNextReference",
+      "[ [": "vim::GoToPreviousReference",
+      "alt-n": "vim::GoToNextReference",
+      "alt-p": "vim::GoToPreviousReference",
+      "space c a": "editor::ToggleCodeActions",
+      "space c o": "editor::OrganizeImports",
+      "space c r": "editor::Rename",
+      "space c f": "editor::Format",
+      "space c s": "outline::Toggle",
+      "space c shift-s": "project_symbols::Toggle",
+      "space c shift-c": "editor::ToggleCodeLens", // Refresh & Display Codelens
+      "space c l": "lsp_tool::ToggleMenu",
+      "space c m": "zed::Extensions", // Mason
+      "space shift-d": "diagnostics::DeployCurrentFile",
+      "space l r": "editor::RestartLanguageServer",
+      "space l h": "editor::ToggleInlayHints",
+
+      // <leader>x trouble
+      "space x w": "diagnostics::Deploy",
+      "space x d": "diagnostics::DeployCurrentFile",
+      // Errors only in nvim; here diagnostics::ToggleWarnings hides warnings in the view.
+      "space x e": "diagnostics::DeployCurrentFile",
+      "space x shift-e": "diagnostics::Deploy",
+      "space x t": [
+        "pane::DeploySearch",
+        {
+          "query": "\\b(TODO|FIX|FIXME|BUG|FIXIT|ISSUE|HACK|WARN|WARNING|XXX|PERF|OPTIM|PERFORMANCE|OPTIMIZE|NOTE|INFO|TEST|TESTING|PASSED|FAILED):",
+          "regex": true,
+          "case_sensitive": true,
+        },
+      ],
+
+      // <leader>d debug (editor-scoped half; session control is in the Workspace block)
+      "space d b": "editor::ToggleBreakpoint",
+      "space d shift-b": "editor::EditLogBreakpoint",
+      "space d e": "debugger::EvaluateSelectedText",
+
+      // <leader>m make (plugins/fortran-build.lua); tasks live in tasks.json
+      "space m b": ["task::Spawn", { "task_name": "Make: Build" }],
+      "space m d": ["task::Spawn", { "task_name": "Make: Build Debug" }],
+      "space m c": ["task::Spawn", { "task_name": "Make: Clean" }],
+      "space m r": ["task::Spawn", { "task_name": "Make: Run" }],
+      "space m a": ["task::Spawn", { "task_name": "Make: All" }],
+      "space m l": "task::Rerun",
+
+      // <leader>L lint (plugins/linting.lua)
+      "space shift-l l": [
+        "task::Spawn",
+        { "task_name": "Lint: run linters for current buffer" },
+      ],
+      "space shift-l w": [
+        "task::Spawn",
+        { "task_name": "Lint: Lint entire Fortran workspace" },
+      ],
+
+      // <leader>u UI toggles (plugins/snacks.lua)
+      "space u w": "editor::ToggleSoftWrap",
+      "space u l": "editor::ToggleLineNumbers",
+      "space u shift-l": "editor::ToggleRelativeLineNumbers",
+      "space u d": "editor::ToggleDiagnostics",
+      "space u h": "editor::ToggleInlayHints",
+      "space u g": "editor::ToggleIndentGuides",
+      "space u shift-c": "theme_selector::Toggle",
+      "space u z": "workspace::ToggleCenteredLayout", // zen
+      "space u shift-w": "workspace::ToggleCenteredLayout", // readable width
+      "space u shift-z": "workspace::ToggleZoom",
+
+      // <leader>y yank path (utils/path_reference.lua). With a selection nvim
+      // adds the lines: <leader>yf does in the visual block below, <leader>yp
+      // cannot (Zed has no absolute-path-with-lines action).
+      "space y f": "workspace::CopyRelativePath",
+      "space y p": "workspace::CopyPath",
+
+      // flash.nvim s -> sneak (two-char jump). S is in the normal-mode block.
+      "s": "vim::PushSneak",
+    },
+  },
+  {
+    // Rust-only <leader>r group (plugins/rustaceanvim.lua)
+    "context": "VimControl && !menu && extension == rs",
+    "bindings": {
+      "space r r": "task::Spawn", // runnables
+      "space r m": "editor::ExpandMacroRecursively",
+      "space r p": "editor::GoToParentModule",
     },
   },
   {
@@ -65,18 +329,53 @@
       // Put key bindings here if you want them to work in visual mode.
       "shift-j": "editor::MoveLineDown",
       "shift-K": "editor::MoveLineUp",
+      "space c f": "editor::FormatSelections",
+      "g s": ["vim::Paste", { "preserve_clipboard": true }], // substitute.nvim visual
+      "space y f": "editor::CopyFileLocation", // `path:10-24`; nvim writes `path#L10-L24`
+      // mini.diff gh / gH on a selection: stage / reset its hunks
+      "g h": "git::ToggleStaged",
+      "g shift-h": "git::Restore",
+      "space": null, // see the normal-mode block
+      // nvim-treesitter incremental selection
+      "ctrl-space": "editor::SelectLargerSyntaxNode",
+      "backspace": "editor::SelectSmallerSyntaxNode",
     },
   },
   {
     "context": "vim_mode == normal && !menu",
     "bindings": {
       // "shift-y": ["workspace::SendKeystrokes", "y $"] // Use neovim's yank behavior: yank to end of line.
+      // substitute.nvim: gs{motion} / gss / gS replace with register
+      "g s": "vim::PushReplaceWithRegister",
+      "g shift-s": ["workspace::SendKeystrokes", "g shift-r $"],
+      "ctrl-space": "editor::SelectLargerSyntaxNode",
+      "shift-s": "vim::SelectLargerSyntaxNode", // flash.nvim S: treesitter node select
+      // The leader alone does nothing, as in nvim. Zed's default binds it
+      // (vim::WrappingRight), and a prefix that is itself bound gets 1s before
+      // Zed runs that binding and closes the which-key popup. Unbound, the
+      // prefix waits for the next key, and so does the popup. Not unbound in
+      // operator mode, where `d space` is a motion.
+      "space": null,
+    },
+  },
+  {
+    "context": "vim_operator == gR",
+    "bindings": {
+      "s": "vim::CurrentLine", // makes `gss` act on the line
     },
   },
   {
     "context": "vim_mode == insert",
     "bindings": {
       "j k": "vim::NormalBefore", // In insert mode, make jk escape to normal mode.
+      "ctrl-k": "editor::ShowSignatureHelp", // nvim lspconfig insert <C-k>
+      "ctrl-space": "editor::ShowCompletions", // blink.cmp show
+    },
+  },
+  {
+    "context": "Editor && showing_completions",
+    "bindings": {
+      "ctrl-e": "editor::Cancel", // blink.cmp hide
     },
   },
   {
@@ -84,7 +383,8 @@
     "bindings": {
       // Put key bindings here (in addition to the context above) if you want them to
       // work when no editor exists.
-      // "space f": "file_finder::Toggle"
+      "space space": "file_finder::Toggle",
+      "space f f": "file_finder::Toggle",
     },
   },
   {
@@ -103,6 +403,8 @@
       // Cycle between terminal tabs while the terminal is focused.
       "ctrl-j": "pane::ActivateNextItem",
       "ctrl-k": "pane::ActivatePreviousItem",
+      // nvim <C-/> toggles the floating terminal from inside it too.
+      "ctrl-/": "terminal_panel::Toggle",
       // Disabled: these space-prefixed chords swallow the space key
       // while the terminal is focused instead of typing a space.
       // "space t t": "terminal_panel::Toggle",
@@ -112,7 +414,10 @@
   {
     "context": "FileFinder",
     "bindings": {
-      "ctrl-v": "file_finder::ToggleSplitMenu",
+      // fzf-lua: ctrl-v = open in vertical split, ctrl-s = horizontal split.
+      // (file_finder::ToggleSplitMenu no longer exists in Zed 1.28.)
+      "ctrl-v": "pane::SplitRight",
+      "ctrl-s": "pane::SplitDown",
       // "space s |": "project_panel::OpenSplitVertical",
       // "space s -": "project_panel::OpenSplitVertical",
     },
@@ -140,6 +445,11 @@
       "alt-=": "vim::ResetPaneSizes",
       "shift-alt-c": "pane::CloseActiveItem",
       "shift-alt-q": "pane::CloseAllItems",
+      // vim-tmux-navigator: <C-h/j/k/l> move between panes (editor and panels)
+      "ctrl-h": "workspace::ActivatePaneLeft",
+      "ctrl-j": "workspace::ActivatePaneDown",
+      "ctrl-k": "workspace::ActivatePaneUp",
+      "ctrl-l": "workspace::ActivatePaneRight",
     },
   },
   {
