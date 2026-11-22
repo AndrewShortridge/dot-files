@@ -233,8 +233,8 @@ local function build_highlights(c)
     -- Which groups are italic and which bold follows the `styles` block of
     -- plugins/colorscheme.lua (onedark), so a token keeps its style in both
     -- schemes: keywords, conditionals, parameters and tag attributes
-    -- italic, functions and methods bold. Change both.
-    Comment        = { fg = c.mauve, italic = true },
+    -- italic, functions and methods bold, comments upright. Change both.
+    Comment        = { fg = c.mauve },
     Constant       = { fg = c.peach },
     String         = { fg = c.green },
     Character      = { fg = c.green },
@@ -263,7 +263,7 @@ local function build_highlights(c)
     SpecialChar    = { fg = c.flamingo },
     Tag            = { fg = c.accent },
     Delimiter      = { fg = c.fg_dim },
-    SpecialComment = { fg = c.mauve, italic = true },
+    SpecialComment = { fg = c.mauve },
     Debug          = { fg = c.peach },
     Underlined     = { fg = c.accent, underline = true },
     Bold           = { bold = true },
@@ -313,7 +313,7 @@ local function build_highlights(c)
     ["@module"]                 = { fg = c.lavender },
     ["@label"]                  = { fg = c.teal },
     ["@string"]                 = { fg = c.green },
-    ["@string.documentation"]   = { fg = c.green, italic = true },
+    ["@string.documentation"]   = { fg = c.green },
     ["@string.regexp"]          = { fg = c.flamingo },
     ["@string.escape"]          = { fg = c.pink },
     ["@string.special.symbol"]  = { fg = c.flamingo },
@@ -362,8 +362,8 @@ local function build_highlights(c)
     ["@punctuation.delimiter"]  = { fg = c.fg_dim },
     ["@punctuation.bracket"]    = { fg = c.fg_dim },
     ["@punctuation.special"]    = { fg = c.flamingo },
-    ["@comment"]                = { fg = c.mauve, italic = true },
-    ["@comment.documentation"]  = { fg = c.mauve, italic = true },
+    ["@comment"]                = { fg = c.mauve },
+    ["@comment.documentation"]  = { fg = c.mauve },
     ["@comment.error"]          = { fg = c.red, bg = c.none },
     ["@comment.warning"]        = { fg = c.yellow, bg = c.none },
     ["@comment.todo"]           = { fg = c.accent, bg = c.none, bold = true },
