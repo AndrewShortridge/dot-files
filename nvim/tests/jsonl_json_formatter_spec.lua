@@ -100,8 +100,9 @@
 --     in order, each laid out as it is without limits (an item that is an
 --     object or array still spans its usual lines), the last of them
 --     keeping its comma; then a marker line of its own, indented as the
---     items are and holding only `… N more items`; then the closing
---     bracket where it always is, with its comma when a sibling follows.
+--     items are and holding only `… N more items` (`… 1 more item` for
+--     one, point 35); then the closing bracket where it always is, with
+--     its comma when a sibling follows.
 --     An array with fewer items than the limit (two, one or none), whether
 --     it is the whole record, a member's value or an item of another
 --     array, comes out as it does without limits. The cases use small
@@ -112,12 +113,13 @@
 --     member's value, shows its first characters between quotes, the
 --     closing one written although the record's closing quote is not
 --     reached; then, on the same line, exactly two spaces and the marker
---     `… N more characters`, N being the characters left out, so the
---     characters shown and N add up to the string's characters as the
---     record writes them. A cut string stays on one line. A string with
---     fewer characters than the limit (nine, one or none), whether it is
---     the whole record, a member's value, an item of an array or a key,
---     comes out as it does without limits.
+--     `… N more characters` (`… 1 more character` for one, point 35), N
+--     being the characters left out, so the characters shown and N add up
+--     to the string's characters as the record writes them. A cut string
+--     stays on one line. A string with fewer characters than the limit
+--     (nine, one or none), whether it is the whole record, a member's
+--     value, an item of an array or a key, comes out as it does without
+--     limits.
 -- 23. With the same small limits, a cut string followed by a sibling, as a
 --     member's value or as an item of an array, keeps its comma where it
 --     always is, directly after the closing quote with nothing between
@@ -178,22 +180,203 @@
 --     one included. Brackets, braces and commas inside a hidden string are
 --     part of the string; an escaped quote does not end it, and an escaped
 --     backslash before its closing quote does not keep it open, so the
---     items after it are still counted. Whitespace between hidden items
---     changes nothing. The items shown plus the count in the marker equal
---     the array's items as the built-in decoder counts them. After the
---     marker line come the cut array's own closing bracket, with its comma
---     when a sibling follows, and the siblings, laid out as usual.
+--     items after it are still counted. The commas between the members of
+--     a hidden object, like those between the items of a hidden array, at
+--     any depth, are not items of the cut array, and a closing brace inside
+--     a string does not close the object holding it. Whitespace between
+--     hidden items changes nothing. The items shown plus the count in the
+--     marker equal the array's items as the built-in decoder counts them.
+--     After the marker line come the cut array's own closing bracket, with
+--     its comma when a sibling follows, and the siblings, laid out as
+--     usual.
+-- 31. The items a cut array leaves out are only passed over, to count them
+--     and find the array's end: no lines, pieces or copies of them are
+--     made. With the same small limits, a record whose array hides 100,000
+--     items, each an object of three members holding a nested array and a
+--     long string, allocates at most 64 KB more than the same record hiding
+--     one item, while formatting it whole allocates more than a thousand
+--     times that bound. The two give the same lines apart from the count in
+--     the marker, `… 1 more item` against `… 100,000 more items`, and
+--     report as many trimmed places: a long hidden string is neither cut
+--     nor copied. The heap growth is measured with the garbage collector
+--     stopped and the JIT off, and the collector is restarted even when
+--     what is measured raises. Only allocation is checked; no time is
+--     measured.
+-- 32. With the same small limits, a string's characters are those of the
+--     JSON text as written: an escape counts as the characters it is
+--     written with (`\n` and `\"` two, `\u00e9` six). A cut is never made
+--     inside an escape: when the limit falls inside one the whole escape
+--     is shown, so the shown part can exceed the limit by the rest of that
+--     escape, and an escape ending exactly at the limit is shown with the
+--     cut after it. The marker counts the escapes left out as written. A
+--     string whose last escape, kept whole, uses up the rest of it is
+--     shown whole, with no marker and no trimmed place. The shown part
+--     never ends in a backslash that would escape its closing quote. Each
+--     string is checked as the whole record and as a member's value, and
+--     its length in bytes is counted by hand.
+-- 33. With the same small limits, a character written directly in the
+--     record counts as one character, however many bytes it has: two,
+--     three or four. The limit and the count in the marker are both in
+--     characters: a cut string shows exactly ten characters whatever their
+--     bytes, a character of more bytes is shown or left out whole, and a
+--     string of ten two-byte characters is shown whole, with no marker. A
+--     cut never falls between the bytes of one character, so the shown
+--     part is valid UTF-8. Each string is checked as the whole record and
+--     as a member's value, and its length in bytes is counted by hand.
+-- 34. With the same small limits, the count in a marker, of items left out
+--     or of characters, is written in digits grouped in threes from the
+--     right with commas: `… 999 more items`, `… 1,000 more items`,
+--     `… 1,001 more items`, `… 1,000,000 more items`,
+--     `… 12,345,678 more items` and `… 37,907 more characters`. A count
+--     below a thousand has no comma, and one whose digits are a multiple
+--     of three (`100`, `100,000`) starts with none, in either kind of
+--     marker. The large arrays are built of single-digit items, and a
+--     failure names the count, not the record.
+-- 35. With the same small limits, a marker reads as a sentence: a count
+--     of exactly one takes the singular, `… 1 more item` for one item left
+--     out and `… 1 more character` for one character, in every place an
+--     array or a string is cut. Every other count takes the plural:
+--     `… 2 more items`, `… 2 more characters`, and `… 1,001 more items`
+--     and `… 1,001 more characters`, whose last digit is a one.
+-- 36. Besides its lines, which stay the first thing it returns, the
+--     formatter returns the trimmed places of the whole record as a plain
+--     whole number: one for each cut array and one for each cut string,
+--     keys included, so with the same small limits `[1,2,3,4,5]` reports
+--     1, and `[[1,2,3,4,5],[1,2],3,4]` and
+--     `["a","b","0123456789abcdef","d","e"]` report 2. A long string or
+--     a long array among the hidden items was never cut and is not
+--     counted: `[1,2,3,"0123456789abcdef",[1,2,3,4,5]]` reports 1. The
+--     count always equals the markers in the lines, three and four places
+--     included, each marker counted by its `…`, in records whose strings
+--     hold none. A record with nothing long reports 0 with the small
+--     limits, any record reports 0 without limits, and a blank record
+--     reports 0 and no lines with either.
+-- 37. With the same small limits, a surrogate pair written as two `\u`
+--     escapes in a row, a high surrogate (`\ud800` to `\udbff`) directly
+--     followed by a low one (`\udc00` to `\udfff`), is one escape of
+--     twelve characters, its hexadecimal digits in upper or lower case: a
+--     cut never falls between its two escapes, whether the limit falls
+--     inside either half or exactly between them, and a pair that reaches
+--     the end of the string leaves nothing out, so the string is shown
+--     whole, with no marker and no trimmed place. A high surrogate not
+--     directly followed by a low one is an ordinary escape of six, even
+--     with a pair later in the string, and so is each of two escapes in a
+--     row that are not a pair. The shown part is never more than eleven
+--     characters longer than the limit, and the shown part and the
+--     marker's count add up to the whole string. Each string is checked as
+--     the whole record and as a member's value, and its length in bytes is
+--     counted by hand.
+-- 38. A marker cannot be taken for data: every marker begins with `…` and
+--     one space, and in the lines the formatter returns `…` stands outside
+--     a string only as the start of a marker; a `…` the record holds is
+--     inside a string and stays data. Strings are told apart in a line as
+--     point 14 says, and the case that tells them apart is checked first
+--     on lines written here. With the same small limits, for point 18's
+--     records, the records of point 36 cut in several places, and records
+--     whose strings hold `…` (shown, in a key, in a cut string before and
+--     after the cut, among the hidden items, reading like a marker, next to
+--     an escaped quote or backslash), the `…` outside strings are as many
+--     as the trimmed places, each followed by one space and a digit; a `…`
+--     a string holds is kept inside a string when shown and is in no line
+--     when cut off or hidden; an array's marker line begins, after its
+--     indentation, with `…`, and every line that begins with `…` is one;
+--     and a trimmed record's lines, joined with line feeds, are rejected
+--     by the built-in decoder: where something was cut, the lines are no
+--     longer JSON. Without limits, no line of the same records has `…`
+--     outside a string. `["a…b","…",3,4]` is compared with its exact
+--     lines.
+-- 39. There is one rule and no size at which trimming switches on, so a
+--     record with nothing long is never altered. With the same small
+--     limits, a record whose every array and string, keys included, is
+--     within the limits gives exactly the lines it gives without limits
+--     and reports no trimmed places: records of every shape (deep nesting,
+--     empty objects and arrays, objects with more members than the items
+--     limit, escapes, multi-byte characters, every kind of number, true,
+--     false and null, records that are not objects), and records with an
+--     array of exactly the items limit or a string of exactly the
+--     characters limit. With limits far larger than any of its records,
+--     which each record's length in bytes shows, point 18's varied set
+--     formats to its lines without limits and reports no trimmed places.
+--     A blank record gives no lines either way (point 36).
+-- 40. Without limits nothing is cut, however long: limits apply only
+--     when the caller passes them, and the formatter never falls back to
+--     the default limits. Without limits, an array of 10,000 items that
+--     is the whole record gives its 10,002 lines, one per item and its two
+--     brackets, none of them a marker, and reports no trimmed places; a
+--     string of 50,000 characters that is the whole record gives one line
+--     holding all of it, and no trimmed places; and a record with an array
+--     of one item more than the default items limit and a string of one
+--     character more than the default characters limit gives lines that,
+--     joined with line feeds, the built-in decoder accepts and decodes to
+--     the same value as the record. Passing no limits and passing nil give
+--     the same lines and the same trimmed places, for those records and
+--     for short ones. The array of 10,000 items and the string of 50,000
+--     characters are named in a failure, never printed: every line is
+--     compared, and a failure shows only how many lines each side has,
+--     which line is the first that differs, and about 60 bytes of each
+--     version of it, around the first byte that differs.
+-- 41. The formatter owns one default set of limits, exposed by name: 20
+--     items per array and 2,000 characters per string. One case holds
+--     those numbers: it checks the value as a constant, then passes it as
+--     it is on the PRD's own figures, an array of 9,999 items that shows
+--     its first 20 and a marker line for 9,979 left out, and a string of
+--     39,907 characters that shows its first 2,000 and a marker for
+--     37,907 left out, one trimmed place each. Passed as it is, the value
+--     leaves an array of exactly its items and a string of exactly its
+--     characters as they are without limits, with no trimmed places, and
+--     formatting leaves it holding the numbers it held when the spec
+--     loaded it, through every case that passes it. Every other case
+--     passes its own limits or none, so changing a default means updating
+--     that one case: the cases of this point that do not hold the numbers,
+--     and point 40's record longer than the default limits, are built
+--     from the value and follow it. Their long records are named in a
+--     failure and compared as point 40's are, never printed.
+-- 42. Point 17's guarantee holds with limits too, on the paths trimming
+--     adds: passing over hidden items and choosing where to cut a string.
+--     With the small limits, every text of point 17 returns a list of
+--     strings and a count of trimmed places that is a number, without
+--     raising and without looping, and none of the strings holds a line
+--     feed or a carriage return. So do texts that break inside those
+--     paths: an array longer than the limit that never closes, ends in a
+--     comma, has a comma before its bracket or a closer of the wrong kind
+--     among its hidden items; a string longer than the limit that never
+--     closes, whose cut meets a backslash or a `\u` escape cut off by the
+--     end of the text, with a `\u` escape of too few digits before its
+--     closing quote, or with bytes that are not UTF-8 at the cut; and a
+--     raw line break inside a hidden item, between hidden items, and in
+--     the shown or the hidden part of a cut string. Point 17's own cases
+--     check the count's type as well, and give the formatter the text
+--     alone, with no second argument.
+-- 43. Trimming works by path inside a worker thread, the one call the
+--     record preview makes. Loaded by path in a worker thread, where
+--     `require` can load no module of this config, the formatter formats
+--     point 40's record longer than the default limits with the default
+--     limits read from the formatter loaded there, and hands back plain
+--     data, a list of strings and a number of trimmed places, equal to
+--     what the same call gives on the main thread. Loaded by path where
+--     the editor's global `vim` is absent, it trims the same record to the
+--     same lines and trimmed places. A worker thread that raises or never
+--     finishes is a failure of the case within point 19's time limit,
+--     never a hang.
 --
 -- The formatter is given JSON text and its lines are checked as text; no
--- config is loaded. Only points 18 and 30 decode a record, with
--- `vim.json.decode`: point 18 to catch what no expected lines thought of,
--- point 30 to count a cut array's items; decoding cannot see key order
--- or how a number is written, which point 15 checks on the text, nor how a
--- string is written, which point 16 checks. For text that is not valid JSON
--- the lines are not compared with any expected lines: only the checks of
--- point 17 are made. With limits, the lines are compared with expected
--- lines or with the lines the same text gives without limits; one case
--- also checks the count of trimmed places.
+-- config is loaded. Only points 18, 30, 38, 39 and 40 decode a record,
+-- with `vim.json.decode`: point 18 to catch what no expected lines thought
+-- of, point 30 to count a cut array's items, point 38 to check that its own
+-- records are JSON and that a trimmed record's lines are not, point 39 to
+-- check that its own records are JSON, point 40 to check that a record
+-- longer than the default limits comes out whole; decoding cannot see key
+-- order or how a number is written, which point 15 checks on the text, nor
+-- how a string is written, which point 16 checks. For text that is not
+-- valid JSON the lines are not compared with any expected lines: only the
+-- checks of points 17 and 42 are made. With limits, the lines are
+-- compared with expected lines or with the lines the same text gives
+-- without limits, or with the lines of the same record hiding fewer items
+-- (point 31), or searched for `…` outside strings (point 38). The count of
+-- trimmed places is checked against an expected number and against the
+-- markers in the lines (points 25, 32, 36, 37, 38, 39, 40 and 41) and
+-- against the same call on the main thread (point 43); besides, one case
+-- checks that hidden items add nothing to it.
 --
 -- Run with: nvim --headless -u NONE -l tests/jsonl_json_formatter_spec.lua
 
@@ -203,6 +386,10 @@ local test, assert_eq, assert_deep_eq, assert_nil, assert_match = _H.test, _H.as
 
 package.path = vim.fn.stdpath("config") .. "/lua/?.lua;" .. package.path
 local json_formatter = require("andrew.jsonl.json_formatter")
+
+--- The default limits as the module holds them when the spec loads it,
+--- before any case has formatted with them (point 41).
+local default_limits_as_loaded = vim.deepcopy(json_formatter.DEFAULT_LIMITS)
 
 --- Asserts that `text` formats to exactly the lines `expected`; a failure
 --- names the text it was given.
@@ -715,6 +902,15 @@ test("a string that looks like a number, true, false or null keeps its quotes", 
   end
 end)
 
+--- Asserts that `value` is `bytes` long as written in this file. The length
+--- is counted by hand, so a Lua escape or an editor that changed the text is
+--- caught before the formatter is asked anything.
+---@param value string a string as written in JSON text
+---@param bytes integer the length of `value` in bytes, counted by hand
+local function assert_bytes_as_written(value, bytes)
+  assert_eq(#value, bytes, vim.inspect(value) .. ", bytes as written:")
+end
+
 --- Asserts that the string `value` is `byte_length` bytes long as written in
 --- the record and in the lines, and that it comes out with exactly its bytes
 --- as the whole record, as a member's value, as an item of an array and as a
@@ -722,9 +918,7 @@ end)
 ---@param value string a string as written in JSON text
 ---@param byte_length integer the bytes of `value`, counted by hand
 local function assert_string_kept_byte_for_byte(value, byte_length)
-  -- Counted by hand, so a Lua escape or an editor that changed the value in
-  -- this file is caught before the formatter is asked anything.
-  assert_eq(#value, byte_length, vim.inspect(value) .. " bytes as written:")
+  assert_bytes_as_written(value, byte_length)
   local record_line = json_formatter.format(value)[1] or ""
   assert_eq(#record_line, byte_length, vim.inspect(value) .. " bytes in the line of the whole record:")
   local member_line = json_formatter.format('{"a":' .. value .. "}")[2] or ""
@@ -760,11 +954,14 @@ end)
 --- looping; every text in this spec needs a few hundred at most.
 local INSTRUCTIONS_BEFORE_LOOPING = 1000000
 
---- Asserts that formatting `text` returns, without raising and without
---- looping, a list of strings none of which holds a line feed or a carriage
---- return. A failure names the text.
+--- Asserts that formatting `text` with `limits` returns, without raising and
+--- without looping, a list of strings none of which holds a line feed or a
+--- carriage return, and a count of trimmed places that is a number. A
+--- failure names the text and whether the small limits were given.
 ---@param text string text that is not valid JSON
-local function assert_formats_to_lines_without_line_breaks(text)
+---@param limits JsonTrimLimits? `SMALL_LIMITS`, or nil to give the text alone
+local function assert_formats_to_lines_without_line_breaks(text, limits)
+  local label = vim.inspect(text) .. (limits and " with small limits" or "")
   -- A count hook is not called inside compiled code, so the JIT is off while
   -- the hook turns a loop into an error, and the code earlier cases compiled
   -- is flushed: turning the JIT off does not stop that code from running.
@@ -773,52 +970,79 @@ local function assert_formats_to_lines_without_line_breaks(text)
   debug.sethook(function()
     error(("still running after %d instructions"):format(INSTRUCTIONS_BEFORE_LOOPING))
   end, "", INSTRUCTIONS_BEFORE_LOOPING)
-  local ok, lines = pcall(json_formatter.format, text)
+  -- Without limits the formatter is given the text alone, as point 17 has
+  -- it: passing nil is a call of its own (point 40).
+  ---@type boolean, any, any
+  local ok, lines, trimmed_places
+  if limits then
+    ok, lines, trimmed_places = pcall(json_formatter.format, text, limits)
+  else
+    ok, lines, trimmed_places = pcall(json_formatter.format, text)
+  end
   debug.sethook()
   jit.on()
-  assert_eq(ok, true, vim.inspect(text) .. " raised: " .. tostring(lines))
-  assert_list_of_strings(lines, "the result for " .. vim.inspect(text))
+  assert_eq(ok, true, label .. " raised: " .. tostring(lines))
+  assert_list_of_strings(lines, "the result for " .. label)
   for position, line in ipairs(lines) do
-    assert_nil(line:find("[\r\n]"), ("%s line %d holds a line break:"):format(vim.inspect(text), position))
+    assert_nil(line:find("[\r\n]"), ("%s line %d holds a line break:"):format(label, position))
   end
+  assert_eq(type(trimmed_places), "number", label .. ", the type of the trimmed places:")
 end
 
+--- Text that is not valid JSON: closers with nothing open, a record cut off
+--- after a colon or inside a string, plain words, a lone backslash at the end
+--- of a string, a comma or a colon alone.
+---@type string[]
+local texts_that_are_not_json = {
+  "}}}",
+  '{"a":',
+  '{"a":"never closes',
+  "only plain words and not JSON",
+  '{"a":"ends in a lone backslash \\',
+  ",",
+  ":",
+}
+
 test("text that is not valid JSON returns a list of lines without raising or looping", function()
-  for _, text in ipairs({
-    "}}}",
-    '{"a":',
-    '{"a":"never closes',
-    "only plain words and not JSON",
-    '{"a":"ends in a lone backslash \\',
-    ",",
-    ":",
-  }) do
+  for _, text in ipairs(texts_that_are_not_json) do
     assert_formats_to_lines_without_line_breaks(text)
   end
 end)
+
+--- Texts with a raw line feed, carriage return or both inside a string.
+---@type string[]
+local texts_with_a_raw_line_break_inside_a_string = {
+  '{"a":"one\ntwo"}',
+  '{"a":"one\ntwo\nthree"}',
+  '{"a":"one\r\ntwo"}',
+  '{"a":"one\rtwo"}',
+  '"one\ntwo"',
+  '{"o\nne":1}',
+  '{"a":"never\ncloses',
+}
 
 test("a raw line break inside a string gives lines none of which holds a line break", function()
-  for _, text in ipairs({
-    '{"a":"one\ntwo"}',
-    '{"a":"one\ntwo\nthree"}',
-    '{"a":"one\r\ntwo"}',
-    '{"a":"one\rtwo"}',
-    '"one\ntwo"',
-    '{"o\nne":1}',
-    '{"a":"never\ncloses',
-  }) do
+  for _, text in ipairs(texts_with_a_raw_line_break_inside_a_string) do
     assert_formats_to_lines_without_line_breaks(text)
   end
 end)
+
+--- Texts with a raw line break between words that are not JSON.
+---@type string[]
+local texts_with_a_raw_line_break_between_words = { "plain\nwords", "plain\r\nwords", '{"a":tr\nue}' }
 
 test("a raw line break between words that are not JSON gives no line holding a line break", function()
-  for _, text in ipairs({ "plain\nwords", "plain\r\nwords", '{"a":tr\nue}' }) do
+  for _, text in ipairs(texts_with_a_raw_line_break_between_words) do
     assert_formats_to_lines_without_line_breaks(text)
   end
 end)
 
+--- Texts closing braces and brackets with nothing open.
+---@type string[]
+local texts_closing_what_is_not_open = { "]]]", "}]", '}]{"a":[1]}' }
+
 test("closing braces and brackets with nothing open do not raise", function()
-  for _, text in ipairs({ "]]]", "}]", '}]{"a":[1]}' }) do
+  for _, text in ipairs(texts_closing_what_is_not_open) do
     assert_formats_to_lines_without_line_breaks(text)
   end
 end)
@@ -854,17 +1078,36 @@ local varied_records = {
   unevenly_spaced_record,
 }
 
+--- Asserts that the built-in decoder accepts `text`, one of this spec's
+--- records, and returns the value it decodes to. Checked before what is
+--- asserted of the formatter, so a record this spec wrote wrongly is not
+--- taken for one the formatter broke.
+---@param text string the JSON text of one record
+---@return any value
+local function assert_record_decodes(text)
+  local record_decodes, record_value = pcall(vim.json.decode, text)
+  assert_eq(record_decodes, true, vim.inspect(text) .. " is not JSON the decoder accepts: " .. tostring(record_value))
+  return record_value
+end
+
+--- Asserts that `text`, one of this spec's records, formatted without
+--- limits gives lines that, joined with line feeds, the built-in decoder
+--- accepts and decodes to the same value as the record; a failure names
+--- the record `record_name`.
+---@param text string the JSON text of one record
+---@param record_name string names the record in a failure
+local function assert_lines_decode_to_the_record(text, record_name)
+  local record_value = assert_record_decodes(text)
+  -- No limits: it is the untrimmed lines that must decode.
+  local lines = json_formatter.format(text)
+  local lines_decode, lines_value = pcall(vim.json.decode, table.concat(lines, "\n"))
+  assert_eq(lines_decode, true, record_name .. " formats to lines that do not decode: " .. tostring(lines_value))
+  assert_deep_eq(lines_value, record_value, record_name .. " formats to lines that decode to another value:")
+end
+
 test("the lines of every record in a varied set, joined with line feeds, decode to the same value as the record", function()
   for _, text in ipairs(varied_records) do
-    -- Checked first, so a record this spec wrote wrongly is not taken for one
-    -- the formatter broke.
-    local record_decodes, record_value = pcall(vim.json.decode, text)
-    assert_eq(record_decodes, true, vim.inspect(text) .. " is not JSON the decoder accepts: " .. tostring(record_value))
-    -- No limits: it is the untrimmed lines that must decode.
-    local lines = json_formatter.format(text)
-    local lines_decode, lines_value = pcall(vim.json.decode, table.concat(lines, "\n"))
-    assert_eq(lines_decode, true, vim.inspect(text) .. " formats to lines that do not decode: " .. tostring(lines_value))
-    assert_deep_eq(lines_value, record_value, vim.inspect(text) .. " formats to lines that decode to another value:")
+    assert_lines_decode_to_the_record(text, vim.inspect(text))
   end
 end)
 
@@ -876,16 +1119,20 @@ local WORKER_RESULT_LIMIT_MS = 5000
 --- Runs in a worker thread (`vim.uv.new_work`), in a Lua state of its own
 --- that sees none of this file's locals, so all it needs comes as arguments.
 --- Loads the formatter by path, with nothing `require` could load, and
---- formats `text`. Returns true and the lines packed with `vim.mpack` (a
---- worker thread hands back strings, not tables), or false and the error. A
---- loop becomes an error as in point 17: a worker thread that never ends
---- would keep the process from exiting.
+--- formats `text`: with the text alone, or, when `with_default_limits` is
+--- true, with the default limits read from the formatter loaded there.
+--- Returns true, the lines packed with `vim.mpack` (a worker thread hands
+--- back strings, numbers and booleans, not tables) and the trimmed places,
+--- or false and the error. A loop becomes an error as in point 17: a worker
+--- thread that never ends would keep the process from exiting.
 ---@param module_path string
 ---@param text string
 ---@param instruction_limit integer
+---@param with_default_limits boolean?
 ---@return boolean is_formatted
 ---@return string packed_lines_or_error
-local function format_in_worker_thread(module_path, text, instruction_limit)
+---@return integer? trimmed_places
+local function format_in_worker_thread(module_path, text, instruction_limit, with_default_limits)
   -- The worker thread's runtime path loader would find this config's modules.
   package.loaders = {}
   jit.off()
@@ -893,26 +1140,42 @@ local function format_in_worker_thread(module_path, text, instruction_limit)
   debug.sethook(function()
     error(("still running after %d instructions"):format(instruction_limit))
   end, "", instruction_limit)
-  local is_formatted, packed_lines_or_error = pcall(function()
-    return vim.mpack.encode((dofile(module_path).format(text)))
+  local is_formatted, packed_lines_or_error, trimmed_places = pcall(function()
+    ---@module "andrew.jsonl.json_formatter"
+    local formatter = dofile(module_path)
+    if not with_default_limits then
+      return vim.mpack.encode((formatter.format(text)))
+    end
+    local lines, places = formatter.format(text, formatter.DEFAULT_LIMITS)
+    return vim.mpack.encode(lines), places
   end)
   debug.sethook()
-  return is_formatted, tostring(packed_lines_or_error)
+  return is_formatted, tostring(packed_lines_or_error), trimmed_places
 end
 
-test("the formatter loaded by path in a worker thread hands back, as a list of strings, the lines it gives a nested record on the main thread", function()
-  ---@type { is_formatted: boolean?, packed_lines_or_error: string? }?
+--- Formats `text` in a worker thread with `format_in_worker_thread` and
+--- waits for its result, at most `WORKER_RESULT_LIMIT_MS`. Asserts that the
+--- result came in time and that the worker thread did not fail, and returns
+--- the lines unpacked, checked to be a list of strings, and the trimmed
+--- places as they came back.
+---@param text string
+---@param with_default_limits boolean? true to format with the default limits, else with the text alone
+---@return string[] lines
+---@return any trimmed_places
+local function result_from_worker_thread(text, with_default_limits)
+  ---@type { is_formatted: boolean?, packed_lines_or_error: string?, trimmed_places: any }?
   local worker_result = nil
   vim.uv
     .new_work(
       format_in_worker_thread,
       ---@param is_formatted boolean?
       ---@param packed_lines_or_error string?
-      function(is_formatted, packed_lines_or_error)
-        worker_result = { is_formatted = is_formatted, packed_lines_or_error = packed_lines_or_error }
+      ---@param trimmed_places any
+      function(is_formatted, packed_lines_or_error, trimmed_places)
+        worker_result = { is_formatted = is_formatted, packed_lines_or_error = packed_lines_or_error, trimmed_places = trimmed_places }
       end
     )
-    :queue(json_formatter_path, compact_record, INSTRUCTIONS_BEFORE_LOOPING)
+    :queue(json_formatter_path, text, INSTRUCTIONS_BEFORE_LOOPING, with_default_limits)
   local has_answered = vim.wait(WORKER_RESULT_LIMIT_MS, function()
     return worker_result ~= nil
   end, 10)
@@ -921,6 +1184,12 @@ test("the formatter loaded by path in a worker thread hands back, as a list of s
   assert_eq(worker_result.is_formatted, true, "the worker thread failed: " .. tostring(worker_result.packed_lines_or_error))
   local lines = vim.mpack.decode(worker_result.packed_lines_or_error --[[@as string]])
   assert_list_of_strings(lines, "the worker thread's result")
+  ---@cast lines string[]
+  return lines, worker_result.trimmed_places
+end
+
+test("the formatter loaded by path in a worker thread hands back, as a list of strings, the lines it gives a nested record on the main thread", function()
+  local lines = result_from_worker_thread(compact_record)
   assert_deep_eq(lines, json_formatter.format(compact_record), "lines from the worker thread:")
 end)
 
@@ -1047,11 +1316,13 @@ end)
 local SMALL_LIMITS = { array_items = 3, string_characters = 10 }
 
 --- Asserts that `text` formats with the small limits to exactly the lines
---- `expected`; a failure names the text it was given.
+--- `expected`; a failure names the text it was given, or `record_name` for
+--- a record too long to print.
 ---@param text string the JSON text of one record
 ---@param expected string[] the lines the formatter must return
-local function assert_formats_with_small_limits(text, expected)
-  assert_deep_eq(json_formatter.format(text, SMALL_LIMITS), expected, vim.inspect(text) .. " with small limits:")
+---@param record_name? string names the record in a failure instead of its text
+local function assert_formats_with_small_limits(text, expected, record_name)
+  assert_deep_eq(json_formatter.format(text, SMALL_LIMITS), expected, (record_name or vim.inspect(text)) .. " with small limits:")
 end
 
 --- Asserts that `text` formats with the small limits to exactly the lines it
@@ -1076,24 +1347,16 @@ local function positions_of_lines_holding(lines, piece)
   return positions
 end
 
---- Asserts that `text` formats with the small limits to exactly the lines
---- `lines_before`, then one line that is `line_start` followed by a marker
---- for one `unit` left out, then exactly `lines_after`; a failure names the
---- text it was given. How the marker words exactly one item or character is
---- not pinned here.
----@param text string the JSON text of one record
----@param lines_before string[] the lines before the line ending in the marker
----@param line_start string that line up to the `…` of its marker, a string's two-space gap included
----@param unit "item"|"character" what the marker counts
----@param lines_after string[] the lines after the line ending in the marker
-local function assert_formats_with_small_limits_leaving_one_out(text, lines_before, line_start, unit, lines_after)
-  local lines = json_formatter.format(text, SMALL_LIMITS)
-  local label = vim.inspect(text) .. " with small limits"
-  local marker_line_position = #lines_before + 1
-  assert_eq(#lines, marker_line_position + #lines_after, label .. ", number of lines:")
-  assert_deep_eq(vim.list_slice(lines, 1, marker_line_position - 1), lines_before, label .. ", the lines before the marker's line:")
-  assert_match(lines[marker_line_position], "^" .. vim.pesc(line_start) .. "… 1 more " .. unit .. "s?$", label .. ", the marker's line:")
-  assert_deep_eq(vim.list_slice(lines, marker_line_position + 1), lines_after, label .. ", the lines after the marker's line:")
+--- The JSON texts of `records`, in order.
+---@param records { text: string }[]
+---@return string[] texts
+local function texts_of(records)
+  ---@type string[]
+  local texts = {}
+  for _, record in ipairs(records) do
+    texts[#texts + 1] = record.text
+  end
+  return texts
 end
 
 --- Asserts that no line `texts` format to with the small limits holds a
@@ -1106,6 +1369,26 @@ local function assert_no_marker_states_zero_left_out(texts)
       assert_nil(line:find("… 0 ", 1, true), vim.inspect(text) .. " with small limits, line " .. position .. ":")
     end
   end
+end
+
+--- Asserts that `text` formatted with `limits` reports `expected` trimmed
+--- places, as a plain whole number, and that its lines hold exactly as many
+--- markers, each counted by its `…`; a failure names the text and whether
+--- the small limits were given. Only for records whose strings hold no `…`.
+---@param text string the JSON text of one record
+---@param limits JsonTrimLimits? `SMALL_LIMITS`, or nil to show everything
+---@param expected integer the trimmed places the record must report
+local function assert_reports_trimmed_places(text, limits, expected)
+  local label = vim.inspect(text) .. (limits and " with small limits" or " without limits")
+  local lines, trimmed_places = json_formatter.format(text, limits)
+  assert_eq(type(trimmed_places), "number", label .. ", the type of the trimmed places:")
+  assert_eq(trimmed_places, expected, label .. ", trimmed places:")
+  local markers = 0
+  for _, line in ipairs(lines) do
+    local _, markers_on_line = line:gsub("…", "")
+    markers = markers + markers_on_line
+  end
+  assert_eq(markers, trimmed_places, label .. ", markers in the lines against the trimmed places:")
 end
 
 test("an array that is the whole record with more items than the limit shows its first items and then a marker line", function()
@@ -1254,6 +1537,21 @@ local function lines_of_cut_string(value)
   }
 end
 
+--- The shown part, without its quotes, and the count in the marker on
+--- `cut.line`, the line of a cut string; asserts that the line is a shown
+--- part and a marker.
+---@param cut { label: string, line: string }
+---@return string shown
+---@return string left_out the count as written
+local function shown_part_and_left_out(cut)
+  ---@type string?, string?
+  local shown, left_out = cut.line:match('^"(.*)"  … (%d+) more characters$')
+  assert_eq(type(shown), "string", cut.label .. ", a shown part and a marker in " .. vim.inspect(cut.line) .. ":")
+  ---@cast shown -nil
+  ---@cast left_out -nil
+  return shown, left_out
+end
+
 test("the shown part of a cut string is its first characters between quotes, though the record's closing quote is not reached", function()
   for _, value in ipairs(long_strings) do
     for _, cut in ipairs(lines_of_cut_string(value)) do
@@ -1273,11 +1571,7 @@ end)
 test("the characters shown plus the count in the marker equal the characters of the string as the record writes it", function()
   for _, value in ipairs(long_strings) do
     for _, cut in ipairs(lines_of_cut_string(value)) do
-      ---@type string?, string?
-      local shown, left_out = cut.line:match('^"(.*)"  … (%d+) more characters$')
-      assert_eq(type(shown), "string", cut.label .. ", a shown part and a marker in " .. vim.inspect(cut.line) .. ":")
-      ---@cast shown -nil
-      ---@cast left_out -nil
+      local shown, left_out = shown_part_and_left_out(cut)
       assert_eq(#shown + tonumber(left_out), #value - 2, cut.label .. ", characters shown plus characters left out:")
     end
   end
@@ -1440,7 +1734,7 @@ test("a cut string shown before other items of a cut array has its marker on its
 end)
 
 test("a long string among the items an array leaves out is not shown and has no marker", function()
-  assert_formats_with_small_limits_leaving_one_out('[1,2,3,"0123456789abcdef"]', { "[", "  1,", "  2,", "  3," }, "  ", "item", { "]" })
+  assert_formats_with_small_limits('[1,2,3,"0123456789abcdef"]', { "[", "  1,", "  2,", "  3,", "  … 1 more item", "]" })
   assert_formats_with_small_limits('[1,2,3,"0123456789abcdef",5]', { "[", "  1,", "  2,", "  3,", "  … 2 more items", "]" })
 end)
 
@@ -1511,9 +1805,7 @@ test("on every line, the markers are as many as the strings cut on it", function
 end)
 
 test("a record whose key and string value are both cut reports two trimmed places", function()
-  local text = '{"0123456789abcdef":"0123456789XYZ","b":2}'
-  local _, trimmed_places = json_formatter.format(text, SMALL_LIMITS)
-  assert_eq(trimmed_places, 2, vim.inspect(text) .. " with small limits, trimmed places:")
+  assert_reports_trimmed_places('{"0123456789abcdef":"0123456789XYZ","b":2}', SMALL_LIMITS, 2)
 end)
 
 --- Records holding an array of exactly as many items as the small limits
@@ -1541,41 +1833,30 @@ test("an array that is a member's value or an item of another array with exactly
 end)
 
 --- Records holding one array with one item more than the small limits allow,
---- as the whole record, as a member's value and as an item of another array:
---- the lines before its marker line, the lines after it, and the indentation
---- of that array's items.
----@type { text: string, lines_before_marker: string[], lines_after_marker: string[], item_indentation: string }[]
+--- as the whole record, as a member's value and as an item of another array,
+--- each with the lines it formats to: the limit's items, then a marker line
+--- for the one left out, indented as those items are.
+---@type { text: string, expected: string[] }[]
 local records_with_one_item_more_than_the_limit = {
-  { text = "[1,2,3,4]", lines_before_marker = { "[", "  1,", "  2,", "  3," }, lines_after_marker = { "]" }, item_indentation = "  " },
+  { text = "[1,2,3,4]", expected = { "[", "  1,", "  2,", "  3,", "  … 1 more item", "]" } },
   {
     text = '{"h":[1,2,3,4],"z":1}',
-    lines_before_marker = { "{", '  "h": [', "    1,", "    2,", "    3," },
-    lines_after_marker = { "  ],", '  "z": 1', "}" },
-    item_indentation = "    ",
+    expected = { "{", '  "h": [', "    1,", "    2,", "    3,", "    … 1 more item", "  ],", '  "z": 1', "}" },
   },
-  {
-    text = "[[1,2,3,4],1]",
-    lines_before_marker = { "[", "  [", "    1,", "    2,", "    3," },
-    lines_after_marker = { "  ],", "  1", "]" },
-    item_indentation = "    ",
-  },
+  { text = "[[1,2,3,4],1]", expected = { "[", "  [", "    1,", "    2,", "    3,", "    … 1 more item", "  ],", "  1", "]" } },
 }
 
 test("an array with one item more than the limit shows the limit's items and a marker line for the one left out", function()
   for _, record in ipairs(records_with_one_item_more_than_the_limit) do
-    assert_formats_with_small_limits_leaving_one_out(record.text, record.lines_before_marker, record.item_indentation, "item", record.lines_after_marker)
+    assert_formats_with_small_limits(record.text, record.expected)
   end
 end)
 
 test("no marker states that zero items were left out", function()
   ---@type string[]
   local texts = { "[1,2,3]" }
-  for _, record in ipairs(records_with_arrays_of_exactly_the_limit) do
-    texts[#texts + 1] = record.text
-  end
-  for _, record in ipairs(records_with_one_item_more_than_the_limit) do
-    texts[#texts + 1] = record.text
-  end
+  vim.list_extend(texts, texts_of(records_with_arrays_of_exactly_the_limit))
+  vim.list_extend(texts, texts_of(records_with_one_item_more_than_the_limit))
   vim.list_extend(texts, records_with_short_arrays)
   assert_no_marker_states_zero_left_out(texts)
 end)
@@ -1613,46 +1894,38 @@ end)
 
 --- Records holding one string with one character more than the small limits
 --- allow, as the whole record, as a member's value, as an item of an array
---- and as a key: the lines before the cut string's line, that line up to
---- the two spaces before its marker, and the lines after it.
----@type { text: string, lines_before_cut_line: string[], cut_line_start: string, lines_after_cut_line: string[] }[]
+--- and as a key, each with the lines it formats to: the cut string's line
+--- ends in two spaces and a marker for the one character left out.
+---@type { text: string, expected: string[] }[]
 local records_with_one_character_more_than_the_limit = {
-  { text = '"0123456789a"', lines_before_cut_line = {}, cut_line_start = '"0123456789"', lines_after_cut_line = {} },
-  { text = '{"t":"0123456789a"}', lines_before_cut_line = { "{" }, cut_line_start = '  "t": "0123456789"', lines_after_cut_line = { "}" } },
-  { text = '{"t":"0123456789a","z":1}', lines_before_cut_line = { "{" }, cut_line_start = '  "t": "0123456789",', lines_after_cut_line = { '  "z": 1', "}" } },
-  { text = '["0123456789a"]', lines_before_cut_line = { "[" }, cut_line_start = '  "0123456789"', lines_after_cut_line = { "]" } },
-  { text = '["0123456789a",2]', lines_before_cut_line = { "[" }, cut_line_start = '  "0123456789",', lines_after_cut_line = { "  2", "]" } },
-  { text = '{"0123456789a":1}', lines_before_cut_line = { "{" }, cut_line_start = '  "0123456789": 1', lines_after_cut_line = { "}" } },
-  { text = '{"0123456789a":1,"b":2}', lines_before_cut_line = { "{" }, cut_line_start = '  "0123456789": 1,', lines_after_cut_line = { '  "b": 2', "}" } },
+  { text = '"0123456789a"', expected = { '"0123456789"  … 1 more character' } },
+  { text = '{"t":"0123456789a"}', expected = { "{", '  "t": "0123456789"  … 1 more character', "}" } },
+  { text = '{"t":"0123456789a","z":1}', expected = { "{", '  "t": "0123456789",  … 1 more character', '  "z": 1', "}" } },
+  { text = '["0123456789a"]', expected = { "[", '  "0123456789"  … 1 more character', "]" } },
+  { text = '["0123456789a",2]', expected = { "[", '  "0123456789",  … 1 more character', "  2", "]" } },
+  { text = '{"0123456789a":1}', expected = { "{", '  "0123456789": 1  … 1 more character', "}" } },
+  { text = '{"0123456789a":1,"b":2}', expected = { "{", '  "0123456789": 1,  … 1 more character', '  "b": 2', "}" } },
   {
     text = '{"a":{"t":"0123456789a","z":1},"y":2}',
-    lines_before_cut_line = { "{", '  "a": {' },
-    cut_line_start = '    "t": "0123456789",',
-    lines_after_cut_line = { '    "z": 1', "  },", '  "y": 2', "}" },
+    expected = { "{", '  "a": {', '    "t": "0123456789",  … 1 more character', '    "z": 1', "  },", '  "y": 2', "}" },
   },
   {
     text = '[["0123456789a",2],3]',
-    lines_before_cut_line = { "[", "  [" },
-    cut_line_start = '    "0123456789",',
-    lines_after_cut_line = { "    2", "  ],", "  3", "]" },
+    expected = { "[", "  [", '    "0123456789",  … 1 more character', "    2", "  ],", "  3", "]" },
   },
 }
 
 test("a string with one character more than the limit, as the whole record, a member's value, an item of an array or a key, shows the limit's characters, closed with a quote, and a marker for the one left out", function()
   for _, record in ipairs(records_with_one_character_more_than_the_limit) do
-    assert_formats_with_small_limits_leaving_one_out(record.text, record.lines_before_cut_line, record.cut_line_start .. "  ", "character", record.lines_after_cut_line)
+    assert_formats_with_small_limits(record.text, record.expected)
   end
 end)
 
 test("no marker states that zero characters were left out", function()
   ---@type string[]
   local texts = { '"0123456789"' }
-  for _, record in ipairs(records_with_strings_of_exactly_the_limit) do
-    texts[#texts + 1] = record.text
-  end
-  for _, record in ipairs(records_with_one_character_more_than_the_limit) do
-    texts[#texts + 1] = record.text
-  end
+  vim.list_extend(texts, texts_of(records_with_strings_of_exactly_the_limit))
+  vim.list_extend(texts, texts_of(records_with_one_character_more_than_the_limit))
   vim.list_extend(texts, records_with_short_strings)
   assert_no_marker_states_zero_left_out(texts)
 end)
@@ -1847,10 +2120,10 @@ test("no object gets a marker line, however many members it has and wherever it 
   end
 end)
 
---- Records holding one cut array whose hidden items hold nesting, brackets,
---- braces or commas inside strings, escapes or whitespace, each with the
---- lines it formats to with the small limits and, when the cut array is a
---- member's value, that member's key.
+--- Records holding one cut array whose hidden items hold nesting, objects of
+--- several members, brackets, braces or commas inside strings, escapes or
+--- whitespace, each with the lines it formats to with the small limits and,
+--- when the cut array is a member's value, that member's key.
 ---@type { text: string, member: string?, expected: string[] }[]
 local records_with_hidden_items_of_every_kind = {
   {
@@ -1901,6 +2174,14 @@ local records_with_hidden_items_of_every_kind = {
       "}",
     },
   },
+  {
+    text = '[1,2,3,{"a":1,"b":2},5]',
+    expected = { "[", "  1,", "  2,", "  3,", "  … 2 more items", "]" },
+  },
+  {
+    text = '[1,2,3,[{"a":"}","b":2}],5]',
+    expected = { "[", "  1,", "  2,", "  3,", "  … 2 more items", "]" },
+  },
 }
 
 test("hidden items count once each in the marker, whatever they hold, and the cut array's own closing bracket and its siblings follow", function()
@@ -1923,6 +2204,906 @@ test("the items a cut array shows plus the count in its marker equal its items a
     local items = record.member and value[record.member] or value
     assert_eq(SMALL_LIMITS.array_items + tonumber(left_out), #items, label .. ", items shown plus items left out:")
   end
+end)
+
+--- Runs `action` with the garbage collector stopped and returns how much the
+--- heap grew meanwhile; the collector is restarted before returning, whether
+--- or not `action` raised. It asserts nothing itself, since an assert raises
+--- and would leave the collector stopped. Compiled code can drop a string it
+--- never uses, so the JIT is off while measuring, and the code earlier cases
+--- compiled is flushed.
+---@param action fun()
+---@return boolean has_returned
+---@return string error_text `tostring` of what `action` raised ("nil" when it returned)
+---@return number heap_growth_kilobytes
+local function heap_growth_while(action)
+  jit.off()
+  jit.flush()
+  collectgarbage("collect")
+  collectgarbage("stop")
+  local heap_before = collectgarbage("count")
+  local has_returned, error_value = pcall(action)
+  local heap_after = collectgarbage("count")
+  collectgarbage("restart") -- finally: always restart
+  jit.on()
+  return has_returned, tostring(error_value), heap_after - heap_before
+end
+
+--- Whether the garbage collector is running. lua_ls's LuaJIT runtime lacks
+--- "isrunning", which LuaJIT 2.1 has.
+---@return boolean
+local function is_collector_running()
+  ---@diagnostic disable-next-line: param-type-mismatch
+  return collectgarbage("isrunning") --[[@as boolean]]
+end
+
+test("the measure of heap growth stops the collector while it measures, sees what is allocated and restarts the collector when what it measures raises", function()
+  ---@type boolean?
+  local was_collector_running = nil
+  local has_returned, _, heap_growth_kilobytes = heap_growth_while(function()
+    was_collector_running = is_collector_running()
+    local _ = ("x"):rep(512 * 1024)
+    error("raised on purpose")
+  end)
+  assert_eq(has_returned, false, "the measured function raised:")
+  assert_eq(was_collector_running, false, "the collector was running while measuring:")
+  assert_eq(heap_growth_kilobytes >= 512, true, "the heap grew by at least the 512 KB allocated: " .. heap_growth_kilobytes .. " KB;")
+  assert_eq(is_collector_running(), true, "the collector is running again:")
+end)
+
+--- Formats `text` while the heap growth is measured, asserts that the
+--- formatter returned, and returns the growth; what the formatter allocates
+--- counts whether or not its lines are kept.
+---@param text string the JSON text of one record
+---@param limits JsonTrimLimits? nil shows everything
+---@param label string names the record and its limits in a failure
+---@return number heap_growth_kilobytes
+local function heap_growth_formatting(text, limits, label)
+  local has_returned, error_text, heap_growth_kilobytes = heap_growth_while(function()
+    json_formatter.format(text, limits)
+  end)
+  assert_eq(has_returned, true, label .. " raised: " .. error_text)
+  return heap_growth_kilobytes
+end
+
+--- How many items the large record of point 31 hides, and the most its
+--- formatting with limits may allocate beyond the record hiding one item.
+--- Measured: 0.2 to 0.3 KB more for 100,000 hidden items, against about
+--- 127,000 KB to format that record whole.
+local MANY_HIDDEN_ITEMS = 100000
+local HEAP_GROWTH_BOUND_KILOBYTES = 64
+
+--- An array of objects that, with the small limits, shows its first items
+--- and hides `hidden_items` more. Each item has a realistic shape: an object
+--- of three members, one a nested array and one a long string holding
+--- brackets and braces. The string starts with the item's position, so its
+--- first characters differ from item to item and a cut or a copy of it is a
+--- new string, not one already interned.
+---@param hidden_items integer
+---@return string record the record as JSON text
+local function record_hiding(hidden_items)
+  ---@type string[]
+  local items = {}
+  for position = 1, SMALL_LIMITS.array_items + hidden_items do
+    items[position] = '{"id":' .. position .. ',"tags":["a","b"],"text":"' .. position .. ' is a long [string], {x}"}'
+  end
+  return "[" .. table.concat(items, ",") .. "]"
+end
+
+local record_hiding_one_item = record_hiding(1)
+local record_hiding_many_items = record_hiding(MANY_HIDDEN_ITEMS)
+
+test("formatting with limits a record whose array hides 100,000 items allocates at most 64 KB more than the same record hiding one item, far less than formatting it whole", function()
+  local one_growth = heap_growth_formatting(record_hiding_one_item, SMALL_LIMITS, "the record hiding one item with small limits")
+  local many_growth = heap_growth_formatting(record_hiding_many_items, SMALL_LIMITS, "the record hiding 100,000 items with small limits")
+  local whole_growth = heap_growth_formatting(record_hiding_many_items, nil, "the record hiding 100,000 items without limits")
+  assert_eq(
+    many_growth - one_growth <= HEAP_GROWTH_BOUND_KILOBYTES,
+    true,
+    "heap growth with small limits, 100,000 hidden items against one: " .. many_growth .. " KB against " .. one_growth .. " KB;"
+  )
+  assert_eq(
+    whole_growth >= 1000 * HEAP_GROWTH_BOUND_KILOBYTES,
+    true,
+    "heap growth formatting the record hiding 100,000 items whole is far above the bound: " .. whole_growth .. " KB;"
+  )
+end)
+
+test("a record whose array hides 100,000 objects gives with limits the same lines as the same record hiding one, apart from the count in the marker", function()
+  local one_lines = json_formatter.format(record_hiding_one_item, SMALL_LIMITS)
+  assert_eq(one_lines[#one_lines - 1], "  … 1 more item", "the record hiding one item with small limits, the marker line:")
+  local expected = vim.deepcopy(one_lines)
+  expected[#expected - 1] = "  … 100,000 more items"
+  assert_formats_with_small_limits(record_hiding_many_items, expected, "the record hiding " .. MANY_HIDDEN_ITEMS .. " items")
+end)
+
+test("long strings among the hidden items add nothing to the trimmed places", function()
+  local _, one_trimmed_places = json_formatter.format(record_hiding_one_item, SMALL_LIMITS)
+  local _, many_trimmed_places = json_formatter.format(record_hiding_many_items, SMALL_LIMITS)
+  assert_eq(many_trimmed_places, one_trimmed_places, "trimmed places with small limits, 100,000 hidden items against one:")
+end)
+
+--- Asserts that the string `value`, `bytes` long as written, formats with
+--- the small limits to the one line `expected` as the whole record, and to
+--- `expected` after its key as a member's value.
+---@param value string a string as written in JSON text
+---@param bytes integer the length of `value` in bytes, counted by hand
+---@param expected string the line `value` gives as the whole record
+local function assert_string_formats_with_small_limits(value, bytes, expected)
+  assert_bytes_as_written(value, bytes)
+  assert_formats_with_small_limits(value, { expected })
+  assert_formats_with_small_limits('{"t":' .. value .. "}", { "{", '  "t": ' .. expected, "}" })
+end
+
+--- Asserts that the string `value`, `bytes` long as written, is shown whole
+--- with the small limits, with no marker and no trimmed place, as the whole
+--- record and as a member's value.
+---@param value string a string as written in JSON text
+---@param bytes integer the length of `value` in bytes, counted by hand
+local function assert_string_shown_whole_with_small_limits(value, bytes)
+  assert_string_formats_with_small_limits(value, bytes, value)
+  assert_reports_trimmed_places(value, SMALL_LIMITS, 0)
+  assert_reports_trimmed_places('{"t":' .. value .. "}", SMALL_LIMITS, 0)
+end
+
+test("a cut that falls inside an escape shows the whole escape, a \\n, a \\u escape or an escaped quote, then the closing quote and the marker", function()
+  assert_string_formats_with_small_limits('"012345678\\nabc"', 16, '"012345678\\n"  … 3 more characters')
+  assert_string_formats_with_small_limits('"012345678\\u00e9abc"', 20, '"012345678\\u00e9"  … 3 more characters')
+  assert_string_formats_with_small_limits('"012345678\\"abc"', 16, '"012345678\\""  … 3 more characters')
+end)
+
+test("an escape that ends exactly at the characters limit is shown whole and the cut follows it", function()
+  assert_string_formats_with_small_limits('"01234567\\nabc"', 15, '"01234567\\n"  … 3 more characters')
+end)
+
+test("escapes left out are counted in the marker as the characters they are written with", function()
+  assert_string_formats_with_small_limits('"0123456789\\n\\u00e9x"', 21, '"0123456789"  … 9 more characters')
+end)
+
+test("a string whose last escape, kept whole, uses up the rest of it is shown whole, with no marker and no trimmed place", function()
+  assert_string_shown_whole_with_small_limits('"012345678\\\\"', 13)
+  assert_string_shown_whole_with_small_limits('"012345678\\u00e9"', 17)
+end)
+
+test("the shown part of a cut string never ends in a backslash that would escape its closing quote", function()
+  ---@type { text: string, bytes: integer }[]
+  local strings_cut_near_an_escaped_backslash = {
+    { text = '"012345678\\\\abc"', bytes = 16 },
+    { text = '"01234567\\\\\\\\abc"', bytes = 17 },
+    { text = '"' .. ("\\\\"):rep(6) .. '"', bytes = 14 },
+    { text = '"0' .. ("\\\\"):rep(6) .. '"', bytes = 15 },
+    { text = '"012345678\\\\\\"abc"', bytes = 18 },
+  }
+  for _, value in ipairs(strings_cut_near_an_escaped_backslash) do
+    assert_bytes_as_written(value.text, value.bytes)
+    for _, cut in ipairs(lines_of_cut_string(value.text)) do
+      local shown = shown_part_and_left_out(cut)
+      assert_eq(#shown:match("\\*$") % 2, 0, cut.label .. ", backslashes ending the shown part:")
+    end
+  end
+end)
+
+test("a cut that falls on a multi-byte character shows the whole character, then the closing quote and the marker", function()
+  assert_string_formats_with_small_limits('"012345678éabc"', 16, '"012345678é"  … 3 more characters')
+  assert_string_formats_with_small_limits('"012345678✓abc"', 17, '"012345678✓"  … 3 more characters')
+  assert_string_formats_with_small_limits('"012345678😀abc😀"', 22, '"012345678😀"  … 4 more characters')
+end)
+
+test("multi-byte characters before the cut count one character each, so ten characters are shown in thirteen bytes", function()
+  assert_string_formats_with_small_limits('"0123éé789éabc"', 18, '"0123éé789é"  … 3 more characters')
+end)
+
+test("multi-byte characters left out are counted in the marker one character each, not one per byte", function()
+  assert_string_formats_with_small_limits('"0123456789ééé"', 18, '"0123456789"  … 3 more characters')
+end)
+
+test("a string of ten two-byte characters, exactly the characters limit, is shown whole, with no marker", function()
+  assert_string_formats_with_small_limits('"éééééééééé"', 22, '"éééééééééé"')
+end)
+
+--- Whether `text` is valid UTF-8: every character is a lead byte followed
+--- by as many continuation bytes as it announces, and nothing else.
+---@param text string
+---@return boolean
+local function is_valid_utf8(text)
+  local position = 1
+  while position <= #text do
+    local lead = text:byte(position)
+    local width = lead < 0x80 and 1 or lead < 0xC2 and 0 or lead < 0xE0 and 2 or lead < 0xF0 and 3 or lead < 0xF5 and 4 or 0
+    if width == 0 then
+      return false
+    end
+    for continuation_at = position + 1, position + width - 1 do
+      local byte = text:byte(continuation_at)
+      if not byte or byte < 0x80 or byte > 0xBF then
+        return false
+      end
+    end
+    position = position + width
+  end
+  return true
+end
+
+test("the shown part of a cut string holding multi-byte characters is valid UTF-8 and exactly the limit's characters", function()
+  ---@type { text: string, bytes: integer }[]
+  local strings_with_multi_byte_characters = {
+    { text = '"012345678漢abc"', bytes = 17 },
+    { text = '"' .. ("é"):rep(12) .. '"', bytes = 26 },
+    { text = '"' .. ("漢"):rep(12) .. '"', bytes = 38 },
+    { text = '"' .. ("😀"):rep(12) .. '"', bytes = 50 },
+  }
+  for _, value in ipairs(strings_with_multi_byte_characters) do
+    assert_bytes_as_written(value.text, value.bytes)
+    for _, cut in ipairs(lines_of_cut_string(value.text)) do
+      local shown = shown_part_and_left_out(cut)
+      assert_eq(is_valid_utf8(shown), true, cut.label .. ", the shown part " .. vim.inspect(shown) .. " is valid UTF-8:")
+      local _, characters = shown:gsub("[^\128-\191]", "")
+      assert_eq(characters, SMALL_LIMITS.string_characters, cut.label .. ", characters in the shown part:")
+    end
+  end
+end)
+
+--- An array of single-digit items that is the whole record and, with the
+--- small limits, shows its first items and hides `hidden_items` more, as
+--- JSON text. Two bytes an item, so millions of items stay cheap to build.
+---@param hidden_items integer
+---@return string record
+local function record_of_digits_hiding(hidden_items)
+  return "[" .. ("0,"):rep(SMALL_LIMITS.array_items + hidden_items - 1) .. "0]"
+end
+
+--- Asserts that the array of digits hiding `hidden_items` formats with the
+--- small limits to its shown items, the line `marker_line` and its closing
+--- bracket; a failure names the count, since the record is too long to
+--- print.
+---@param hidden_items integer
+---@param marker_line string the marker line, indentation included
+local function assert_marker_line_of_array_hiding(hidden_items, marker_line)
+  assert_formats_with_small_limits(
+    record_of_digits_hiding(hidden_items),
+    { "[", "  0,", "  0,", "  0,", marker_line, "]" },
+    "an array of digits hiding " .. hidden_items .. " items"
+  )
+end
+
+--- Asserts that a string that is the whole record and leaves out
+--- `left_out` characters after `0123456789` formats with the small limits
+--- to the one line `line`; a failure names the count.
+---@param left_out integer
+---@param line string the line the string gives, its marker included
+local function assert_line_of_string_leaving_out(left_out, line)
+  assert_formats_with_small_limits('"0123456789' .. ("x"):rep(left_out) .. '"', { line }, "a string leaving out " .. left_out .. " characters")
+end
+
+test("the count in a cut array's marker has no comma below a thousand and one from a thousand: 999, 1,000 and 1,001 items left out", function()
+  assert_marker_line_of_array_hiding(999, "  … 999 more items")
+  assert_marker_line_of_array_hiding(1000, "  … 1,000 more items")
+  assert_marker_line_of_array_hiding(1001, "  … 1,001 more items")
+end)
+
+test("the count in a cut array's marker has a comma between every group of three digits: 1,000,000 and 12,345,678 items left out", function()
+  assert_marker_line_of_array_hiding(1000000, "  … 1,000,000 more items")
+  assert_marker_line_of_array_hiding(12345678, "  … 12,345,678 more items")
+end)
+
+test("the count in a cut string's marker is grouped in threes with commas: 37,907 characters left out", function()
+  assert_line_of_string_leaving_out(37907, '"0123456789"  … 37,907 more characters')
+end)
+
+test("a count of three or six digits, 100 or 100,000, starts with no comma, in a cut array's marker and in a cut string's", function()
+  assert_marker_line_of_array_hiding(100, "  … 100 more items")
+  assert_marker_line_of_array_hiding(100000, "  … 100,000 more items")
+  assert_line_of_string_leaving_out(100, '"0123456789"  … 100 more characters')
+  assert_line_of_string_leaving_out(100000, '"0123456789"  … 100,000 more characters')
+end)
+
+test("an array with exactly one item left out has the marker line `… 1 more item`, in the singular", function()
+  assert_formats_with_small_limits("[1,2,3,4]", { "[", "  1,", "  2,", "  3,", "  … 1 more item", "]" })
+end)
+
+test("a string with exactly one character left out reads `… 1 more character`, in the singular", function()
+  assert_formats_with_small_limits('"0123456789a"', { '"0123456789"  … 1 more character' })
+end)
+
+test("a count of two takes the plural: `… 2 more items` and `… 2 more characters`", function()
+  assert_formats_with_small_limits("[1,2,3,4,5]", { "[", "  1,", "  2,", "  3,", "  … 2 more items", "]" })
+  assert_formats_with_small_limits('"0123456789ab"', { '"0123456789"  … 2 more characters' })
+end)
+
+test("only a count of exactly one is singular: 1,001 items or characters left out read `… 1,001 more items` and `… 1,001 more characters`", function()
+  assert_marker_line_of_array_hiding(1001, "  … 1,001 more items")
+  assert_line_of_string_leaving_out(1001, '"0123456789"  … 1,001 more characters')
+end)
+
+--- Records cut in more than one place with the small limits, each with the
+--- trimmed places it reports: a cut key before a cut array, arrays cut at
+--- three depths, and a cut key, a cut array and two cut strings.
+---@type { text: string, trimmed_places: integer }[]
+local records_cut_in_several_places = {
+  { text = '{"0123456789abcdef":[1,2,3,4,5]}', trimmed_places = 2 },
+  { text = "[[[1,2,3,4,5],2,3,4,5],2,3,4,5]", trimmed_places = 3 },
+  { text = '{"0123456789a":[1,2,3,4],"z":["0123456789a","b","c","0123456789ab"]}', trimmed_places = 4 },
+}
+
+test("a cut array that is the whole record is one trimmed place", function()
+  assert_reports_trimmed_places("[1,2,3,4,5]", SMALL_LIMITS, 1)
+end)
+
+test("each cut array and each cut string is one trimmed place, an array cut inside a shown item included", function()
+  assert_reports_trimmed_places("[[1,2,3,4,5],[1,2],3,4]", SMALL_LIMITS, 2)
+  assert_reports_trimmed_places('["a","b","0123456789abcdef","d","e"]', SMALL_LIMITS, 2)
+end)
+
+test("a long string and a long array among the hidden items are not trimmed places", function()
+  assert_reports_trimmed_places('[1,2,3,"0123456789abcdef",[1,2,3,4,5]]', SMALL_LIMITS, 1)
+end)
+
+test("the trimmed places equal the markers in the lines, three and four places included", function()
+  for _, record in ipairs(records_cut_in_several_places) do
+    assert_reports_trimmed_places(record.text, SMALL_LIMITS, record.trimmed_places)
+  end
+end)
+
+test("a record with nothing long reports no trimmed places with the small limits", function()
+  for _, text in ipairs(records_with_short_arrays) do
+    assert_reports_trimmed_places(text, SMALL_LIMITS, 0)
+  end
+  for _, text in ipairs(records_with_short_strings) do
+    assert_reports_trimmed_places(text, SMALL_LIMITS, 0)
+  end
+end)
+
+test("any record reports no trimmed places without limits, however long its arrays and strings", function()
+  for _, record in ipairs(records_with_a_cut_array) do
+    assert_reports_trimmed_places(record.text, nil, 0)
+  end
+  for _, text in ipairs(long_strings) do
+    assert_reports_trimmed_places(text, nil, 0)
+  end
+  for _, record in ipairs(records_cut_in_several_places) do
+    assert_reports_trimmed_places(record.text, nil, 0)
+  end
+end)
+
+test("a blank record reports no trimmed places and no lines, with the small limits and without limits", function()
+  for _, text in ipairs(blank_records) do
+    assert_reports_trimmed_places(text, SMALL_LIMITS, 0)
+    assert_formats_with_small_limits(text, {})
+    assert_reports_trimmed_places(text, nil, 0)
+    assert_formats(text, {})
+  end
+end)
+
+test("a surrogate pair is never split: when the limit falls inside its first escape, both escapes are shown, then the closing quote and the marker", function()
+  assert_string_formats_with_small_limits('"012345678\\ud83d\\ude00abc"', 26, '"012345678\\ud83d\\ude00"  … 3 more characters')
+end)
+
+test("a surrogate pair is never split: when the limit falls exactly between its two escapes, both are shown and the cut follows them", function()
+  assert_string_formats_with_small_limits('"0123\\ud83d\\ude00abc"', 21, '"0123\\ud83d\\ude00"  … 3 more characters')
+end)
+
+test("a surrogate pair written with upper-case hexadecimal digits is kept together as well", function()
+  assert_string_formats_with_small_limits('"012345678\\uD83D\\uDE00abc"', 26, '"012345678\\uD83D\\uDE00"  … 3 more characters')
+  assert_string_formats_with_small_limits('"0123\\uD83D\\uDE00abc"', 21, '"0123\\uD83D\\uDE00"  … 3 more characters')
+end)
+
+test("a high surrogate not directly followed by a low one is an ordinary escape, and the cut follows it", function()
+  assert_string_formats_with_small_limits('"0123\\ud83dabcdefghi"', 21, '"0123\\ud83d"  … 9 more characters')
+  assert_string_formats_with_small_limits('"0123\\ud83d\\u00e9abc"', 21, '"0123\\ud83d"  … 9 more characters')
+  assert_string_formats_with_small_limits('"0123\\ud83dabc\\ud83d\\ude00"', 27, '"0123\\ud83d"  … 15 more characters')
+end)
+
+test("two \\u escapes in a row that are not a surrogate pair are cut between them", function()
+  assert_string_formats_with_small_limits('"0123\\u00e9\\u00e9abc"', 21, '"0123\\u00e9"  … 9 more characters')
+end)
+
+test("a string whose surrogate pair reaches its end leaves nothing out: it is shown whole, with no marker and no trimmed place", function()
+  assert_string_shown_whole_with_small_limits('"012345678\\ud83d\\ude00"', 23)
+  assert_string_shown_whole_with_small_limits('"0123\\ud83d\\ude00"', 18)
+end)
+
+test("wherever the limit falls on a surrogate pair, the shown part is at most eleven characters over the limit, keeps the pair whole, and adds up with the marker's count to the whole string", function()
+  for zeros = 0, 12 do
+    local value = '"' .. ("0"):rep(zeros) .. '\\ud83d\\ude00abc"'
+    assert_bytes_as_written(value, zeros + 17)
+    for _, cut in ipairs(lines_of_cut_string(value)) do
+      local shown, left_out = shown_part_and_left_out(cut)
+      assert_eq(#shown <= SMALL_LIMITS.string_characters + 11, true, cut.label .. ", the shown part " .. vim.inspect(shown) .. " is at most eleven characters over the limit:")
+      local _, high_surrogates = shown:gsub("\\ud83d", "")
+      local _, low_surrogates = shown:gsub("\\ude00", "")
+      assert_eq(high_surrogates, low_surrogates, cut.label .. ", low surrogates against high ones in the shown part " .. vim.inspect(shown) .. ":")
+      assert_eq(#shown + tonumber(left_out), #value - 2, cut.label .. ", characters shown and left out:")
+    end
+  end
+end)
+
+--- The byte positions of the `…` that stand outside strings in `line`, a
+--- line the formatter returned. A string ends at the first quote that is not
+--- part of an escape: the byte after a backslash belongs to the escape
+--- (point 14). A string that never closes runs to the end of the line.
+---@param line string
+---@return integer[] positions
+local function ellipses_outside_strings(line)
+  ---@type integer[]
+  local positions = {}
+  local position = 1
+  while true do
+    local ellipsis_at = line:find("…", position, true)
+    if not ellipsis_at then
+      return positions
+    end
+    local quote_at = line:find('"', position, true)
+    if not quote_at or ellipsis_at < quote_at then
+      positions[#positions + 1] = ellipsis_at
+      position = ellipsis_at + #"…"
+    else
+      -- Pass over the string the quote opens, up to its closing quote.
+      position = quote_at + 1
+      while true do
+        local at = line:find('["\\]', position)
+        if not at then
+          return positions
+        end
+        position = at + 1
+        if line:sub(at, at) == '"' then
+          break
+        end
+        position = position + 1
+      end
+    end
+  end
+end
+
+test("the `…` outside strings in a line are found by point 14's rule, so a `…` inside a string is not among them, after an escaped quote or before an escaped backslash and the closing quote alike", function()
+  ---@type { line: string, positions: integer[] }[]
+  local lines = {
+    { line = '  "a…b",', positions = {} },
+    { line = "  … 2 more items", positions = { 3 } },
+    { line = '"\\"…\\""', positions = {} },
+    { line = '"01234567\\\\"  … 6 more characters', positions = { 15 } },
+    { line = '  "0123…45678": "x…01234567"  … 4 more characters  … 3 more characters', positions = { 35, 58 } },
+    { line = '"ab…', positions = {} },
+  }
+  for _, case in ipairs(lines) do
+    assert_deep_eq(ellipses_outside_strings(case.line), case.positions, vim.inspect(case.line) .. ", positions of `…` outside strings:")
+  end
+end)
+
+--- Records whose strings hold `…`, each with the trimmed places it reports
+--- with the small limits and the `…` its lines keep inside strings: `…` in
+--- shown strings, in a key, in cut strings before and after the cut, among
+--- the hidden items, in strings that read like a marker, and next to an
+--- escaped quote and an escaped backslash.
+---@type { text: string, trimmed_places: integer, ellipses_in_strings: integer }[]
+local records_with_ellipses_in_strings = {
+  { text = '["a…b","…",3,4]', trimmed_places = 1, ellipses_in_strings = 2 },
+  { text = '{"t":"…","z":[1,2,3,4,5]}', trimmed_places = 1, ellipses_in_strings = 1 },
+  { text = '"012345678…abc"', trimmed_places = 1, ellipses_in_strings = 1 },
+  { text = '"0123456789ab…"', trimmed_places = 1, ellipses_in_strings = 0 },
+  { text = '{"0123…456789abc":"x…0123456789…"}', trimmed_places = 2, ellipses_in_strings = 2 },
+  { text = '[1,2,3,"…","… 2 more items",["…"]]', trimmed_places = 1, ellipses_in_strings = 0 },
+  { text = '["… 2 more items","… 1 more character",3,4]', trimmed_places = 3, ellipses_in_strings = 2 },
+  { text = '{"… 1 more item":"… 6 more characters"}', trimmed_places = 2, ellipses_in_strings = 2 },
+  { text = '["\\"…\\"","01234567\\\\…abc",3,4]', trimmed_places = 2, ellipses_in_strings = 1 },
+}
+
+--- Point 18's varied records, the records cut in several places and the
+--- records whose strings hold `…`.
+---@type string[]
+local varied_records_with_ellipses = vim.list_extend({}, varied_records)
+vim.list_extend(varied_records_with_ellipses, texts_of(records_cut_in_several_places))
+vim.list_extend(varied_records_with_ellipses, texts_of(records_with_ellipses_in_strings))
+
+test('with the small limits, ["a…b","…",3,4] keeps both `…` inside their strings and its marker line reads `… 1 more item`', function()
+  assert_formats_with_small_limits('["a…b","…",3,4]', { "[", '  "a…b",', '  "…",', "  3,", "  … 1 more item", "]" })
+end)
+
+test("a `…` a record's string holds stays inside a string when it is shown, and is not in the lines when it is cut off or among the hidden items", function()
+  for _, record in ipairs(records_with_ellipses_in_strings) do
+    local label = vim.inspect(record.text) .. " with small limits"
+    assert_record_decodes(record.text)
+    local lines, trimmed_places = json_formatter.format(record.text, SMALL_LIMITS)
+    assert_eq(trimmed_places, record.trimmed_places, label .. ", trimmed places:")
+    local ellipses_in_strings = 0
+    for _, line in ipairs(lines) do
+      local _, ellipses = line:gsub("…", "")
+      ellipses_in_strings = ellipses_in_strings + ellipses - #ellipses_outside_strings(line)
+    end
+    assert_eq(ellipses_in_strings, record.ellipses_in_strings, label .. ", `…` inside strings:")
+  end
+end)
+
+test("with the small limits, the `…` outside strings in a varied set's lines are as many as the trimmed places, and each begins a marker: `…`, one space and a digit", function()
+  local all_trimmed_places = 0
+  for _, text in ipairs(varied_records_with_ellipses) do
+    local label = vim.inspect(text) .. " with small limits"
+    local lines, trimmed_places = json_formatter.format(text, SMALL_LIMITS)
+    local ellipses = 0
+    for position, line in ipairs(lines) do
+      for _, at in ipairs(ellipses_outside_strings(line)) do
+        ellipses = ellipses + 1
+        assert_match(line:sub(at), "^… %d", ("%s, line %d, a `…` outside a string:"):format(label, position))
+      end
+    end
+    assert_eq(ellipses, trimmed_places, label .. ", `…` outside strings against the trimmed places:")
+    all_trimmed_places = all_trimmed_places + trimmed_places
+  end
+  assert_eq(all_trimmed_places > 0, true, "the varied set has trimmed places with small limits:")
+end)
+
+test("without limits, no line of the varied set has a `…` outside a string", function()
+  for _, text in ipairs(varied_records_with_ellipses) do
+    for position, line in ipairs((json_formatter.format(text))) do
+      assert_deep_eq(ellipses_outside_strings(line), {}, ("%s without limits, line %d, positions of `…` outside strings:"):format(vim.inspect(text), position))
+    end
+  end
+end)
+
+test("an array's marker line begins, after its indentation, with `…`, and a line that begins with `…` is an array's marker line", function()
+  local array_marker_lines = 0
+  for _, text in ipairs(varied_records_with_ellipses) do
+    for position, line in ipairs((json_formatter.format(text, SMALL_LIMITS))) do
+      local label = ("%s with small limits, line %d"):format(vim.inspect(text), position)
+      for _, at in ipairs(ellipses_outside_strings(line)) do
+        if line:find("^… [%d,]+ more items?$", at) then
+          array_marker_lines = array_marker_lines + 1
+          assert_match(line:sub(1, at - 1), "^ *$", label .. ", what comes before an array's marker:")
+        end
+      end
+      if line:find("^ *…") then
+        assert_match(line, "^ *… [%d,]+ more items?$", label .. ", a line beginning with `…`:")
+      end
+    end
+  end
+  assert_eq(array_marker_lines > 0, true, "the varied set has array marker lines with small limits:")
+end)
+
+test("the lines of a trimmed record, joined with line feeds, are rejected by the built-in JSON decoder", function()
+  local trimmed_records = 0
+  for _, text in ipairs(varied_records_with_ellipses) do
+    local lines, trimmed_places = json_formatter.format(text, SMALL_LIMITS)
+    if trimmed_places > 0 then
+      trimmed_records = trimmed_records + 1
+      local lines_decode = pcall(vim.json.decode, table.concat(lines, "\n"))
+      assert_eq(lines_decode, false, vim.inspect(text) .. " with small limits, its lines decode:")
+    end
+  end
+  assert_eq(trimmed_records >= #records_with_ellipses_in_strings, true, "the varied set has trimmed records with small limits:")
+end)
+
+--- The records with nothing long of point 39, of every shape it lists.
+---@type string[]
+local records_with_nothing_long = {
+  '{"a":[{"b":{"c":[[{"d":{"e":[1,{"f":"deep"}]}}]]}}]}',
+  '{"a":{},"b":[],"c":[{},[],{"d":{}}],"e":{"f":{"g":[[]]}}}',
+  '{"a":1,"b":2,"c":3,"d":4,"e":5}',
+  '{"o":{"a":1,"b":2,"c":3,"d":4},"z":[{"c":3,"d":4}]}',
+  '[{"a":1,"b":2,"c":3,"d":4},2,3]',
+  '["say \\"hi\\"","a\\\\b","\\u00e9\\n\\t"]',
+  '{"\\"k\\"":"\\b\\f\\r\\/"}',
+  '{"é ü ñ":"✓ 漢字 😀","emoji":["😀","é"]}',
+  '{"integers":[0,-7,12345678901234567890],"decimals":[18.40,-0.5,3.14],"exponents":[1.2e-3,1E+2,-6.02E23],"minus zero":-0}',
+  '{"yes":true,"no":false,"nothing":null,"words":[true,false,null]}',
+  '[1,"two",[]]',
+  '"1.0"',
+  "-1.5e10",
+  "true",
+  "false",
+  "null",
+  "[]",
+  "{}",
+  compact_record,
+  unevenly_spaced_record,
+}
+
+test("a record with nothing long, of every shape, gives with the small limits exactly the lines it gives without limits, and no trimmed places", function()
+  for _, text in ipairs(records_with_nothing_long) do
+    assert_record_decodes(text)
+    assert_small_limits_change_nothing(text)
+    assert_reports_trimmed_places(text, SMALL_LIMITS, 0)
+  end
+end)
+
+test("a record with an array of exactly the items limit or a string of exactly the characters limit gives with the small limits exactly the lines it gives without limits, and no trimmed places", function()
+  ---@type string[]
+  local texts = { "[1,2,3]", '"0123456789"', '{"a":[1,2,3],"s":"0123456789"}' }
+  vim.list_extend(texts, texts_of(records_with_arrays_of_exactly_the_limit))
+  vim.list_extend(texts, texts_of(records_with_strings_of_exactly_the_limit))
+  for _, text in ipairs(texts) do
+    assert_small_limits_change_nothing(text)
+    assert_reports_trimmed_places(text, SMALL_LIMITS, 0)
+  end
+end)
+
+--- Limits far larger than anything in point 18's varied set: no record of
+--- it has as many bytes, so none has an array of as many items or a string
+--- of as many characters.
+---@type JsonTrimLimits
+local LIMITS_FAR_LARGER_THAN_THE_VARIED_SET = { array_items = 1000000, string_characters = 1000000 }
+
+test("with limits far larger than anything in it, every record of point 18's varied set formats to the same lines as without limits", function()
+  for _, text in ipairs(varied_records) do
+    local label = vim.inspect(text) .. " with limits far larger than it"
+    assert_eq(#text < LIMITS_FAR_LARGER_THAN_THE_VARIED_SET.array_items, true, label .. ", fewer bytes than the items limit:")
+    assert_eq(#text < LIMITS_FAR_LARGER_THAN_THE_VARIED_SET.string_characters, true, label .. ", fewer bytes than the characters limit:")
+    local lines, trimmed_places = json_formatter.format(text, LIMITS_FAR_LARGER_THAN_THE_VARIED_SET)
+    assert_deep_eq(lines, (json_formatter.format(text)), label .. ", lines against those without limits:")
+    assert_eq(trimmed_places, 0, label .. ", trimmed places:")
+  end
+end)
+
+--- How many items the long array of point 40 has, and how many characters
+--- its long string has: far more than either limit, small or default.
+local ITEMS_OF_THE_LONG_ARRAY = 10000
+local CHARACTERS_OF_THE_LONG_STRING = 50000
+
+--- An array that is the whole record, of the numbers 1 to `count` as
+--- written.
+---@param count integer how many items the array has
+---@return string
+local function array_of_items(count)
+  ---@type string[]
+  local items = {}
+  for item = 1, count do
+    items[item] = tostring(item)
+  end
+  return "[" .. table.concat(items, ",") .. "]"
+end
+
+--- The long array of point 40, the whole record.
+local long_array_record = array_of_items(ITEMS_OF_THE_LONG_ARRAY)
+
+--- The long string of point 40, the whole record: 50,000 single-byte
+--- characters.
+local long_string_record = '"' .. ("x"):rep(CHARACTERS_OF_THE_LONG_STRING) .. '"'
+
+--- A record whose members' values are an array of one item more than the
+--- default items limit and a string of one character more than the default
+--- characters limit.
+local record_longer_than_the_default_limits = '{"items":'
+  .. array_of_items(json_formatter.DEFAULT_LIMITS.array_items + 1)
+  .. ',"text":"'
+  .. ("y"):rep(json_formatter.DEFAULT_LIMITS.string_characters + 1)
+  .. '"}'
+
+--- How many bytes of the first line that differs a failure of
+--- `assert_same_lines` shows of each version at most (a few more to end on
+--- a whole character), and how many of them come before the first byte
+--- that differs.
+local BYTES_SHOWN_OF_A_DIFFERING_LINE = 60
+local BYTES_SHOWN_BEFORE_THE_DIFFERENCE = 20
+
+--- `line`'s bytes `from` to `to`, carried on past `to` to the end of the
+--- UTF-8 character there, so a failure never shows half of a `…`.
+---@param line string? a line, or nil past the end of its list
+---@param from integer the first byte shown, the start of a character
+---@param to integer the last byte shown, before carrying on
+---@return string?
+local function piece_of_line(line, from, to)
+  if line == nil then
+    return nil
+  end
+  while line:find("^[\128-\191]", to + 1) do
+    to = to + 1
+  end
+  return line:sub(from, to)
+end
+
+--- Asserts that `lines` are exactly the lines `expected`, every line
+--- compared, for a record too long to print: a failure names `record_name`
+--- and shows only how many lines each list has, the position of the first
+--- line that differs, and a piece of at most about 60 bytes of each version
+--- of it, around the first byte that differs.
+---@param lines string[] the lines the formatter returned
+---@param expected string[] the lines it must return
+---@param record_name string names the record, and how it was formatted, in a failure
+local function assert_same_lines(lines, expected, record_name)
+  local position = 1
+  while lines[position] ~= nil and lines[position] == expected[position] do
+    position = position + 1
+  end
+  local line, expected_line = lines[position], expected[position]
+  local first_byte = 1
+  if line ~= nil and expected_line ~= nil then
+    while line:byte(first_byte) == expected_line:byte(first_byte) do
+      first_byte = first_byte + 1
+    end
+  end
+  local from = math.max(1, first_byte - BYTES_SHOWN_BEFORE_THE_DIFFERENCE)
+  -- Start on a whole character. The bytes before the first that differs
+  -- are the same in both versions, and moving back only shows more.
+  local either_line = line or expected_line or ""
+  while from > 1 and either_line:find("^[\128-\191]", from) do
+    from = from - 1
+  end
+  local to = from + BYTES_SHOWN_OF_A_DIFFERING_LINE - 1
+  assert_eq(
+    piece_of_line(line, from, to),
+    piece_of_line(expected_line, from, to),
+    ("%s: lines returned %d, expected %d; the first line that differs is line %d, shown from byte %d:"):format(record_name, #lines, #expected, position, from)
+  )
+end
+
+test("an array of 10,000 items formatted without limits gives 10,002 lines, none of them a marker, and no trimmed places", function()
+  local label = "the array of 10,000 items without limits"
+  local lines, trimmed_places = json_formatter.format(long_array_record)
+  assert_deep_eq(positions_of_lines_holding(lines, "…"), {}, label .. ", lines holding a marker:")
+  ---@type string[]
+  local expected = { "[" }
+  for item = 1, ITEMS_OF_THE_LONG_ARRAY do
+    expected[#expected + 1] = "  " .. item .. (item < ITEMS_OF_THE_LONG_ARRAY and "," or "")
+  end
+  expected[#expected + 1] = "]"
+  assert_same_lines(lines, expected, label)
+  assert_eq(trimmed_places, 0, label .. ", trimmed places:")
+end)
+
+test("a string of 50,000 characters formatted without limits gives one line holding all of it, and no trimmed places", function()
+  local label = "the string of 50,000 characters without limits"
+  local lines, trimmed_places = json_formatter.format(long_string_record)
+  assert_same_lines(lines, { long_string_record }, label)
+  assert_eq(trimmed_places, 0, label .. ", trimmed places:")
+end)
+
+test("a record with an array longer than the default items limit and a string longer than the default characters limit, formatted without limits, decodes to the same value as the record", function()
+  assert_lines_decode_to_the_record(record_longer_than_the_default_limits, "the record longer than the default limits, without limits,")
+end)
+
+test("passing no limits and passing nil give the same lines and the same trimmed places", function()
+  ---@type { name?: string, text: string }[]
+  local records = {
+    { name = "the array of 10,000 items", text = long_array_record },
+    { name = "the string of 50,000 characters", text = long_string_record },
+    { name = "the record longer than the default limits", text = record_longer_than_the_default_limits },
+    { text = "[1,2,3,4,5]" },
+    { text = '"0123456789abcdef"' },
+    { text = '{"0123456789abcdef":[1,2,3,4,5]}' },
+    { name = 'the blank record ""', text = "" },
+  }
+  for _, record in ipairs(records) do
+    local label = (record.name or vim.inspect(record.text)) .. " with no limits and with nil"
+    local lines, trimmed_places = json_formatter.format(record.text)
+    local nil_lines, nil_trimmed_places = json_formatter.format(record.text, nil)
+    assert_same_lines(nil_lines, lines, label)
+    assert_eq(nil_trimmed_places, trimmed_places, label .. ", trimmed places:")
+  end
+end)
+
+--- The PRD's own figures for the default limits, each the whole record:
+--- an array of the numbers 1 to 9,999, and a string of 39,907 single-byte
+--- characters.
+local array_of_9999_items = array_of_items(9999)
+local string_of_39907_characters = '"' .. ("x"):rep(39907) .. '"'
+
+test("the default limits are one value of 20 items per array and 2,000 characters per string, which passed as it is cuts an array of 9,999 items after 20 with 9,979 left out and a string of 39,907 characters after 2,000 with 37,907 left out", function()
+  assert_deep_eq(json_formatter.DEFAULT_LIMITS, { array_items = 20, string_characters = 2000 }, "the default limits:")
+
+  local array_label = "the array of 9,999 items with the default limits"
+  local array_lines, array_trimmed_places = json_formatter.format(array_of_9999_items, json_formatter.DEFAULT_LIMITS)
+  ---@type string[]
+  local expected = { "[" }
+  for item = 1, 20 do
+    expected[#expected + 1] = "  " .. item .. ","
+  end
+  expected[#expected + 1] = "  … 9,979 more items"
+  expected[#expected + 1] = "]"
+  assert_same_lines(array_lines, expected, array_label)
+  assert_eq(array_trimmed_places, 1, array_label .. ", trimmed places:")
+
+  local string_label = "the string of 39,907 characters with the default limits"
+  local string_lines, string_trimmed_places = json_formatter.format(string_of_39907_characters, json_formatter.DEFAULT_LIMITS)
+  assert_same_lines(string_lines, { '"' .. ("x"):rep(2000) .. '"  … 37,907 more characters' }, string_label)
+  assert_eq(string_trimmed_places, 1, string_label .. ", trimmed places:")
+end)
+
+test("with the default limits, an array of exactly the default items and a string of exactly the default characters come out as they do without limits, and no trimmed places", function()
+  local limits = json_formatter.DEFAULT_LIMITS
+  ---@type { name: string, text: string }[]
+  local records = {
+    { name = "the array of exactly the default items", text = array_of_items(limits.array_items) },
+    { name = "the string of exactly the default characters", text = '"' .. ("x"):rep(limits.string_characters) .. '"' },
+  }
+  for _, record in ipairs(records) do
+    local label = record.name .. " with the default limits"
+    local lines, trimmed_places = json_formatter.format(record.text, limits)
+    assert_same_lines(lines, (json_formatter.format(record.text)), label)
+    assert_eq(trimmed_places, 0, label .. ", trimmed places:")
+  end
+end)
+
+test("formatting with the default limits leaves them holding the same two numbers", function()
+  assert_deep_eq(json_formatter.DEFAULT_LIMITS, default_limits_as_loaded, "the default limits after the cases before this one formatted with them:")
+  ---@type { name: string, text: string }[]
+  local records = {
+    { name = "the array of 9,999 items", text = array_of_9999_items },
+    { name = "the string of 39,907 characters", text = string_of_39907_characters },
+    { name = "a record with nothing long", text = compact_record },
+    { name = 'the blank record ""', text = "" },
+  }
+  for _, record in ipairs(records) do
+    json_formatter.format(record.text, json_formatter.DEFAULT_LIMITS)
+    assert_deep_eq(json_formatter.DEFAULT_LIMITS, default_limits_as_loaded, "the default limits after formatting " .. record.name .. " with them:")
+  end
+end)
+
+--- Every text of point 17, none of which is valid JSON.
+---@type string[]
+local texts_of_point_17 = vim.list_extend({}, texts_that_are_not_json)
+vim.list_extend(texts_of_point_17, texts_with_a_raw_line_break_inside_a_string)
+vim.list_extend(texts_of_point_17, texts_with_a_raw_line_break_between_words)
+vim.list_extend(texts_of_point_17, texts_closing_what_is_not_open)
+
+test("every text of point 17 that is not valid JSON, formatted with the small limits, returns a list of lines and a number of trimmed places without raising or looping", function()
+  for _, text in ipairs(texts_of_point_17) do
+    assert_formats_to_lines_without_line_breaks(text, SMALL_LIMITS)
+  end
+end)
+
+test("an array longer than the limit that never closes, ends in a comma, has a comma before its bracket or a closer of the wrong kind among its hidden items does not raise with the small limits", function()
+  for _, text in ipairs({ "[1,2,3,4,5", "[1,2,3,", "[1,2,3,]", '[1,2,3,{"a":1],5]' }) do
+    assert_formats_to_lines_without_line_breaks(text, SMALL_LIMITS)
+  end
+end)
+
+test("a string longer than the limit that never closes, whose cut meets a backslash or a \\u escape cut off by the end of the text, with a \\u escape of too few digits or with bytes that are not UTF-8 at the cut does not raise with the small limits", function()
+  -- Bytes that are not UTF-8 are written as Lua's decimal escapes, each
+  -- followed by something that is not a digit.
+  ---@type { text: string, bytes: integer }[]
+  local texts = {
+    { text = '"0123456789abcdef', bytes = 17 },
+    { text = '"012345678\\', bytes = 11 },
+    { text = '"0123456789\\', bytes = 12 },
+    { text = '"012345678\\u00', bytes = 14 },
+    { text = '"012345678\\u0"', bytes = 14 },
+    { text = '{"t":"012345678\\u0","z":1}', bytes = 26 },
+    { text = '"012345678\255abc"', bytes = 15 },
+    { text = '"012345678\195"', bytes = 12 },
+    { text = '"012345678\240\159abc"', bytes = 16 },
+    { text = '"012345678\128abc"', bytes = 15 },
+    { text = '"0123456789\128\128\128"', bytes = 15 },
+  }
+  for _, written in ipairs(texts) do
+    assert_bytes_as_written(written.text, written.bytes)
+    assert_formats_to_lines_without_line_breaks(written.text, SMALL_LIMITS)
+  end
+end)
+
+test("a raw line break inside a hidden item, between hidden items, or in the shown or the hidden part of a cut string gives with the small limits no line holding a line break", function()
+  for _, text in ipairs({
+    '[1,2,3,"a\nb",5]',
+    '[1,2,3,"a\r\nb",5]',
+    "[1,2,3,4,\n5]",
+    "[1,2,3,4\r\n,5]",
+    '"01234\n56789abcdef"',
+    '"01234\r\n56789abcdef"',
+    '"01234\r56789abcdef"',
+    '"0123456789ab\ncdef"',
+    '"0123456789ab\r\ncdef"',
+  }) do
+    assert_formats_to_lines_without_line_breaks(text, SMALL_LIMITS)
+  end
+end)
+
+test("the formatter loaded by path in a worker thread trims a record longer than the default limits it holds there to the lines and trimmed places the same call gives on the main thread, handed back as a list of strings and a number", function()
+  local label = "the record longer than the default limits, formatted with them in a worker thread"
+  local expected_lines, expected_trimmed_places = json_formatter.format(record_longer_than_the_default_limits, json_formatter.DEFAULT_LIMITS)
+  assert_eq(expected_trimmed_places, 2, "on the main thread, the trimmed places of the record longer than the default limits:")
+  local lines, trimmed_places = result_from_worker_thread(record_longer_than_the_default_limits, true)
+  assert_eq(type(trimmed_places), "number", label .. ", the type of the trimmed places:")
+  assert_same_lines(lines, expected_lines, label)
+  assert_eq(trimmed_places, expected_trimmed_places, label .. ", trimmed places:")
+end)
+
+test("the formatter loaded by path where the editor's global is absent trims a record longer than the default limits it holds to the lines and trimmed places it gives with the editor's global", function()
+  local label = "the record longer than the default limits, formatted with them without the editor's global"
+  local environment = copy_of_globals()
+  environment.vim = nil
+  ---@module "andrew.jsonl.json_formatter"
+  local formatter = setfenv(assert(loadfile(json_formatter_path)), environment)()
+  local lines, trimmed_places = formatter.format(record_longer_than_the_default_limits, formatter.DEFAULT_LIMITS)
+  local expected_lines, expected_trimmed_places = json_formatter.format(record_longer_than_the_default_limits, json_formatter.DEFAULT_LIMITS)
+  assert_same_lines(lines, expected_lines, label)
+  assert_eq(trimmed_places, expected_trimmed_places, label .. ", trimmed places:")
 end)
 
 _H.finish()

@@ -55,6 +55,9 @@ local LOWERCASE_F, LOWERCASE_N, LOWERCASE_T, LOWERCASE_U = 102, 110, 116, 117
 
 --- Every byte that ends a scalar or changes the structure.
 local STRUCTURAL_PATTERN = '[%[%]{},:"]'
+--- A surrogate pair written as two `\u` escapes, a high surrogate directly
+--- followed by a low one, the hexadecimal digits in either case.
+local SURROGATE_PAIR_PATTERN = "^\\u[dD][89abAB]%x%x\\u[dD][c-fC-F]%x%x"
 
 ---@type table<integer, string>
 local indent_of_depth = {}
@@ -93,7 +96,9 @@ end
 --- The last byte of a string's content to keep so that at least
 --- `character_limit` characters are shown, or nil when it has no more than
 --- that. An escape is counted as the characters it is written with (`\n` is
---- two) and is never split, and neither is a multi-byte character.
+--- two) and is never split, and neither is a multi-byte character. A
+--- surrogate pair written as two `\u` escapes is one escape of twelve
+--- characters, so it is never split either.
 ---@param text string
 ---@param first integer first byte of the content, after the opening quote
 ---@param last integer last byte of the content, before the closing quote
@@ -108,7 +113,13 @@ local function last_kept_byte(text, first, last, character_limit)
     local byte = text:byte(position)
     local width
     if byte == BACKSLASH then
-      width = text:byte(position + 1) == LOWERCASE_U and 6 or 2
+      if text:byte(position + 1) ~= LOWERCASE_U then
+        width = 2
+      elseif text:find(SURROGATE_PAIR_PATTERN, position) then
+        width = 12
+      else
+        width = 6
+      end
       characters = characters + width
     else
       width = byte < 0xC0 and 1 or byte < 0xE0 and 2 or byte < 0xF0 and 3 or 4
@@ -137,6 +148,15 @@ local function with_thousands(count)
   local digits = tostring(count)
   local grouped = digits:reverse():gsub("(%d%d%d)", "%1,"):reverse()
   return (grouped:gsub("^,", ""))
+end
+
+--- The marker for `count` items or characters left out, in the singular
+--- for exactly one: `… 1 more item`, `… 37,907 more characters`.
+---@param count integer
+---@param unit "item"|"character"
+---@return string
+local function marker_for(count, unit)
+  return ("%s %s more %s%s"):format(TRIM_MARK, with_thousands(count), unit, count == 1 and "" or "s")
 end
 
 --- Pass over the rest of an array without keeping any of it.
@@ -233,8 +253,7 @@ function M.format(text, limits)
       if kept_until then
         pieces[#pieces + 1] = text:sub(at, kept_until) .. '"'
         local left_out = character_count(text, kept_until + 1, close_at - 1)
-        local marker = ("%s %s more characters"):format(TRIM_MARK, with_thousands(left_out))
-        line_marker = (line_marker or "") .. INDENT_UNIT .. marker
+        line_marker = (line_marker or "") .. INDENT_UNIT .. marker_for(left_out, "character")
         trimmed_places = trimmed_places + 1
       else
         pieces[#pieces + 1] = text:sub(at, close_at)
@@ -266,8 +285,7 @@ function M.format(text, limits)
       if limits and items and items >= limits.array_items then
         end_line()
         local skipped_items, close_at = skip_items(text, position)
-        local noun = skipped_items == 1 and "item" or "items"
-        pieces[#pieces + 1] = ("%s %s more %s"):format(TRIM_MARK, with_thousands(skipped_items), noun)
+        pieces[#pieces + 1] = marker_for(skipped_items, "item")
         trimmed_places = trimmed_places + 1
         -- The closing bracket is handled by the next round of the loop.
         position = close_at
