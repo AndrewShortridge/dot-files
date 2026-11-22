@@ -62,9 +62,10 @@
 --     LazyVim's mini-diff extra DISABLES gitsigns outright; this config runs
 --     both side by side instead.
 --
---   * `<leader>gv` `<leader>gt` `<leader>gT` (codediff.nvim review tab and
---     history) are not LazyVim keys and live in plugins/codediff.lua, whose
---     lazy.nvim `keys` load that plugin on first press.
+--   * `<leader>gv` `<leader>gV` `<leader>gw` `<leader>gt` `<leader>gT`
+--     (codediff.nvim review tab, its commit and worktree pickers, history)
+--     are not LazyVim keys and live in plugins/codediff.lua, whose lazy.nvim
+--     `keys` load that plugin on first press.
 --
 -- NOT ported, because the plugin each one needs is not installed:
 --   `<leader>ge` Git Explorer (neo-tree extra) and `<leader>gr` List Repos

@@ -387,7 +387,7 @@ Per-language type checking via terminal split (30% height):
 | `<leader>s` | Splits/Windows | `sv` vertical, `sh` horizontal, `se` equalize, `sx` close, `sm` maximize |
 | `<leader><Tab>` | Tabs (LazyVim) | `<Tab>` new, `d` close, `o` close others, `]`/`[` next/prev, `f`/`l` first/last |
 | `<leader>t` | Tabs/Terminal | `to` new, `tx` close, `tn` next, `tp` prev, `tf` buffer to tab, `tt` floating terminal |
-| `<leader>g` | Git | `gg` lazygit, `gl` log, `gf` file history, `gb` blame line, `gs` status, `gS` stash, `gd`/`gD` diff, `gB`/`gY` browse, `gv` CodeDiff review tab, `gt`/`gT` CodeDiff file/repo history |
+| `<leader>g` | Git | `gg` lazygit, `gl` log, `gf` file history, `gb` blame line, `gs` status, `gS` stash, `gd`/`gD` diff, `gB`/`gY` browse, `gv` CodeDiff review tab, `gV`/`gw` the same tab on a picked commit / git worktree, `gt`/`gT` CodeDiff file/repo history |
 | `gh` / `gH` | mini.diff | Apply / reset a hunk range (operators); `gh` is also the hunk text object. `<leader>go` toggles the overlay |
 | `<leader>gh` | Hunks | `ghs` stage, `ghu` unstage (the hunk under the cursor), `ghr` reset, `ghS` stage buffer, `ghR` reset buffer, `ghb` blame, `ghB` blame buffer, `ghd` diff, `ght` toggle inline blame |
 | `<leader>c` | Code Actions | `ca` code action |
@@ -446,7 +446,7 @@ Per-language type checking via terminal split (30% height):
 | gitsigns.nvim | gitsigns.lua | Git signs + `<leader>gh` hunks | `BufReadPre, BufNewFile` |
 | snacks.nvim (fragment) | git.lua | `<leader>g` git commands: fzf-lua pickers for log / history / status / stash / diff, snacks for lazygit and git browse | `keys` |
 | mini.diff | mini-diff.lua | Diff overlay, `gh`/`gH` operators | `BufReadPre, BufNewFile` |
-| codediff.nvim | codediff.lua | Diff review tab, file/repo history (`<leader>gv`/`gt`/`gT`); `build` fetches its diff library + watcher binary | `cmd = "CodeDiff"`, `keys` |
+| codediff.nvim | codediff.lua | Diff review tab (`<leader>gv`), the same on a picked commit or git worktree (`<leader>gV`/`gw`, `utils/codediff_pickers.lua`), file/repo history (`<leader>gt`/`gT`); `build` fetches its diff library + watcher binary | `cmd = "CodeDiff"`, `keys` |
 | vim-maximizer | vim-maximizer.lua | Maximize splits | Keys |
 | substitute.nvim | substitute.lua | Motion-based replace | `BufReadPre, BufNewFile` |
 | nvim-surround | surround.lua | Surrounding pairs | `BufReadPre, BufNewFile` |

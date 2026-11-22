@@ -36,6 +36,10 @@ return {
     -- handlers that crash on 0.12's node-list match API. See the module for details.
     require("andrew.utils.ts_directive_compat").apply()
 
+    -- JSONL has no parser of its own. The json grammar's document is a
+    -- sequence of values, so it parses one-record-per-line files as they are.
+    vim.treesitter.language.register("json", "jsonl")
+
     -- Safely require treesitter module (handles install order)
     local status_ok, treesitter = pcall(require, "nvim-treesitter.configs")
     if not status_ok then
