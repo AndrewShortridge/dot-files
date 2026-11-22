@@ -75,11 +75,13 @@ return {
       -- Apply text styles to specific syntax elements
 
       -- The italic and bold sets of olimorris' own config (the author of
-      -- onedarkpro), all of his `styles` block:
+      -- onedarkpro), his `styles` block:
       -- https://github.com/olimorris/dotfiles/blob/main/.config/nvim/plugin/colorscheme.lua
+      -- except `comments = "italic"`: comments are upright here. The italic
+      -- face is a cursive font (kitty.conf), fine for a keyword and tiring
+      -- over a paragraph of comment.
       -- `themes/soft-paper.lua` states the same rules by hand; change both.
       styles = {
-        comments = "italic",      -- Comment
         keywords = "italic",      -- Keyword / @keyword (`local`, `return`, `end`); was "bold"
         conditionals = "italic",  -- Conditional / @keyword.conditional (`if`, `else`)
         parameters = "italic",    -- @variable.parameter

@@ -254,8 +254,13 @@ would append to the broken one.
 **Keywords are italic and procedure names bold, in both colour schemes.** The
 rule is the `styles` block of `plugins/colorscheme.lua` (onedark; the italic
 and bold sets of olimorris' own config) and is stated again by hand in
-`themes/soft-paper.lua`; change both. What goes beyond his config:
+`themes/soft-paper.lua`; change both. What differs from his config:
 
+- Comments are upright, in both schemes (his are italic). Kitty's italic face
+  is a cursive font (`italic_font` in `~/.config/kitty/kitty.conf`,
+  VictorMono Nerd Font), which suits a keyword and not a paragraph. In
+  soft-paper that covers `Comment`, `SpecialComment`, `@comment`,
+  `@comment.documentation` and `@string.documentation` (docstrings).
 - Word operators (`and`, `or`, `not`, Fortran's `.and.`) are keywords, not
   operators.
 - Fortran follows the rule everywhere. `queries/fortran/highlights.scm`
