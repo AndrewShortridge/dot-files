@@ -26,8 +26,13 @@
 -- DAP group here, so the three sit with the other git keys instead:
 --
 --   <leader>gv   review tab               (his dv, same letter)
+--   <leader>gV   review tab on a commit picked from the log
+--   <leader>gw   review tab on a git worktree picked from the list
 --   <leader>gt   history of this file     (his dh) -- t for "timeline"
 --   <leader>gT   history of the repo      (his dH)
+--
+-- gV and gw are not his: both are an fzf-lua picker whose Enter opens the
+-- review tab on what was picked (utils/codediff_pickers.lua).
 --
 -- h / H could not carry over: <leader>gh is the gitsigns Hunks PREFIX, so a
 -- mapping on it would wait out `timeoutlen` against every <leader>gh* key.
@@ -79,6 +84,20 @@ return {
   keys = {
     -- A bare `:CodeDiff` closes the review when run from inside its tab.
     { "<leader>gv", "<cmd>CodeDiff<CR>", desc = "CodeDiff: toggle review of working-tree changes" },
+    {
+      "<leader>gV",
+      function()
+        require("andrew.utils.codediff_pickers").pick_commit()
+      end,
+      desc = "CodeDiff: pick a commit and review what it changed",
+    },
+    {
+      "<leader>gw",
+      function()
+        require("andrew.utils.codediff_pickers").pick_worktree()
+      end,
+      desc = "CodeDiff: pick a git worktree and review its changes",
+    },
     { "<leader>gt", "<cmd>CodeDiff history %<CR>", desc = "CodeDiff: history of the current file" },
     { "<leader>gT", "<cmd>CodeDiff history<CR>", desc = "CodeDiff: history of the repository" },
   },

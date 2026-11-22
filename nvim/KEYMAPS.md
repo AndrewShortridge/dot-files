@@ -471,6 +471,8 @@ is for "timeline": `h` could not carry over, `<leader>gh` being the Hunks prefix
 | Mode | Key | Description | How to Use |
 |------|-----|-------------|------------|
 | n | `<leader>gv` | Toggle the review tab | Working-tree changes vs the index/HEAD; press again inside the tab (or `q`) to close it |
+| n | `<leader>gV` | Review a commit | Pick a commit from the log; `<CR>` opens the review tab on the files that commit changed. The picker's other keys are `<leader>gl`'s |
+| n | `<leader>gw` | Review a git worktree | Pick one of the repository's worktrees; `<CR>` opens the review tab on what that checkout holds and this one does not: its commits since the two last had one in common, plus its uncommitted changes. `<C-a>` / `<C-x>` add / delete a worktree |
 | n | `<leader>gt` | File history | Commits that touched the current file; `<CR>` on one shows its diff |
 | n | `<leader>gT` | Repository history | Every commit with its changed files |
 
