@@ -1,4 +1,4 @@
--- Spec for the <leader>ub light/dark switch (lua/andrew/themes/toggle.lua).
+-- Spec for the light/dark switch (lua/andrew/themes/toggle.lua).
 --
 -- THE BUG THIS EXISTS FOR
 --
@@ -38,7 +38,7 @@ local test, assert_eq, assert_true = _H.test, _H.assert_eq, _H.assert_true
 
 local cfg = vim.fn.stdpath("config")
 
-print("\n=== Theme Switch (<leader>ub) Tests ===\n")
+print("\n=== Theme Switch Tests ===\n")
 
 -- The functions of lua/andrew/themes/toggle.lua these tests drive (the module
 -- declares no class of its own).

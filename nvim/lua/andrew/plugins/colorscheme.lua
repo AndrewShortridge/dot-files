@@ -51,6 +51,22 @@ return {
         SpellCap = { sp = "#e5c07b", undercurl = true },
         SpellLocal = { sp = "#56b6c2", undercurl = true },
         SpellRare = { sp = "#c678dd", undercurl = true },
+
+        -- Word operators (`and`, `or`, `not`, `in`) look like every other
+        -- keyword. onedarkpro styles them as operators, and for Lua paints
+        -- them in the plain text colour, so they were the only keywords that
+        -- did not take `styles.keywords`.
+        ["@keyword.operator"] = { link = "@keyword" },
+        ["@keyword.operator.lua"] = { link = "@keyword.lua" },
+
+        -- Fortran, so that it reads like Lua does: every keyword italic,
+        -- every procedure name bold. onedarkpro has no Fortran file of its
+        -- own. The last two captures come from queries/fortran/highlights.scm,
+        -- which explains them; the colours are the ones each had.
+        ["@keyword.function.fortran"] = { link = "@keyword" }, -- `subroutine`, `call`, `program`
+        ["@attribute.fortran"] = { fg = "${purple}", italic = true }, -- `implicit none`, `intent`
+        ["@function.builtin.statement"] = { fg = "${yellow}", italic = true }, -- `write`, `allocate`
+        ["@function.builtin.intrinsic"] = { fg = "${yellow}", bold = true }, -- `sin`, `size`
       },
 
       -- =============================================================================
@@ -58,9 +74,21 @@ return {
       -- =============================================================================
       -- Apply text styles to specific syntax elements
 
+      -- The italic and bold sets of olimorris' own config (the author of
+      -- onedarkpro), all of his `styles` block:
+      -- https://github.com/olimorris/dotfiles/blob/main/.config/nvim/plugin/colorscheme.lua
+      -- `themes/soft-paper.lua` states the same rules by hand; change both.
       styles = {
-        comments = "italic",    -- Render comments in italic font
-        keywords = "bold",      -- Render keywords in bold font
+        comments = "italic",      -- Comment
+        keywords = "italic",      -- Keyword / @keyword (`local`, `return`, `end`); was "bold"
+        conditionals = "italic",  -- Conditional / @keyword.conditional (`if`, `else`)
+        parameters = "italic",    -- @variable.parameter
+        tags = "italic",          -- @tag.attribute (html)
+        virtual_text = "italic",  -- DiagnosticVirtualText*, completion ghost text
+        -- Function / @function and its calls. Also @keyword.function
+        -- (`subroutine`, `def`), except in Lua where that one is a keyword.
+        functions = "bold",
+        methods = "bold",         -- @function.method and its calls
       },
     })
 

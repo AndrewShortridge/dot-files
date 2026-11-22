@@ -76,7 +76,7 @@ function M.setup_opts()
     -- `hls` is a function because the profile decides WHICH groups to use when
     -- it is read: a Telescope* group the colorscheme leaves undefined is
     -- dropped, so that fzf-lua falls back to its own FzfLua* group. Which ones
-    -- are defined changes with the colorscheme (<leader>ub, <leader>uC).
+    -- are defined changes with the colorscheme (<leader>uC, :SoftPaperLight).
     -- fzf-lua calls a function-valued `hls` each time a picker opens, which
     -- keeps the answer current with no ColorScheme autocmd to order against
     -- the ones that define those groups.

@@ -61,7 +61,7 @@ return {
     -- Define highlight groups for signs.
     -- Re-applied on ColorScheme: a colorscheme starts with `hi clear`, which
     -- wipes these, and nothing else re-creates them -- so before this, one
-    -- <leader>ub light/dark switch left every breakpoint sign in the gutter
+    -- light/dark switch left every breakpoint sign in the gutter
     -- uncoloured for the rest of the session.
     local function dap_highlights()
       vim.api.nvim_set_hl(0, "DapBreakpoint", { fg = "#e51400" })

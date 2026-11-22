@@ -4,7 +4,7 @@
 --   * plugins/snacks.lua      -- the <leader>u toggle block + scroll/animate opts
 --   * plugins/gitsigns.lua    -- <leader>uG, registered from opts()
 --   * core/options.lua        -- pins showtabline = 2
---   * themes/toggle.lua       -- light/dark backing the <leader>ub toggle
+--   * themes/toggle.lua       -- the light/dark switch (no key since <leader>ub went)
 --
 -- FOUR THINGS THIS PROTECTS.
 --
@@ -21,8 +21,8 @@
 -- 3. <leader>uG comes from gitsigns' opts(), not from snacks.lua. Registering it
 --    eagerly would make which-key's `get` pull gitsigns in ahead of BufReadPre.
 --
--- 4. The removals stay removed: the <leader>ut cycler, the duplicate <leader>ub
---    colourscheme picker, and :ThemeCycle.
+-- 4. The removals stay removed: the <leader>ut cycler, :ThemeCycle, and
+--    <leader>ub in both its lives (colourscheme picker, then light/dark toggle).
 --
 -- Drives the REAL plugin specs (dofile) against a stubbed Snacks that records
 -- every toggle and :map() call. No source introspection.
@@ -172,7 +172,6 @@ test("every requested toggle exists on its LazyVim letter", function()
     ["<leader>ua"] = "Animations",
     ["<leader>uS"] = "Smooth Scroll",
     ["<leader>uA"] = "Tabline",
-    ["<leader>ub"] = "Dark Background",
     ["<leader>ug"] = "Indention Guides",
   }
   local wrong = {} ---@type string[]
@@ -239,8 +238,7 @@ test("the removed mappings stay removed", function()
   assert_nil(snacks.toggles["<leader>ut"], "theme cycler must be gone")
   assert_nil(snacks.plain["<leader>ut"], "theme cycler must be gone")
   assert_nil(snacks.toggles["<leader>ur"], "old relativenumber letter must be gone")
-  -- <leader>ub is now the background toggle, never the colourscheme picker
-  assert_eq(snacks.toggles["<leader>ub"], "Dark Background")
+  assert_nil(snacks.toggles["<leader>ub"], "the light/dark toggle must be gone")
   assert_nil(snacks.plain["<leader>ub"], "the duplicate colourscheme picker must be gone")
   assert_eq(snacks.plain["<leader>uC"], "Colorschemes", "the surviving picker keeps <leader>uC:")
 end)

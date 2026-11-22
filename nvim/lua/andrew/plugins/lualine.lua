@@ -26,8 +26,8 @@ return {
     -- =============================================================================
     -- OneDark Color Palette and Theme
     -- =============================================================================
-    -- Both live in andrew.themes.lualine_theme so the light/dark toggle
-    -- (<leader>ub, andrew.themes.toggle) can restore this exact theme when
+    -- Both live in andrew.themes.lualine_theme so the light/dark switch
+    -- (andrew.themes.toggle) can restore this exact theme when
     -- switching back to OneDark, instead of falling back to lualine's "auto".
     local onedark = require("andrew.themes.lualine_theme")
     local colors = onedark.colors

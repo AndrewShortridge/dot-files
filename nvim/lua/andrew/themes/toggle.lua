@@ -5,9 +5,10 @@
 -- Light = soft-paper-light
 --
 -- Replaces the old three-way cycler (<leader>ut / :ThemeCycle), which rotated
--- onedark -> soft-paper-light -> soft-paper-dark. The dark/light pair is now
--- driven by <leader>ub, registered as a Snacks.toggle in plugins/snacks.lua so
--- it picks up which-key's enabled/disabled icon like every other UI toggle.
+-- onedark -> soft-paper-light -> soft-paper-dark. No key is bound to the
+-- switch: <leader>ub drove `set_dark` until 2026-11-22 and was removed as
+-- unused. `:SoftPaperLight` / `:SoftPaperDark` go to soft-paper; the way back
+-- to onedark is `set_dark(true)` (`activate_onedark`), which has no command.
 --
 -- TWO THINGS THAT MUST NOT REGRESS
 --

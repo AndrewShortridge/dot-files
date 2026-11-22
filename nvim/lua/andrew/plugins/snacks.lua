@@ -522,21 +522,6 @@ return {
       })
       :map("<leader>uA")
 
-    -- Light / dark. LazyVim just flips vim.o.background, which only works for
-    -- schemes that redraw themselves on OptionSet background. This config needs
-    -- two DIFFERENT colorschemes, so it drives andrew.themes.toggle, which
-    -- swaps via :colorscheme (firing ColorScheme for vault/colors.lua) and
-    -- re-themes lualine to match.
-    Snacks.toggle({
-      name = "Dark Background",
-      get = function()
-        return require("andrew.themes.toggle").is_dark()
-      end,
-      set = function(state)
-        require("andrew.themes.toggle").set_dark(state)
-      end,
-    }):map("<leader>ub")
-
     -- Indent guides (indent-blankline). Deliberately NOT `<cmd>IBLToggle<CR>`:
     -- the ibl spec declares only `ft`, no `cmd`, so lazy.nvim creates no
     -- command stub and that mapping threw E492 in any buffer where ibl had not
@@ -564,8 +549,6 @@ return {
     end, { desc = "Zen Mode" })
 
     -- Colorschemes picker (fzf-lua) -- applies on selection.
-    -- <leader>ub used to be a second, identical binding for this; it now holds
-    -- the light/dark toggle, matching LazyVim.
     vim.keymap.set("n", "<leader>uC", function()
       require("fzf-lua").colorschemes()
     end, { desc = "Colorschemes" })

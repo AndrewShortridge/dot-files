@@ -251,6 +251,34 @@ modeline: `get_files` treats the first runtimepath file without one as the base
 and drops later bases, so a plain file replaces upstream's while `;; extends`
 would append to the broken one.
 
+**Keywords are italic and procedure names bold, in both colour schemes.** The
+rule is the `styles` block of `plugins/colorscheme.lua` (onedark; the italic
+and bold sets of olimorris' own config) and is stated again by hand in
+`themes/soft-paper.lua`; change both. What goes beyond his config:
+
+- Word operators (`and`, `or`, `not`, Fortran's `.and.`) are keywords, not
+  operators.
+- Fortran follows the rule everywhere. `queries/fortran/highlights.scm`
+  EXTENDS upstream's query (it does carry `;; extends`, unlike `context.scm`)
+  with the keywords upstream leaves uncaptured, type-bound procedure names and
+  two captures of its own: `@function.builtin.statement` (`write`,
+  `allocate`: italic) and `@function.builtin.intrinsic` (`sin`, `size`: bold).
+  Upstream's `@function.builtin` cannot be styled itself -- it holds those
+  statements and also `character`, the type. Each scheme also defines
+  `@keyword.function.fortran` and `@attribute.fortran` as italic. The
+  intrinsic names in the query are a copy of `fortran/intrinsics.lua`'s;
+  `tests/fortran_highlights_query_spec.lua` fails when they differ, and when
+  the query stops compiling (which would be a Fortran buffer with no colour).
+- The same file colours two kinds of name upstream leaves plain, with the
+  captures other languages' queries use: a construct name (`outer: do`,
+  `cycle outer`, `end do outer`) is a `@label`, as a loop label is in Rust, Go
+  and C; the module after `use` is a `@module`, as after Python's `import`.
+  Neither carries a style.
+- Not covered: a user-defined FUNCTION called in an expression (`area(x)`)
+  is written like an array element, so it stays a plain variable; only
+  `call name(...)` is known to be a call. For the same reason an array named
+  like an intrinsic (`count(i)`) is drawn as the intrinsic.
+
 **Server binaries are RESOLVED, not hardcoded.** `lspconfig.lua` looks in
 mason's bin dir, then `$PATH`, then `$HOME/miniconda3/bin`, and a server whose
 binary resolves nowhere is left disabled with one WARN notification instead of
@@ -1167,7 +1195,7 @@ onedark's colours instead of his solarized-osaka ones. bufferline.nvim is gone.
   TAB PAGE, named after the file in its focused window. Its five highlight
   groups are derived from `Normal`, `DiagnosticOk` (the green of the current
   tab) and `CursorLine` and re-derived on `ColorScheme`, which is what keeps
-  them right across the `<leader>ub` light/dark toggle -- do not hardcode a
+  them right across a light/dark colour scheme switch -- do not hardcode a
   palette there.
 - `lua/andrew/plugins/incline.lua` is the label at the top-right of each split.
   It defines its own two groups, re-derived on `ColorScheme`:
@@ -1331,7 +1359,7 @@ back, delete `plugins/md-render.lua`, the `md-render` entry in the switch, and
   spec's `config`, pinned by `tests/md_render_heading_colors_spec.lua`). It
   defines `MdRenderH1..6` itself, copied from the colourscheme's
   `@markup.heading.<level>.markdown` with 5 and 6 reading 4's, so nothing is
-  hardcoded and both schemes of the `<leader>ub` toggle work. Set without
+  hardcoded and both schemes of this config work. Set without
   `default`, so md-render's own (`default = true`, before every render) never
   replace them, and set again on ColorScheme, which md-render does not do --
   headings used to lose their colour on a theme toggle until the next render.
