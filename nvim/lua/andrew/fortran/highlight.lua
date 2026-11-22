@@ -66,7 +66,7 @@ M.PRIORITY = 150
 --- The three groups, with the link targets the user's colours depend on.
 --- Re-applied on ColorScheme: these are plain `link =` definitions and a
 --- colorscheme's `hi clear` removes them outright, so without the autocmd a
---- single light/dark switch (<leader>ub) permanently dropped the custom
+--- single light/dark switch permanently dropped the custom
 --- keyword, MPI and OpenMP colouring. tests/theme_switch_spec.lua guards it.
 M.LINKS = {
   FortranCustomKeyword = "Function",

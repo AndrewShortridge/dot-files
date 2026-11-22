@@ -7,7 +7,7 @@
 -- copies from the colourscheme's `@markup.heading.<level>.markdown`: six
 -- colours under both schemes of this config. Here the same copy is made, with
 -- levels 5 and 6 reading level 4's group, so the palette is still the
--- colourscheme's and follows the <leader>ub light/dark toggle.
+-- colourscheme's and follows a switch between the two.
 --
 -- Under onedark, the dark scheme, levels 2 and 3 take another colour of its
 -- palette instead of the heading colours it gives them (orange and yellow).

@@ -230,6 +230,10 @@ local function build_highlights(c)
     -- Syntax Highlighting
     -- =========================================================================
     -- Bold = ctp-red, Italic = ctp-green (per both AnuPpuccin and soft-paper CSS)
+    -- Which groups are italic and which bold follows the `styles` block of
+    -- plugins/colorscheme.lua (onedark), so a token keeps its style in both
+    -- schemes: keywords, conditionals, parameters and tag attributes
+    -- italic, functions and methods bold. Change both.
     Comment        = { fg = c.mauve, italic = true },
     Constant       = { fg = c.peach },
     String         = { fg = c.green },
@@ -240,12 +244,12 @@ local function build_highlights(c)
     Identifier     = { fg = c.fg },
     Function       = { fg = c.accent, bold = true },
     Statement      = { fg = c.lavender },
-    Conditional    = { fg = c.lavender },
+    Conditional    = { fg = c.lavender, italic = true },
     Repeat         = { fg = c.lavender },
     Label          = { fg = c.teal },
     Operator       = { fg = c.sky },
-    Keyword        = { fg = c.lavender, bold = true },
-    Exception      = { fg = c.red },
+    Keyword        = { fg = c.lavender, italic = true },
+    Exception      = { fg = c.red, italic = true },
     PreProc        = { fg = c.pink },
     Include        = { fg = c.pink },
     Define         = { fg = c.pink },
@@ -321,29 +325,40 @@ local function build_highlights(c)
     ["@type.builtin"]           = { fg = c.yellow, italic = true },
     ["@type.definition"]        = { fg = c.yellow },
     ["@attribute"]              = { fg = c.yellow },
+    ["@attribute.fortran"]      = { fg = c.yellow, italic = true },  -- `implicit none`, `intent`
     ["@property"]               = { fg = c.teal },
     ["@function"]               = { fg = c.accent, bold = true },
     ["@function.builtin"]       = { fg = c.accent },
-    ["@function.call"]          = { fg = c.accent },
+    ["@function.builtin.lua"]   = { fg = c.accent, bold = true },
+    -- Fortran: queries/fortran/highlights.scm makes these two captures.
+    ["@function.builtin.statement"] = { fg = c.accent, italic = true },  -- `write`, `allocate`
+    ["@function.builtin.intrinsic"] = { fg = c.accent, bold = true },    -- `sin`, `size`
+    ["@function.call"]          = { fg = c.accent, bold = true },
     ["@function.macro"]         = { fg = c.pink },
-    ["@function.method"]        = { fg = c.accent },
-    ["@function.method.call"]   = { fg = c.accent },
+    ["@function.method"]        = { fg = c.accent, bold = true },
+    ["@function.method.call"]   = { fg = c.accent, bold = true },
     ["@constructor"]            = { fg = c.flamingo },
     ["@operator"]               = { fg = c.sky },
-    ["@keyword"]                = { fg = c.lavender, bold = true },
-    ["@keyword.coroutine"]      = { fg = c.lavender },
-    ["@keyword.function"]       = { fg = c.lavender },
-    ["@keyword.operator"]       = { fg = c.sky },
-    ["@keyword.import"]         = { fg = c.pink },
-    ["@keyword.type"]           = { fg = c.lavender },
-    ["@keyword.modifier"]       = { fg = c.lavender },
-    ["@keyword.repeat"]         = { fg = c.lavender },
-    ["@keyword.return"]         = { fg = c.lavender },
-    ["@keyword.debug"]          = { fg = c.peach },
-    ["@keyword.exception"]      = { fg = c.red },
-    ["@keyword.conditional"]    = { fg = c.lavender },
-    ["@keyword.directive"]      = { fg = c.pink },
-    ["@keyword.directive.define"] = { fg = c.pink },
+    ["@keyword"]                = { fg = c.lavender, italic = true },
+    ["@keyword.coroutine"]      = { fg = c.lavender, italic = true },
+    -- Bold like the function it defines; in Lua and Fortran a keyword like
+    -- the rest (Lua is onedarkpro's own exception,
+    -- highlights/filetypes/lua.lua; Fortran is plugins/colorscheme.lua's).
+    ["@keyword.function"]       = { fg = c.lavender, bold = true },
+    ["@keyword.function.lua"]   = { fg = c.lavender, italic = true },
+    ["@keyword.function.fortran"] = { fg = c.lavender, italic = true },
+    -- `and` / `or` / `not`: a keyword, not an operator (as in onedark).
+    ["@keyword.operator"]       = { fg = c.lavender, italic = true },
+    ["@keyword.import"]         = { fg = c.pink, italic = true },
+    ["@keyword.type"]           = { fg = c.lavender, italic = true },
+    ["@keyword.modifier"]       = { fg = c.lavender, italic = true },
+    ["@keyword.repeat"]         = { fg = c.lavender, italic = true },
+    ["@keyword.return"]         = { fg = c.lavender, italic = true },
+    ["@keyword.debug"]          = { fg = c.peach, italic = true },
+    ["@keyword.exception"]      = { fg = c.red, italic = true },
+    ["@keyword.conditional"]    = { fg = c.lavender, italic = true },
+    ["@keyword.directive"]      = { fg = c.pink, italic = true },
+    ["@keyword.directive.define"] = { fg = c.pink, italic = true },
     ["@punctuation.delimiter"]  = { fg = c.fg_dim },
     ["@punctuation.bracket"]    = { fg = c.fg_dim },
     ["@punctuation.special"]    = { fg = c.flamingo },
