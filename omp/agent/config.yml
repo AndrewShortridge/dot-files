@@ -1,0 +1,39 @@
+modelRoles:
+  smol: anthropic/claude-sonnet-5:auto
+  advisor: anthropic/claude-fable-5-1:high
+  default: anthropic/claude-fable-5-2:high
+task:
+  disabledAgents: []
+  agentModelOverrides:
+    task: anthropic/claude-opus-5-5:high
+    reviewer: anthropic/claude-fable-5-2:high
+tools: {}
+theme:
+  dark: dark-one
+display:
+  shimmer: classic
+  showTokenUsage: true
+  cacheMissMarker: true
+setupVersion: 3
+compaction:
+  thresholdPercent: 60
+composer:
+  shape: box
+symbolPreset: nerd
+statusLine:
+  contextLine: annotated
+  sessionAccent: true
+  transparent: false
+  compactThinkingLevel: false
+  showHookStatus: true
+tui:
+  textSizing: true
+ask:
+  enabled: false
+dev:
+  autoqaConsent: denied
+update:
+  auto: true
+claudeResets:
+  autoRedeemWeekly: "no"
+  autoRedeemFable: "no"
