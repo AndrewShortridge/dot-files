@@ -25,62 +25,57 @@ Reload after editing config: `ctrl+shift+f5` (or `kitty @ load-config`).
 
 ---
 
-## Physical layer (keyd) — Caps / Tab / Space
+## Physical layer (keyd) — home-row mods
 
 `keyd/default.conf` (installed to `/etc/keyd/default.conf` by
-`keyd/install.sh`) makes two home-row keys dual-role so you never reach for
-Super/Alt/Ctrl. `hjkl` always means a direction; the held key picks the scope.
+`keyd/install.sh`) makes the home-row keys dual-role, mirrored on both hands
+(pinky → index), so you never reach for Super/Alt/Shift/Ctrl. `hjkl` always
+means a direction; the held mod picks the scope.
 
-| Key | Tap | Hold |
-|---|---|---|
-| `Caps Lock` | `Esc` | **Super** → COSMIC window / workspace layer |
-| `Tab` | `Tab` | **Alt** → kitty pane layer |
-| `Space` | `Space` | **Ctrl**, but *only* while Caps or Tab is already held |
-| `Enter` | `Enter` | **Ctrl** (single-hold Ctrl for the right hand) |
+| Hold → | **Super** | **Alt** | **Shift** | **Ctrl** |
+|---|---|---|---|---|
+| Left hand | `a` | `s` | `d` | `f` |
+| Right hand | `;` | `l` | `k` | `j` |
 
-Composition (physical `Shift` stacks on top of all of these):
+Tapping any of them types the letter. `Caps Lock` is plain `Esc`.
+
+Use the mod on the *opposite* hand from the key it modifies; hold several to
+stack them:
 
 | Chord | Emits | Scope / action |
 |---|---|---|
-| `Caps + hjkl` | `Super+hjkl` | COSMIC: focus window left/down/up/right |
-| `Caps + Shift + hjkl` | `Super+Shift+hjkl` | COSMIC: move window |
-| `Caps + 1…9` / `Shift+1…9` | `Super+N` / `Super+Shift+N` | COSMIC: go to / move window to workspace N |
-| `Caps + n` / `p` | `Super+n` / `Super+p` | COSMIC: next / previous workspace (custom) |
-| `Caps + [` / `]` | `Super+[` / `Super+]` | COSMIC: previous / next workspace on this monitor (custom) |
-| `Caps + Shift + [` / `]` | `Super+Shift+[` / `]` | COSMIC: move window to previous / next workspace on this monitor (custom) |
-| `Caps + q` / `m` / `s` / `g` / `o` | `Super+…` | COSMIC: close / maximize / stack / float / orientation |
-| `Caps + Enter` | `Super+Return` | COSMIC: launch kitty (custom) |
-| `Caps + Space` (tap) | `Super+space` | COSMIC: launcher (custom) |
-| `Caps + Shift + b` | `Super+Shift+b` | COSMIC: bookmarks picker (`~/.local/bin/bookmarks --popup`, custom) |
-| `Caps + Space + key` | `Ctrl+key` | plain Ctrl: `Ctrl+c/v/z/…`, `Ctrl+l` clear, `Ctrl+k` kill-line, fzf `Ctrl+j/k` |
-| `Enter + key` | `Ctrl+key` | single-hold Ctrl for the right hand: `Enter+c` Ctrl+C, … |
-| `Enter + Shift + key` | `Ctrl+Shift+key` | e.g. `Enter+Shift+c/v` copy/paste in kitty |
-| `Tab + hjkl` | `Alt+hjkl` | kitty: focus pane |
-| `Tab + Shift + hjkl` | `Alt+Shift+hjkl` | kitty: swap pane |
-| `Tab + \` / `-` | `Alt+\` / `Alt+-` | kitty: vertical / horizontal split |
-| `Tab + x` / `z` | `Alt+x` / `Alt+z` | kitty: close pane / toggle stack (zoom) |
-| `Tab + [` / `]` | `Alt+[` / `Alt+]` | kitty: previous / next tab |
-| `Tab + 1…9` / `0` | `Alt+1…9` / `Alt+0` | kitty: go to tab N / last-visited tab |
-| `Tab + w` / `Shift+w` | `Alt+w` / `Alt+Shift+w` | kitty: pick pane by label / swap with picked pane |
-| `Tab + Shift + t` / `Shift+x` | `Alt+Shift+t` / `Alt+Shift+x` | kitty: pane → new tab / pane → chosen tab |
-| `Tab + Space` (tap) | `Alt+space` | COSMIC: launcher (custom) |
-| `Tab + Space + key` | `Ctrl+key` | plain Ctrl, same as above |
-| `Caps + Tab` | `Super+Tab` | COSMIC: window switcher |
-| `Caps + Ctrl + hjkl` (physical Ctrl only) | `Super+Ctrl+hjkl` | COSMIC: prev/next workspace. Unreachable via `Caps+Space`/`Caps+Enter`: `[caps+control]` emits plain Ctrl. Use `Caps+[`/`]` instead. |
+| `a + hjkl` | `Super+hjkl` | COSMIC: focus window left/down/up/right |
+| `a + d + hjkl` | `Super+Shift+hjkl` | COSMIC: move window |
+| `a`/`; + 1…9` (opposite hand), add `d`/`k` | `Super+N` / `Super+Shift+N` | COSMIC: go to / move window to workspace N |
+| `a + n` / `p` | `Super+n` / `Super+p` | COSMIC: next / previous workspace (custom) |
+| `a + [` / `]` | `Super+[` / `Super+]` | COSMIC: previous / next workspace on this monitor (custom) |
+| `a + d + [` / `]` | `Super+Shift+[` / `]` | COSMIC: move window to previous / next workspace on this monitor (custom) |
+| `; + q` / `a + m` / `; + s` / `; + g` / `a + o` | `Super+…` | COSMIC: close / maximize / stack / float / orientation |
+| `a + Enter` | `Super+Return` | COSMIC: launch kitty (custom) |
+| `a + Space` | `Super+space` | COSMIC: launcher (custom) |
+| `; + k + b` | `Super+Shift+b` | COSMIC: bookmarks picker (`~/.local/bin/bookmarks --popup`, custom) |
+| `a + f + hjkl` | `Super+Ctrl+hjkl` | COSMIC: prev/next workspace |
+| `; + Tab` | `Super+Tab` | COSMIC: window switcher |
+| `j + key` / `f + key` | `Ctrl+key` | `Ctrl+c/v/z/…`, `Ctrl+l` clear, `Ctrl+k` kill-line, fzf `Ctrl+j/k` |
+| `j + k + c` / `v` | `Ctrl+Shift+c` / `v` | copy/paste in kitty |
+| `s + hjkl` | `Alt+hjkl` | kitty: focus pane |
+| `s + d + hjkl` | `Alt+Shift+hjkl` | kitty: swap pane |
+| `s + \` / `-` | `Alt+\` / `Alt+-` | kitty: vertical / horizontal split |
+| `l + x` / `z` | `Alt+x` / `Alt+z` | kitty: close pane / toggle stack (zoom) |
+| `s + [` / `]` | `Alt+[` / `Alt+]` | kitty: previous / next tab |
+| `s`/`l + 1…9` / `0` (opposite hand) | `Alt+1…9` / `Alt+0` | kitty: go to tab N / last-visited tab |
+| `l + w` / `l + k + w` | `Alt+w` / `Alt+Shift+w` | kitty: pick pane by label / swap with picked pane |
+| `l + k + t` / `l + k + x` | `Alt+Shift+t` / `Alt+Shift+x` | kitty: pane → new tab / pane → chosen tab |
 
 Notes:
 
-- `Caps+Space+key` / `Tab+Space+key` is *plain* Ctrl for letters, digits,
-  punctuation, Enter/Backspace/Esc/arrows/F-keys (explicit composite-layer
-  bindings). Any key not in that list falls through to `Super+Ctrl+key` /
-  `Alt+Ctrl+key`.
-- A Caps/Tab held longer than 400 ms and released with no other key emits
-  nothing (no stray `Esc`/`Tab`): `overload_tap_timeout` in `[global]`.
-- Holding `Tab` or `Enter` for key-repeat no longer works (they are Alt / Ctrl
-  while held). An `Enter` held >400 ms and released alone also emits nothing
-  (same `overload_tap_timeout`).
-- The real Super/Alt/Ctrl keys are untouched; `Alt+Space` launcher and the
-  bare-`Super`-tap workspace overview still work.
+- Each mod is `lettermod(<mod>, <key>, 150, 200)`: struck within 150 ms of
+  the previous letter it is always the letter (normal typing has no lag);
+  otherwise it becomes the mod once held 200 ms or as soon as another key is
+  tapped while it is down.
+- Holding a home-row key for key-repeat no longer works (it becomes a mod).
+- The real Super/Alt/Shift/Ctrl keys are untouched; `Tab`, `Space` and
+  `Enter` are plain keys again.
 - Panic exit if a config change wedges input: `Backspace+Esc+Enter` kills keyd.
 - Reload after editing: `./keyd/install.sh apply` (or `sudo keyd reload`).
 - swhkd is intentionally **not** used: COSMIC's own shortcut config already
@@ -150,7 +145,7 @@ transient resize panel (`h`/`j`/`k`/`l` repeat, `BSpace` back); Esc/`q` close.
 
 Bare `ctrl+h/j/k/l` is intentionally **not** bound: those keys reach zsh
 (`ctrl+l` clear, `ctrl+k` kill-line), fzf (`ctrl+j/k`) and nvim unchanged.
-Pane focus lives on the Alt layer (held `Tab`) and the leader.
+Pane focus lives on the Alt layer (held `s` / `l`) and the leader.
 
 | Key | Action |
 |---|---|
@@ -161,7 +156,7 @@ Pane focus lives on the Alt layer (held `Tab`) and the leader.
 | `ctrl+shift+r` | Rotate split orientation |
 | `ctrl+shift+z` | Toggle stack (zoom/unzoom) |
 
-### Direct bindings — Alt layer (held `Tab` via keyd)
+### Direct bindings — Alt layer (held `s` / `l` via keyd)
 
 Same actions as above, reachable without Ctrl. `alt+n`/`alt+p` are left
 unbound on purpose: nvim uses `<A-n>`/`<A-p>` (Snacks.words).
@@ -385,9 +380,9 @@ so they still work.
 
 ## Mental model
 
-- **`hjkl` is always a direction; the held key is the scope** (keyd):
-  `Caps+hjkl` = COSMIC window, `Tab+hjkl` = kitty split. Add `Shift` to
-  either to *move* instead of *focus*.
+- **`hjkl` is always a direction; the held mod is the scope** (keyd):
+  `a+hjkl` (Super) = COSMIC window, `s+hjkl` (Alt) = kitty split. Add `d`
+  (Shift) to either to *move* instead of *focus*.
 - **Bare `ctrl+hjkl` reaches the shell/nvim** — kitty does not intercept it.
 - **`ctrl+shift+hjkl`** / **`alt+shift+hjkl`** = swap splits.
 - **`alt+N`** = tab N (titles show the number); **`alt+0`** = last tab;
