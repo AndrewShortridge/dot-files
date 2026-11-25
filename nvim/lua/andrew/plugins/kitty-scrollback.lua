@@ -32,4 +32,33 @@ return {
   event = { "User KittyScrollbackLaunch" },
 
   opts = {},
+
+  -- Visual `y` / `<CR>` copy the selection to the clipboard and close the
+  -- overlay, as in Kitty's or tmux's copy mode; Visual `Y` does it by lines.
+  -- They replace the plugin's Visual `<leader>y` (which waited out
+  -- 'timeoutlen' behind <leader>yf / <leader>yp) and `<leader>Y` (bound to
+  -- `<Plug>(KsbVisualYankLine)`, which upstream never defines, so it did
+  -- nothing; it is defined here). The plugin skips a default whose <Plug> is
+  -- already mapped, and maps its own after this runs. Closing is the
+  -- plugin's: a yank into "+ ends the session (`close_after_yank`). Plain `y`
+  -- no longer feeds the paste window; `<S-CR>` still sends a selection there.
+  config = function(_, opts)
+    require("kitty-scrollback").setup(opts)
+
+    -- The setup commands (:KittyScrollbackCheckHealth, ...) load the plugin in
+    -- an ordinary nvim too; only the overlay's nvim gets this variable.
+    if vim.env.KITTY_SCROLLBACK_NVIM ~= "true" then
+      return
+    end
+    local keymap = vim.keymap
+    local copy_and_close =
+      { silent = true, desc = "Scrollback: copy selection to clipboard and close" }
+    keymap.set("x", "y", "<Plug>(KsbVisualYank)", copy_and_close)
+    keymap.set("x", "<CR>", "<Plug>(KsbVisualYank)", copy_and_close)
+    keymap.set("x", "<Plug>(KsbVisualYankLine)", '"+Y')
+    keymap.set("x", "Y", "<Plug>(KsbVisualYankLine)", {
+      silent = true,
+      desc = "Scrollback: copy selected lines to clipboard and close",
+    })
+  end,
 }

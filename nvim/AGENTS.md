@@ -460,7 +460,7 @@ Per-language type checking via terminal split (30% height):
 | md-render.nvim | md-render.lua | Second markdown renderer, on trial: renders into a separate buffer (`:MdRender float\|tab\|split\|toggle`); the default backend of `:MarkdownRenderer` | `cmd` (`MdRender`, `MdRenderHeadingColors`, `MdRenderMath`) |
 | nvim-colorizer | colorizer.lua | Color code preview | Config |
 | yazi.nvim | yazi.lua | File explorer | `VeryLazy` |
-| kitty-scrollback.nvim | kitty-scrollback.lua | Kitty's scrollback in an overlay nvim (copy mode). Started by Kitty, never by an ordinary nvim; the kitten path is hard-coded in `~/.config/kitty/kitty.conf` | `User KittyScrollbackLaunch`, `cmd` |
+| kitty-scrollback.nvim | kitty-scrollback.lua | Kitty's scrollback in an overlay nvim (copy mode). Started by Kitty, never by an ordinary nvim; the kitten path is hard-coded in `~/.config/kitty/kitty.conf`. Visual `y` / `<CR>` (`Y` by lines) copy to the clipboard and close the overlay; `<S-CR>` sends the selection to the paste window | `User KittyScrollbackLaunch`, `cmd` |
 | rustaceanvim | rustaceanvim.lua | Rust IDE features | `lazy = false` |
 | nvim-lspconfig | lsp/lspconfig.lua | LSP configuration | `BufReadPre, BufNewFile` |
 | mason.nvim | lsp/mason.lua | Tool installer | `cmd`, `<leader>cm` |
