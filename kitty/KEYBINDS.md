@@ -83,6 +83,49 @@ Notes:
   `~/.config/cosmic/com.system76.CosmicSettings.Shortcuts/v1/custom`), so a
   second hotkey daemon grabbing the keyboard adds nothing.
 
+### Navigation layers (held `v` / `n`)
+
+Hold `v` or `n` and the *other* hand becomes arrows and paging keys,
+finger-for-finger mirrored like the mods. Tapping `v` / `n` types the letter
+(same `lettermod` timing as the home row).
+
+| Emits → | Left | Down | Up | Right | PageUp | Home | End | PageDown |
+|---|---|---|---|---|---|---|---|---|
+| Hold `v` (`nav_r`) | `h` | `j` | `k` | `l` | `u` | `i` | `o` | `p` |
+| Hold `n` (`nav_l`) | `g` | `f` | `d` | `s` | `r` | `e` | `w` | `q` |
+
+- Keys a nav layer does not bind keep their `[main]` meaning, so the mods on
+  the hand holding the layer key still stack: `v + d + h` = `Shift+Left`,
+  `n + k + g` = `Shift+Left`, `v + a + l` = `Super+Right`.
+- Ctrl is the exception: `f` shares a finger with `v` and `j` with `n`, so
+  `Ctrl+arrow` needs the real Ctrl key.
+- `nav_l` is a true mirror, so Left/Right and Home/End are spatially
+  reversed on the left hand (`g` = Left, `s` = Right).
+
+### Number and symbol layers (held `c` / `x`)
+
+Hold `c` or `x` with the left hand and the right hand becomes a numpad or a
+symbol block. Tapping `c` / `x` types the letter (same `lettermod` timing as
+the home row). Adding `d` while `x` is held switches to the second symbol
+tier.
+
+| Key → | `y` | `u` | `i` | `o` | `p` | `h` | `j` | `k` | `l` | `;` | `n` | `m` | `,` | `.` | `/` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Hold `c` (`num_r`) | `*` | `7` | `8` | `9` | `+` | `.` | `4` | `5` | `6` | `-` | `0` | `1` | `2` | `3` | `/` |
+| Hold `x` (`sym_r`) | `~` | `_` | `{` | `}` | `$` | `=` | `(` | `)` | `"` | `:` | `#` | `-` | `,` | `.` | `/` |
+| Hold `x + d` | `` ` `` | `^` | `[` | `]` | `%` | `+` | `&` | `*` | `'` | `!` | `\|` | `\` | `<` | `>` | `?` |
+
+- `num_r` emits plain digits, so the left hand's mods stack: `c + a + m` =
+  `Super+1` (workspace 1), `c + s + j` = `Alt+4` (kitty tab 4). `c` sits under
+  the Shift finger, so there is no Shift in `num_r`.
+- `sym_r` leaves `, . /` as themselves, so `",` `),` `):` and `~/` are typed
+  without releasing `x`. The second tier is the partner of the first:
+  `{ }` → `[ ]`, `=` → `+`, `"` → `'`, `~` → `` ` ``, `_` → `^`.
+- A layer key struck within 150 ms of a letter is always the letter: pause
+  before `x` for a mid-word `(` or `_`.
+- Holding `x` or `c` for key-repeat no longer works (vim `x`: use a count).
+- `@` and `;` are not on the symbol layer: number row and a plain tap.
+
 ## Custom bindings
 
 ### Leader chord (`ctrl+space > …`)
